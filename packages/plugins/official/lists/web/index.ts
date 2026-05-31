@@ -26,6 +26,7 @@ import {
   type ListPanelData,
   type ListPanelItem,
 } from '../../../../web-client/src/controllers/listPanelController';
+import { openListSelectionDialog } from '../../../../web-client/src/controllers/listSelectionDialog';
 import type { ListCustomFieldDefinition } from '../../../../web-client/src/controllers/listCustomFields';
 import type { ListMetadataDialogPayload } from '../../../../web-client/src/controllers/listMetadataDialog';
 import { ContextMenuManager } from '../../../../web-client/src/controllers/contextMenu';
@@ -2081,116 +2082,6 @@ if (!registry || typeof registry.registerPanel !== 'function') {
         registerCommand('paste', 'v');
       };
 
-      const openFocusSourceListDialog = (
-        candidates: ListSummary[],
-        initialListId: string,
-      ): Promise<string | null> =>
-        new Promise((resolve) => {
-          const overlay = document.createElement('div');
-          overlay.className = 'confirm-dialog-overlay';
-
-          const dialog = document.createElement('div');
-          dialog.className = 'confirm-dialog';
-          dialog.setAttribute('role', 'dialog');
-          dialog.setAttribute('aria-modal', 'true');
-
-          const titleEl = document.createElement('h3');
-          titleEl.className = 'confirm-dialog-title';
-          titleEl.textContent = 'Add Focus Item';
-          dialog.appendChild(titleEl);
-
-          const messageEl = document.createElement('p');
-          messageEl.className = 'confirm-dialog-message';
-          messageEl.textContent = 'Choose the source list for the new item.';
-          dialog.appendChild(messageEl);
-
-          const form = document.createElement('div');
-          form.className = 'list-item-form';
-
-          const label = document.createElement('label');
-          label.className = 'list-item-form-label';
-          label.textContent = 'Source list';
-
-          const select = document.createElement('select');
-          select.className = 'list-item-form-select focus-source-list-select';
-          for (const list of candidates) {
-            const option = document.createElement('option');
-            option.value = list.id;
-            option.textContent =
-              selectedInstanceIds.length > 1 && list.instanceLabel
-                ? `${list.name} (${list.instanceLabel})`
-                : list.name;
-            option.title = list.id;
-            select.appendChild(option);
-          }
-          select.value = candidates.some((list) => list.id === initialListId)
-            ? initialListId
-            : candidates[0]?.id ?? '';
-          label.appendChild(select);
-          form.appendChild(label);
-          dialog.appendChild(form);
-
-          const buttons = document.createElement('div');
-          buttons.className = 'confirm-dialog-buttons';
-
-          const cancelButton = document.createElement('button');
-          cancelButton.className = 'confirm-dialog-button cancel';
-          cancelButton.textContent = 'Cancel';
-          buttons.appendChild(cancelButton);
-
-          const confirmButton = document.createElement('button');
-          confirmButton.className = 'confirm-dialog-button primary';
-          confirmButton.textContent = 'Continue';
-          buttons.appendChild(confirmButton);
-
-          dialog.appendChild(buttons);
-          overlay.appendChild(dialog);
-          document.body.appendChild(overlay);
-
-          let closed = false;
-          const close = (value: string | null): void => {
-            if (closed) {
-              return;
-            }
-            closed = true;
-            document.removeEventListener('keydown', handleKeyDown);
-            overlay.remove();
-            services.dialogManager.releaseExternalDialog(overlay);
-            resolve(value);
-          };
-
-          const handleKeyDown = (event: KeyboardEvent): void => {
-            if (event.key === 'Escape') {
-              event.preventDefault();
-              close(null);
-              return;
-            }
-            if (event.key === 'Enter') {
-              event.preventDefault();
-              close(select.value || null);
-            }
-          };
-
-          services.dialogManager.registerExternalDialog(overlay, () => {
-            close(null);
-          });
-          document.addEventListener('keydown', handleKeyDown);
-
-          overlay.addEventListener('click', (event) => {
-            if (event.target === overlay) {
-              close(null);
-            }
-          });
-          cancelButton.addEventListener('click', () => {
-            close(null);
-          });
-          confirmButton.addEventListener('click', () => {
-            close(select.value || null);
-          });
-
-          select.focus();
-        });
-
       const listPanelController = new ListPanelController({
         bodyEl: panelContent,
         getSearchQuery: () => sharedSearchController.getQuery(),
@@ -2249,6 +2140,9 @@ if (!registry || typeof registry.registerPanel !== 'function') {
             .map((list) => ({
               id: list.id,
               name: list.name,
+              ...(list.instanceLabel ? { instanceLabel: list.instanceLabel } : {}),
+              ...(list.defaultTags ? { defaultTags: list.defaultTags } : {}),
+              ...(list.customFields ? { customFields: list.customFields } : {}),
             }));
         },
         resolveAddItemTarget: async () => {
@@ -2272,11 +2166,25 @@ if (!registry || typeof registry.registerPanel !== 'function') {
           if (!initialValue) {
             initialValue = candidates[0]?.id ?? '';
           }
-          const listId = await openFocusSourceListDialog(candidates, initialValue);
-          if (!listId) {
+          const selected = await openListSelectionDialog({
+            dialogManager: services.dialogManager,
+            title: 'Add Focus Item',
+            message: 'Choose the source list for the new item.',
+            items: candidates.map((list) => ({
+              id: list.id,
+              name: list.name,
+              ...(selectedInstanceIds.length > 1 && list.instanceLabel
+                ? { instanceLabel: list.instanceLabel }
+                : {}),
+            })),
+            initialId: initialValue,
+            confirmText: 'Continue',
+            emptyText: 'No matching lists',
+          });
+          if (!selected) {
             return null;
           }
-          const trimmed = listId.trim();
+          const trimmed = selected.id.trim();
           const selectedList = candidates.find((list) => list.id === trimmed) ?? candidates[0];
           if (!selectedList) {
             return null;

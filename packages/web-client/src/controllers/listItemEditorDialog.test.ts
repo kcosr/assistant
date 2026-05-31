@@ -2,6 +2,7 @@
 import { describe, expect, it, beforeEach, vi } from 'vitest';
 import { ListItemEditorDialog } from './listItemEditorDialog';
 import type { DialogManager } from './dialogManager';
+import type { ListItemEditorDialogOptions } from './listItemEditorDialog';
 
 const createDialogManager = (): DialogManager =>
   ({
@@ -85,7 +86,9 @@ describe('ListItemEditorDialog tag chips', () => {
   });
 
   it('renders custom field inputs and submits values', async () => {
-    const createListItem = vi.fn(async () => true);
+    const createListItem = vi.fn<ListItemEditorDialogOptions['createListItem']>(
+      async () => true,
+    );
 
     const dialog = new ListItemEditorDialog({
       dialogManager: createDialogManager(),
@@ -158,6 +161,94 @@ describe('ListItemEditorDialog tag chips', () => {
       estimate: 3,
       urgent: true,
     });
+  });
+
+  it('submits newly added items to the selected list target', async () => {
+    const createListItem = vi.fn<ListItemEditorDialogOptions['createListItem']>(
+      async () => true,
+    );
+
+    const dialog = new ListItemEditorDialog({
+      dialogManager: createDialogManager(),
+      setStatus: vi.fn(),
+      recentUserItemUpdates: new Set<string>(),
+      userUpdateTimeoutMs: 1000,
+      createListItem,
+      updateListItem: vi.fn(async () => true),
+    });
+
+    dialog.open('add', 'today', undefined, {
+      listTargets: [
+        { id: 'today', name: 'Today' },
+        { id: 'work', name: 'Work' },
+      ],
+    });
+
+    const listSelect = document.querySelector<HTMLSelectElement>('.list-item-target-select');
+    expect(listSelect).not.toBeNull();
+    if (!listSelect) return;
+    listSelect.value = 'work';
+    listSelect.dispatchEvent(new Event('change', { bubbles: true }));
+
+    const titleInput = document.querySelector<HTMLInputElement>(
+      '.list-item-form input.list-item-form-input',
+    );
+    expect(titleInput).not.toBeNull();
+    if (!titleInput) return;
+    titleInput.value = 'Moved before create';
+
+    document
+      .querySelector<HTMLFormElement>('.list-item-form')
+      ?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+
+    await Promise.resolve();
+
+    expect(createListItem).toHaveBeenCalledTimes(1);
+    expect(createListItem.mock.calls[0]?.[0]).toBe('work');
+  });
+
+  it('submits edited items with a changed target list', async () => {
+    const updateListItem = vi.fn<ListItemEditorDialogOptions['updateListItem']>(
+      async () => true,
+    );
+
+    const dialog = new ListItemEditorDialog({
+      dialogManager: createDialogManager(),
+      setStatus: vi.fn(),
+      recentUserItemUpdates: new Set<string>(),
+      userUpdateTimeoutMs: 1000,
+      createListItem: vi.fn(async () => true),
+      updateListItem,
+    });
+
+    dialog.open(
+      'edit',
+      'today',
+      { id: 'item-1', title: 'Existing item', tags: [] },
+      {
+        listTargets: [
+          { id: 'today', name: 'Today' },
+          { id: 'work', name: 'Work' },
+        ],
+      },
+    );
+
+    const listSelect = document.querySelector<HTMLSelectElement>('.list-item-target-select');
+    expect(listSelect).not.toBeNull();
+    if (!listSelect) return;
+    expect(listSelect.value).toBe('today');
+    listSelect.value = 'work';
+    listSelect.dispatchEvent(new Event('change', { bubbles: true }));
+
+    document
+      .querySelector<HTMLFormElement>('.list-item-form')
+      ?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+
+    await Promise.resolve();
+
+    expect(updateListItem).toHaveBeenCalledTimes(1);
+    const updates = updateListItem.mock.calls[0]?.[2];
+    expect(updates?.['targetListId']).toBe('work');
   });
 
   it('uses a textarea for markdown text custom fields', async () => {

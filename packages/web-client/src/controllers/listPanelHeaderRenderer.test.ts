@@ -269,11 +269,13 @@ describe('renderListPanelHeader', () => {
     expect(onRemoveSelectionFromFocus).toHaveBeenCalledTimes(1);
   });
 
-  it('preserves provided target order in the move selected submenu', () => {
+  it('invokes target-list callbacks from the selection menu', () => {
     const data: ListPanelData = {
       id: 'list1',
       name: 'My List',
     };
+    const onMoveSelectedToList = vi.fn();
+    const onCopySelectedToList = vi.fn();
 
     const { header, controls } = renderListPanelHeader({
       listId: 'list1',
@@ -302,13 +304,9 @@ describe('renderListPanelHeader', () => {
       onEditMetadata: vi.fn(),
       onTimelineFieldChange: vi.fn(),
       onFocusViewToggle: vi.fn(),
-      getMoveTargetLists: () => [
-        { id: 'list1', name: 'Current' },
-        { id: 'list3', name: 'Zulu' },
-        { id: 'list2', name: 'Alpha' },
-      ],
-      onMoveSelectedToList: vi.fn(),
-      onCopySelectedToList: vi.fn(),
+      getMoveTargetLists: () => [],
+      onMoveSelectedToList,
+      onCopySelectedToList,
       renderTags: () => null,
     });
 
@@ -321,12 +319,13 @@ describe('renderListPanelHeader', () => {
     document.body
       .querySelector<HTMLButtonElement>('[data-role="move-selected-button"]')
       ?.click();
+    document.body.querySelector<HTMLButtonElement>('[data-role="selection-status"]')?.click();
+    document.body
+      .querySelector<HTMLButtonElement>('[data-role="copy-selected-button"]')
+      ?.click();
 
-    const labels = Array.from(
-      document.body.querySelectorAll<HTMLElement>('.collection-list-actions-submenu-item'),
-    ).map((el) => el.textContent);
-
-    expect(labels).toEqual(['Zulu', 'Alpha']);
+    expect(onMoveSelectedToList).toHaveBeenCalledTimes(1);
+    expect(onCopySelectedToList).toHaveBeenCalledTimes(1);
   });
 
   it('invokes move-selection callbacks from the actions menu', () => {

@@ -994,6 +994,14 @@ describe('ListPanelController focus view', () => {
       completed: true,
     });
 
+    await expect(
+      internal.updateListItem('__focus__', 'item-1', { targetListId: 'later' }),
+    ).resolves.toBe(true);
+    expect(callOperation).toHaveBeenLastCalledWith('item-move', {
+      id: 'item-1',
+      targetListId: 'later',
+    });
+
     await expect(internal.deleteListItem('__focus__', 'item-1')).resolves.toBe(true);
     expect(callOperation).toHaveBeenLastCalledWith('focus-remove', { itemId: 'item-1' });
 
@@ -1041,6 +1049,43 @@ describe('ListPanelController focus view', () => {
     expect(callOperation).not.toHaveBeenCalledWith('focus-remove', { itemId: 'item-1' });
   });
 
+  it('moves a source item when an edit submits a different target list', async () => {
+    const callOperation = vi.fn(
+      async () => ({} as unknown),
+    ) as NonNullable<ListPanelControllerOptions['callOperation']>;
+    const controller = buildController({ callOperation });
+    controller.render('today', {
+      id: 'today',
+      name: 'Today',
+      items: [{ id: 'item-1', title: 'Existing task' }],
+    });
+
+    const internal = controller as unknown as {
+      updateListItem: (
+        listId: string,
+        itemId: string,
+        updates: Record<string, unknown>,
+      ) => Promise<boolean>;
+    };
+
+    await expect(
+      internal.updateListItem('today', 'item-1', {
+        title: 'Updated task',
+        targetListId: 'work',
+      }),
+    ).resolves.toBe(true);
+
+    expect(callOperation).toHaveBeenNthCalledWith(1, 'item-update', {
+      listId: 'today',
+      id: 'item-1',
+      title: 'Updated task',
+    });
+    expect(callOperation).toHaveBeenNthCalledWith(2, 'item-move', {
+      id: 'item-1',
+      targetListId: 'work',
+    });
+  });
+
   it('does not re-add focus when editing an already-focused source item', async () => {
     const callOperation = vi.fn(
       async () => ({} as unknown),
@@ -1076,6 +1121,38 @@ describe('ListPanelController focus view', () => {
       }),
     );
     expect(callOperation).not.toHaveBeenCalledWith('focus-add', { itemId: 'item-1' });
+  });
+
+  it('refreshes the focused row indicator immediately after toggling focus', async () => {
+    const callOperation = vi.fn(
+      async () => ({} as unknown),
+    ) as NonNullable<ListPanelControllerOptions['callOperation']>;
+    const rightControls: HTMLElement[][] = [];
+    const controller = buildController({
+      callOperation,
+      setRightControls: (controls) => {
+        rightControls.push(controls);
+      },
+    });
+    const controls = controller.render('today', {
+      id: 'today',
+      name: 'Today',
+      items: [{ id: 'item-1', title: 'Task', focused: false }],
+    });
+    for (const element of controls.rightControls) {
+      document.body.appendChild(element);
+    }
+
+    expect(document.querySelector('.list-item-menu-trigger-focused')).toBeNull();
+
+    const internal = controller as unknown as {
+      toggleItemFocus: (itemId: string, currentlyFocused: boolean) => Promise<boolean>;
+    };
+    await expect(internal.toggleItemFocus('item-1', false)).resolves.toBe(true);
+
+    expect(callOperation).toHaveBeenCalledWith('focus-add', { itemId: 'item-1' });
+    expect(document.querySelector('.list-item-menu-trigger-focused')).not.toBeNull();
+    expect(rightControls.length).toBe(1);
   });
 
   it('bulk deletes source items from focus view', async () => {

@@ -3,6 +3,7 @@ import type { DialogManager } from './dialogManager';
 import type { CollectionTagFilterController } from './collectionTagFilterController';
 import type { ListCustomFieldDefinition } from './listCustomFields';
 import { ListItemEditorDialog, type ListItemEditorDialogOpenOptions } from './listItemEditorDialog';
+import { openListSelectionDialog } from './listSelectionDialog';
 import { ListItemMenuController } from './listItemMenuController';
 import { renderListPanelHeader, type ListPanelHeaderControls } from './listPanelHeaderRenderer';
 import {
@@ -30,6 +31,9 @@ import { matchesGlobalQuery, type GlobalQuery } from '@assistant/shared';
 export interface ListMoveTarget {
   id: string;
   name: string;
+  instanceLabel?: string;
+  defaultTags?: string[];
+  customFields?: ListCustomFieldDefinition[];
 }
 
 export interface ListPanelItem {
@@ -293,11 +297,11 @@ export class ListPanelController {
       onToggleItemFocus: (_listId, itemId, focused) => {
         void this.toggleItemFocus(itemId, focused);
       },
-      onMoveItemToList: (listId, itemId, targetListId) => {
-        void this.moveItemToList(listId, itemId, targetListId);
+      onMoveItemToList: (listId, itemId) => {
+        void this.showMoveItemToListDialog(listId, itemId);
       },
-      onCopyItemToList: (listId, itemId, targetListId) => {
-        void this.copyItemsToList(listId, [itemId], targetListId);
+      onCopyItemToList: (listId, itemId) => {
+        void this.showCopyItemToListDialog(listId, itemId);
       },
       onTouchItem: (listId, itemId) => {
         void this.touchListItem(listId, itemId);
@@ -866,11 +870,11 @@ export class ListPanelController {
         this.options.setRightControls(newControls.rightControls);
       },
       getMoveTargetLists: () => this.options.getMoveTargetLists(),
-      onMoveSelectedToList: (targetListId) => {
-        void this.moveSelectedItemsToList(targetListId);
+      onMoveSelectedToList: () => {
+        void this.showMoveSelectedItemsDialog();
       },
-      onCopySelectedToList: (targetListId) => {
-        void this.copySelectedItemsToList(targetListId);
+      onCopySelectedToList: () => {
+        void this.showCopySelectedItemsDialog();
       },
       renderTags: this.options.renderTags,
     });
@@ -1341,6 +1345,11 @@ export class ListPanelController {
       return false;
     }
     try {
+      const rawTargetListId = updates['targetListId'];
+      const targetListId =
+        typeof rawTargetListId === 'string' && rawTargetListId.trim().length > 0
+          ? rawTargetListId.trim()
+          : null;
       if (this.currentData?.viewKind === 'focus' || isFocusListId(listId)) {
         const position = updates['position'];
         const focused = updates['focused'];
@@ -1348,6 +1357,7 @@ export class ListPanelController {
         const sourceUpdates = { ...updates };
         delete sourceUpdates['position'];
         delete sourceUpdates['focused'];
+        delete sourceUpdates['targetListId'];
         if (position !== undefined) {
           await this.runOperation('focus-update', { itemId, position });
         }
@@ -1356,24 +1366,27 @@ export class ListPanelController {
         } else if (focused === true && !currentlyFocused) {
           await this.runOperation('focus-add', { itemId });
         }
-        if (Object.keys(sourceUpdates).length === 0) {
-          return true;
-        }
         const sourceListId = this.getSourceListIdForItem(itemId);
         if (!sourceListId) {
-          return false;
+          return !targetListId && Object.keys(sourceUpdates).length === 0;
         }
-        await this.runOperation('item-update', {
-          listId: sourceListId,
-          id: itemId,
-          ...sourceUpdates,
-        });
+        if (Object.keys(sourceUpdates).length > 0) {
+          await this.runOperation('item-update', {
+            listId: sourceListId,
+            id: itemId,
+            ...sourceUpdates,
+          });
+        }
+        if (targetListId && targetListId !== sourceListId) {
+          await this.runOperation('item-move', { id: itemId, targetListId });
+        }
         return true;
       }
       const focused = updates['focused'];
       const currentlyFocused = this.isItemFocused(itemId, listId);
       const sourceUpdates = { ...updates };
       delete sourceUpdates['focused'];
+      delete sourceUpdates['targetListId'];
       if (Object.keys(sourceUpdates).length > 0) {
         await this.runOperation('item-update', { listId, id: itemId, ...sourceUpdates });
       }
@@ -1381,6 +1394,9 @@ export class ListPanelController {
         await this.runOperation('focus-add', { itemId });
       } else if (focused === false && currentlyFocused) {
         await this.runOperation('focus-remove', { itemId });
+      }
+      if (targetListId && targetListId !== listId) {
+        await this.runOperation('item-move', { id: itemId, targetListId });
       }
       return true;
     } catch {
@@ -1397,9 +1413,12 @@ export class ListPanelController {
       await this.runOperation(currentlyFocused ? 'focus-remove' : 'focus-add', { itemId });
       this.markItemFocused(itemId, !currentlyFocused);
       this.options.setStatus(currentlyFocused ? 'Removed from Focus' : 'Added to Focus');
+      this.rerenderCurrent();
       return true;
     } catch {
-      this.options.setStatus(currentlyFocused ? 'Failed to remove from Focus' : 'Failed to add to Focus');
+      this.options.setStatus(
+        currentlyFocused ? 'Failed to remove from Focus' : 'Failed to add to Focus',
+      );
       return false;
     }
   }
@@ -1539,6 +1558,22 @@ export class ListPanelController {
       customFields: openOptionsOverride?.customFields ?? this.currentCustomFields,
       showFocusToggle: openOptionsOverride?.showFocusToggle ?? true,
     };
+    if (mode === 'add' || mode === 'edit') {
+      const listTargets = openOptionsOverride?.listTargets ?? this.options.getMoveTargetLists();
+      if (listTargets.length > 0) {
+        openOptions.listTargets = listTargets.map((target) => ({
+          id: target.id,
+          name: target.name,
+        }));
+      }
+      if (mode === 'edit') {
+        const sourceListId =
+          typeof item?.sourceListId === 'string' && item.sourceListId.trim().length > 0
+            ? item.sourceListId
+            : listId;
+        openOptions.selectedListId = sourceListId;
+      }
+    }
     if (openOptionsOverride?.initialMode) {
       openOptions.initialMode = openOptionsOverride.initialMode;
     }
@@ -1763,6 +1798,32 @@ export class ListPanelController {
     });
   }
 
+  private async chooseListTarget(options: {
+    title: string;
+    message?: string;
+    confirmText: string;
+    excludeListId?: string | null;
+    initialListId?: string | null;
+  }): Promise<ListMoveTarget | null> {
+    const targets = this.options
+      .getMoveTargetLists()
+      .filter((target) => target.id !== options.excludeListId);
+    if (targets.length === 0) {
+      this.options.setStatus('No other lists available');
+      return null;
+    }
+    return openListSelectionDialog({
+      dialogManager: this.options.dialogManager,
+      title: options.title,
+      ...(options.message ? { message: options.message } : {}),
+      items: targets,
+      ...(options.initialListId ? { initialId: options.initialListId } : {}),
+      confirmText: options.confirmText,
+      emptyText: 'No matching lists',
+      showIds: false,
+    });
+  }
+
   private async showMoveSelectedItemsDialog(): Promise<void> {
     const selectedIds = this.options.getSelectedItemIds();
     if (selectedIds.length === 0) {
@@ -1771,31 +1832,43 @@ export class ListPanelController {
     }
 
     const count = selectedIds.length;
-    const targetListId = await this.options.dialogManager.showTextInputDialog({
+    const target = await this.chooseListTarget({
       title: 'Move Items',
       message: `Move ${count} selected item${count === 1 ? '' : 's'} to which list?`,
       confirmText: 'Move',
-      confirmClassName: 'primary',
-      cancelText: 'Cancel',
-      labelText: 'Target list ID',
-      placeholder: 'reading-list',
-      validate: (value) => {
-        const trimmed = value.trim();
-        if (!trimmed) {
-          return 'Target list ID must not be empty';
-        }
-        return null;
-      },
+      excludeListId: this.currentListId,
     });
 
-    if (!targetListId) {
+    if (!target) {
       return;
     }
 
-    await this.bulkMoveItems(selectedIds, targetListId.trim(), {
-      clearSelection: true,
-      sourceListId: this.currentListId ?? null,
+    await this.moveSelectedItemsToList(target.id);
+  }
+
+  private async showCopySelectedItemsDialog(): Promise<void> {
+    const selectedIds = this.options.getSelectedItemIds();
+    if (selectedIds.length === 0) {
+      this.options.setStatus('Select at least one item to copy');
+      return;
+    }
+    const sourceListId = this.currentListId;
+    if (!sourceListId) {
+      this.options.setStatus('No source list available');
+      return;
+    }
+
+    const count = selectedIds.length;
+    const target = await this.chooseListTarget({
+      title: 'Copy Items',
+      message: `Copy ${count} selected item${count === 1 ? '' : 's'} to which list?`,
+      confirmText: 'Copy',
+      excludeListId: sourceListId,
     });
+    if (!target) {
+      return;
+    }
+    await this.copySelectedItemsToList(target.id);
   }
 
   private async bulkMoveItems(
@@ -1892,6 +1965,32 @@ export class ListPanelController {
       clearSelection: false,
       sourceListId: listId,
     });
+  }
+
+  private async showMoveItemToListDialog(listId: string, itemId: string): Promise<void> {
+    const target = await this.chooseListTarget({
+      title: 'Move Item',
+      message: 'Choose the destination list.',
+      confirmText: 'Move',
+      excludeListId: listId,
+    });
+    if (!target) {
+      return;
+    }
+    await this.moveItemToList(listId, itemId, target.id);
+  }
+
+  private async showCopyItemToListDialog(listId: string, itemId: string): Promise<void> {
+    const target = await this.chooseListTarget({
+      title: 'Copy Item',
+      message: 'Choose the destination list.',
+      confirmText: 'Copy',
+      excludeListId: listId,
+    });
+    if (!target) {
+      return;
+    }
+    await this.copyItemsToList(listId, [itemId], target.id);
   }
 
   private async copySelectedItemsToList(targetListId: string): Promise<void> {

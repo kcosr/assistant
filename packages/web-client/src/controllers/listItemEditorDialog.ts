@@ -38,6 +38,11 @@ export interface ListItemEditorDialogOptions {
   checkReferenceAvailability?: (reference: ListItemReference) => Promise<boolean | null>;
 }
 
+export interface ListItemEditorListTarget {
+  id: string;
+  name: string;
+}
+
 export interface ListItemEditorDialogOpenOptions {
   availableTags?: string[];
   defaultTags?: string[];
@@ -51,6 +56,10 @@ export interface ListItemEditorDialogOpenOptions {
   focused?: boolean;
   /** Show the Focus membership checkbox. */
   showFocusToggle?: boolean;
+  /** Alternate lists that can receive a newly added item. */
+  listTargets?: ListItemEditorListTarget[];
+  /** The currently selected list target when it differs from the visible list id. */
+  selectedListId?: string;
 }
 
 type ListItemEditorMode = 'quick' | 'review';
@@ -503,6 +512,37 @@ export class ListItemEditorDialog {
 
     const reviewContainer = document.createElement('div');
     reviewContainer.className = 'list-item-review';
+
+    const initialSelectedListId = openOptions?.selectedListId ?? listId;
+    let selectedListId = initialSelectedListId;
+    const listTargets = (openOptions?.listTargets ?? []).filter(
+      (target) => target.id && target.name,
+    );
+    if ((mode === 'add' || mode === 'edit') && listTargets.length > 1) {
+      const listLabel = document.createElement('label');
+      listLabel.className = 'list-item-form-label';
+      const listLabelText = document.createElement('span');
+      listLabelText.className = 'list-item-form-label-text';
+      listLabelText.textContent = 'List';
+      const listSelect = document.createElement('select');
+      listSelect.className = 'list-item-form-select list-item-target-select';
+      for (const target of listTargets) {
+        const option = document.createElement('option');
+        option.value = target.id;
+        option.textContent = target.name;
+        listSelect.appendChild(option);
+      }
+      listSelect.value = listTargets.some((target) => target.id === initialSelectedListId)
+        ? initialSelectedListId
+        : listTargets[0]?.id ?? initialSelectedListId;
+      selectedListId = listSelect.value;
+      listSelect.addEventListener('change', () => {
+        selectedListId = listSelect.value || initialSelectedListId;
+      });
+      listLabel.appendChild(listLabelText);
+      listLabel.appendChild(listSelect);
+      quickEditContainer.appendChild(listLabel);
+    }
 
     const titleLabel = document.createElement('label');
     titleLabel.className = 'list-item-form-label';
@@ -1470,6 +1510,7 @@ export class ListItemEditorDialog {
         customFields?: Record<string, unknown>;
         position?: number;
         focused?: boolean;
+        targetListId?: string;
       } = {
         title,
         url,
@@ -1499,10 +1540,13 @@ export class ListItemEditorDialog {
       if (focusCheckbox) {
         payload.focused = focusCheckbox.checked;
       }
+      if (mode === 'edit' && selectedListId && selectedListId !== initialSelectedListId) {
+        payload.targetListId = selectedListId;
+      }
 
       if (mode === 'add') {
         void (async () => {
-          const ok = await this.options.createListItem(listId, payload);
+          const ok = await this.options.createListItem(selectedListId, payload);
           if (!ok) {
             this.options.setStatus('Failed to add list item');
             return;

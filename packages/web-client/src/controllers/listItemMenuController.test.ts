@@ -84,7 +84,7 @@ describe('ListItemMenuController', () => {
     expect(document.querySelector('.list-item-menu-wrapper')).toBeNull();
   });
 
-  it('preserves provided target order in the move submenu', () => {
+  it('invokes move and copy target callbacks from the item menu', () => {
     const contextMenuManager = new ContextMenuManager({
       isSessionPinned: () => false,
       pinSession: vi.fn(),
@@ -94,6 +94,8 @@ describe('ListItemMenuController', () => {
       editSession: vi.fn(),
     });
 
+    const onMoveItemToList = vi.fn();
+    const onCopyItemToList = vi.fn();
     const controller = new ListItemMenuController({
       contextMenuManager,
       icons: {
@@ -111,16 +113,12 @@ describe('ListItemMenuController', () => {
       },
       recentUserItemUpdates: new Set<string>(),
       userUpdateTimeoutMs: 1000,
-      getMoveTargetLists: () => [
-        { id: 'list-1', name: 'Current' },
-        { id: 'list-3', name: 'Zulu' },
-        { id: 'list-2', name: 'Alpha' },
-      ],
+      getMoveTargetLists: () => [],
       updateListItem: vi.fn(),
       onEditItem: vi.fn(),
       onDeleteItem: vi.fn(),
-      onMoveItemToList: vi.fn(),
-      onCopyItemToList: vi.fn(),
+      onMoveItemToList,
+      onCopyItemToList,
       onTouchItem: vi.fn(),
       onClearTouchItem: vi.fn(),
     });
@@ -153,11 +151,15 @@ describe('ListItemMenuController', () => {
     expect(moveButton).toBeDefined();
     moveButton?.click();
 
-    const labels = Array.from(
-      document.querySelectorAll<HTMLElement>('.list-item-menu-submenu-item'),
-    ).map((el) => el.textContent);
+    controller.open(trigger, 'list-1', item, 'item-123', row);
+    const copyButton = Array.from(
+      document.querySelectorAll<HTMLButtonElement>('.list-item-menu-item'),
+    ).find((btn) => btn.getAttribute('aria-label') === 'Copy to list');
+    expect(copyButton).toBeDefined();
+    copyButton?.click();
 
-    expect(labels).toEqual(['Zulu', 'Alpha']);
+    expect(onMoveItemToList).toHaveBeenCalledWith('list-1', 'item-123');
+    expect(onCopyItemToList).toHaveBeenCalledWith('list-1', 'item-123');
   });
 
   it('offers focus toggle and source deletion actions for focus items', () => {
