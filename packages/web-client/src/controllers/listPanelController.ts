@@ -1564,6 +1564,8 @@ export class ListPanelController {
         openOptions.listTargets = listTargets.map((target) => ({
           id: target.id,
           name: target.name,
+          ...(target.defaultTags ? { defaultTags: target.defaultTags } : {}),
+          ...(target.customFields ? { customFields: target.customFields } : {}),
         }));
       }
       if (mode === 'edit') {

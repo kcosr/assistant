@@ -1937,7 +1937,6 @@ if (!registry || typeof registry.registerPanel !== 'function') {
         if (
           root.querySelector('.collection-search-dropdown-container.open') ||
           root.querySelector('.collection-list-actions-menu.open') ||
-          root.querySelector('.collection-list-actions-submenu.open') ||
           root.querySelector('.panel-chrome-instance-menu.open')
         ) {
           return true;
@@ -2201,6 +2200,7 @@ if (!registry || typeof registry.registerPanel !== 'function') {
               availableTags: [],
               defaultTags: selectedList.defaultTags ?? [],
               customFields: selectedList.customFields ?? [],
+              listTargets: [],
             },
           };
         },

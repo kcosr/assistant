@@ -41,6 +41,8 @@ export interface ListItemEditorDialogOptions {
 export interface ListItemEditorListTarget {
   id: string;
   name: string;
+  defaultTags?: string[];
+  customFields?: ListCustomFieldDefinition[];
 }
 
 export interface ListItemEditorDialogOpenOptions {
@@ -1500,7 +1502,39 @@ export class ListItemEditorDialog {
       const notes = notesInput.value.trim();
       const tags = applyPinnedTag(selectedTags, pinnedCheckbox.checked);
 
-      const customFieldValues = customFieldsSection.getValues();
+      let customFieldValues = customFieldsSection.getValues();
+      const selectedTarget = listTargets.find((target) => target.id === selectedListId) ?? null;
+      if (
+        selectedListId !== initialSelectedListId &&
+        selectedTarget?.customFields !== undefined
+      ) {
+        const allowedKeys = new Set(
+          selectedTarget.customFields
+            .map((field) => field?.key)
+            .filter((key): key is string => typeof key === 'string' && key.length > 0),
+        );
+        const filteredValues: Record<string, unknown> = {};
+        for (const [key, value] of Object.entries(customFieldValues)) {
+          if (allowedKeys.has(key)) {
+            filteredValues[key] = value;
+          } else if (mode === 'edit') {
+            filteredValues[key] = null;
+          }
+        }
+        if (
+          mode === 'edit' &&
+          item?.customFields &&
+          typeof item.customFields === 'object' &&
+          !Array.isArray(item.customFields)
+        ) {
+          for (const key of Object.keys(item.customFields as Record<string, unknown>)) {
+            if (!allowedKeys.has(key)) {
+              filteredValues[key] = null;
+            }
+          }
+        }
+        customFieldValues = filteredValues;
+      }
 
       const payload: {
         title: string;

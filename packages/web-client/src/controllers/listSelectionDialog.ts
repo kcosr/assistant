@@ -39,9 +39,11 @@ export function openListSelectionDialog(
     dialog.setAttribute('aria-modal', 'true');
 
     const titleEl = document.createElement('h3');
+    titleEl.id = `list-selection-title-${Math.random().toString(36).slice(2)}`;
     titleEl.className = 'confirm-dialog-title';
     titleEl.textContent = options.title;
     dialog.appendChild(titleEl);
+    dialog.setAttribute('aria-labelledby', titleEl.id);
 
     if (options.message) {
       const messageEl = document.createElement('p');
@@ -54,12 +56,14 @@ export function openListSelectionDialog(
     searchInput.type = 'search';
     searchInput.className = 'list-selection-search-input';
     searchInput.placeholder = options.searchPlaceholder ?? 'Search lists';
+    searchInput.setAttribute('aria-label', options.searchPlaceholder ?? 'Search lists');
     searchInput.autocomplete = 'off';
     dialog.appendChild(searchInput);
 
     const listEl = document.createElement('div');
     listEl.className = 'list-selection-list';
     listEl.setAttribute('role', 'listbox');
+    listEl.setAttribute('aria-label', 'Lists');
     dialog.appendChild(listEl);
 
     const buttons = document.createElement('div');
@@ -168,6 +172,7 @@ export function openListSelectionDialog(
         button.setAttribute('aria-selected', selected ? 'true' : 'false');
         if (selected) {
           button.classList.add('selected');
+          button.scrollIntoView?.({ block: 'nearest' });
         }
 
         const label = document.createElement('span');

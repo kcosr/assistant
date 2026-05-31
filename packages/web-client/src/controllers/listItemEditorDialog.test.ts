@@ -207,6 +207,65 @@ describe('ListItemEditorDialog tag chips', () => {
     expect(createListItem.mock.calls[0]?.[0]).toBe('work');
   });
 
+  it('does not submit custom fields that are not defined on a changed add target', async () => {
+    const createListItem = vi.fn<ListItemEditorDialogOptions['createListItem']>(
+      async () => true,
+    );
+
+    const dialog = new ListItemEditorDialog({
+      dialogManager: createDialogManager(),
+      setStatus: vi.fn(),
+      recentUserItemUpdates: new Set<string>(),
+      userUpdateTimeoutMs: 1000,
+      createListItem,
+      updateListItem: vi.fn(async () => true),
+    });
+
+    dialog.open('add', 'today', undefined, {
+      customFields: [{ key: 'priority', label: 'Priority', type: 'text' }],
+      listTargets: [
+        {
+          id: 'today',
+          name: 'Today',
+          customFields: [{ key: 'priority', label: 'Priority', type: 'text' }],
+        },
+        {
+          id: 'work',
+          name: 'Work',
+          customFields: [{ key: 'estimate', label: 'Estimate', type: 'number' }],
+        },
+      ],
+    });
+
+    const listSelect = document.querySelector<HTMLSelectElement>('.list-item-target-select');
+    expect(listSelect).not.toBeNull();
+    if (!listSelect) return;
+    listSelect.value = 'work';
+    listSelect.dispatchEvent(new Event('change', { bubbles: true }));
+
+    const titleInput = document.querySelector<HTMLInputElement>(
+      '.list-item-form input.list-item-form-input',
+    );
+    const priorityInput = document.querySelector<HTMLInputElement>(
+      '.list-item-custom-field-row input[type="text"]',
+    );
+    expect(titleInput).not.toBeNull();
+    expect(priorityInput).not.toBeNull();
+    if (!titleInput || !priorityInput) return;
+    titleInput.value = 'Moved before create';
+    priorityInput.value = 'High';
+
+    document
+      .querySelector<HTMLFormElement>('.list-item-form')
+      ?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+
+    await Promise.resolve();
+
+    expect(createListItem).toHaveBeenCalledTimes(1);
+    expect(createListItem.mock.calls[0]?.[0]).toBe('work');
+    expect(createListItem.mock.calls[0]?.[1]['customFields']).toEqual({});
+  });
+
   it('submits edited items with a changed target list', async () => {
     const updateListItem = vi.fn<ListItemEditorDialogOptions['updateListItem']>(
       async () => true,
@@ -249,6 +308,65 @@ describe('ListItemEditorDialog tag chips', () => {
     expect(updateListItem).toHaveBeenCalledTimes(1);
     const updates = updateListItem.mock.calls[0]?.[2];
     expect(updates?.['targetListId']).toBe('work');
+  });
+
+  it('clears custom fields that are not defined on a changed edit target', async () => {
+    const updateListItem = vi.fn<ListItemEditorDialogOptions['updateListItem']>(
+      async () => true,
+    );
+
+    const dialog = new ListItemEditorDialog({
+      dialogManager: createDialogManager(),
+      setStatus: vi.fn(),
+      recentUserItemUpdates: new Set<string>(),
+      userUpdateTimeoutMs: 1000,
+      createListItem: vi.fn(async () => true),
+      updateListItem,
+    });
+
+    dialog.open(
+      'edit',
+      'today',
+      {
+        id: 'item-1',
+        title: 'Existing item',
+        tags: [],
+        customFields: { priority: 'High' },
+      },
+      {
+        customFields: [{ key: 'priority', label: 'Priority', type: 'text' }],
+        initialCustomFieldValues: { priority: 'High' },
+        listTargets: [
+          {
+            id: 'today',
+            name: 'Today',
+            customFields: [{ key: 'priority', label: 'Priority', type: 'text' }],
+          },
+          {
+            id: 'work',
+            name: 'Work',
+            customFields: [{ key: 'estimate', label: 'Estimate', type: 'number' }],
+          },
+        ],
+      },
+    );
+
+    const listSelect = document.querySelector<HTMLSelectElement>('.list-item-target-select');
+    expect(listSelect).not.toBeNull();
+    if (!listSelect) return;
+    listSelect.value = 'work';
+    listSelect.dispatchEvent(new Event('change', { bubbles: true }));
+
+    document
+      .querySelector<HTMLFormElement>('.list-item-form')
+      ?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+
+    await Promise.resolve();
+
+    expect(updateListItem).toHaveBeenCalledTimes(1);
+    const updates = updateListItem.mock.calls[0]?.[2];
+    expect(updates?.['targetListId']).toBe('work');
+    expect(updates?.['customFields']).toEqual({ priority: null });
   });
 
   it('uses a textarea for markdown text custom fields', async () => {
