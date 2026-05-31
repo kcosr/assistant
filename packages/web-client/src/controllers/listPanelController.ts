@@ -308,7 +308,11 @@ export class ListPanelController {
     });
 
     const tableOptions: ListPanelTableControllerOptions = {
-      icons: { moreVertical: options.icons.moreVertical, pin: options.icons.pin },
+      icons: {
+        moreVertical: options.icons.moreVertical,
+        eye: options.icons.eye,
+        pin: options.icons.pin,
+      },
       renderTags: options.renderTags,
       recentUserItemUpdates: options.recentUserItemUpdates,
       userUpdateTimeoutMs: options.userUpdateTimeoutMs,

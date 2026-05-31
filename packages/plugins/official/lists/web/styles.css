@@ -2615,6 +2615,14 @@ body.list-row-dragging .list-item-row * {
   color: var(--color-text-primary);
 }
 
+.list-item-menu-trigger-focused {
+  color: var(--color-accent-primary);
+}
+
+.list-item-menu-trigger-focused:hover {
+  color: var(--color-accent-primary);
+}
+
 .collection-note-content {
   margin-top: var(--spacing-xs);
 }
