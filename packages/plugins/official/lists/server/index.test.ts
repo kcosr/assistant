@@ -8,7 +8,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { ToolContext } from '../../../../agent-server/src/tools';
 import manifestJson from '../manifest.json';
 import { createPlugin } from './index';
-import type { ListDefinition, ListItem } from './types';
+import type { FocusListItem, ListDefinition, ListItem } from './types';
 
 function createTempDataDir(): string {
   return path.join(os.tmpdir(), `lists-plugin-test-${Date.now()}-${Math.random().toString(16)}`);
@@ -461,6 +461,91 @@ describe('lists plugin operations', () => {
       listId: 'reading',
       itemId: item.id,
     });
+  });
+
+  it('exposes a virtual focus list backed by source list items', async () => {
+    const dataDir = createTempDataDir();
+    const plugin = createTestPlugin();
+
+    await plugin.initialize(dataDir);
+
+    const broadcastToAll = vi.fn();
+    const ctx: ToolContext = {
+      ...createTestContext(),
+      sessionHub: { broadcastToAll } as ToolContext['sessionHub'],
+    };
+    const ops = plugin.operations;
+    if (!ops) {
+      throw new Error('Expected operations to be defined');
+    }
+
+    await ops.create({ id: 'work', name: 'Work' }, ctx);
+    await ops.create({ id: 'home', name: 'Home' }, ctx);
+    const workItem = (await ops['item-add'](
+      { listId: 'work', title: 'Ship feature' },
+      ctx,
+    )) as ListItem;
+    const homeItem = (await ops['item-add'](
+      { listId: 'home', title: 'Pay bills' },
+      ctx,
+    )) as ListItem;
+
+    const focusList = (await ops['focus-get']({}, ctx)) as ListDefinition;
+    expect(focusList).toMatchObject({
+      id: '__focus__',
+      name: 'Focus',
+    });
+
+    await ops['focus-add']({ itemId: homeItem.id }, ctx);
+    await ops['focus-add']({ itemId: workItem.id, position: 0 }, ctx);
+
+    let focusItems = (await ops['focus-items']({}, ctx)) as FocusListItem[];
+    expect(focusItems.map((item) => item.id)).toEqual([workItem.id, homeItem.id]);
+    expect(focusItems.map((item) => item.sourceListName)).toEqual(['Work', 'Home']);
+
+    await ops['focus-update']({ itemId: homeItem.id, position: 0 }, ctx);
+
+    focusItems = (await ops['focus-items']({}, ctx)) as FocusListItem[];
+    expect(focusItems.map((item) => item.id)).toEqual([homeItem.id, workItem.id]);
+    expect(focusItems[0]).toMatchObject({
+      id: homeItem.id,
+      listId: 'home',
+      sourceListId: 'home',
+      position: 0,
+    });
+
+    await ops['focus-remove']({ itemId: homeItem.id }, ctx);
+    expect((await ops['focus-items']({}, ctx)) as FocusListItem[]).toHaveLength(1);
+    expect(
+      (await ops['item-get']({ id: homeItem.id, listId: 'home' }, ctx)) as ListItem,
+    ).toMatchObject({
+      id: homeItem.id,
+      title: 'Pay bills',
+    });
+
+    const showResult = (await ops.show({ id: '__focus__', panelId: 'lists-1' }, ctx)) as {
+      ok: true;
+      panelId: string;
+    };
+    expect(showResult).toEqual({ ok: true, panelId: 'lists-1' });
+    expect(broadcastToAll).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'panel_event',
+        panelId: '*',
+        panelType: 'lists',
+        payload: expect.objectContaining({
+          type: 'panel_update',
+          listId: '__focus__',
+          action: 'focus_updated',
+          refresh: true,
+        }),
+      }),
+    );
+
+    if (plugin.shutdown) {
+      await plugin.shutdown();
+    }
+    await fs.rm(dataDir, { recursive: true, force: true });
   });
 
   it('defaults items-list to 100 items', async () => {

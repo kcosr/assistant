@@ -31,6 +31,7 @@ export interface CollectionDropdownControllerOptions {
   getActiveItemReference: () => CollectionReference | null;
   updateSelection: (reference: CollectionReference | null) => void;
   selectItem: (item: CollectionReference | null) => Promise<void> | void;
+  renderItemContent?: (itemEl: HTMLElement, item: CollectionItemSummary) => void;
   renderItemActions?: (actionsEl: HTMLElement, item: CollectionItemSummary) => void;
 }
 
@@ -183,6 +184,9 @@ export class CollectionDropdownController {
       onSelectItem: (itemEl) => {
         this.selectDropdownItem(itemEl);
       },
+      ...(this.options.renderItemContent
+        ? { renderItemContent: this.options.renderItemContent }
+        : {}),
       ...(renderItemActions ? { renderItemActions } : {}),
     });
 

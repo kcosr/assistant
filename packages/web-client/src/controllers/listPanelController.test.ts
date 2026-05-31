@@ -33,6 +33,7 @@ describe('ListPanelController keyboard shortcuts', () => {
         trash: '',
         moreVertical: '',
         x: '',
+        eye: '',
         clock: '',
         clockOff: '',
         moveTop: '',
@@ -102,6 +103,7 @@ describe('ListPanelController keyboard shortcuts', () => {
         trash: '',
         moreVertical: '',
         x: '',
+        eye: '',
         clock: '',
         clockOff: '',
         moveTop: '',
@@ -187,6 +189,7 @@ describe('ListPanelController keyboard shortcuts', () => {
         trash: '',
         moreVertical: '',
         x: '',
+        eye: '',
         clock: '',
         clockOff: '',
         moveTop: '',
@@ -278,6 +281,7 @@ describe('ListPanelController keyboard shortcuts', () => {
         trash: '',
         moreVertical: '',
         x: '',
+        eye: '',
         clock: '',
         clockOff: '',
         moveTop: '',
@@ -370,6 +374,7 @@ describe('ListPanelController keyboard shortcuts', () => {
         trash: '',
         moreVertical: '',
         x: '',
+        eye: '',
         clock: '',
         clockOff: '',
         moveTop: '',
@@ -453,6 +458,7 @@ describe('ListPanelController keyboard shortcuts', () => {
         trash: '',
         moreVertical: '',
         x: '',
+        eye: '',
         clock: '',
         clockOff: '',
         moveTop: '',
@@ -537,6 +543,7 @@ describe('ListPanelController keyboard shortcuts', () => {
           trash: '',
           moreVertical: '',
           x: '',
+          eye: '',
           clock: '',
           clockOff: '',
           moveTop: '',
@@ -630,6 +637,7 @@ describe('ListPanelController keyboard shortcuts', () => {
         trash: '',
         moreVertical: '',
         x: '',
+        eye: '',
         clock: '',
         clockOff: '',
         moveTop: '',
@@ -702,6 +710,7 @@ describe('ListPanelController keyboard shortcuts', () => {
         trash: '',
         moreVertical: '',
         x: '',
+        eye: '',
         clock: '',
         clockOff: '',
         moveTop: '',
@@ -788,6 +797,7 @@ describe('ListPanelController add dialog', () => {
         trash: '',
         moreVertical: '',
         x: '',
+        eye: '',
         clock: '',
         clockOff: '',
         moveTop: '',
@@ -861,6 +871,499 @@ describe('ListPanelController add dialog', () => {
   });
 });
 
+describe('ListPanelController focus view', () => {
+  beforeEach(() => {
+    document.body.innerHTML = '';
+  });
+
+  const buildController = (options: Partial<ListPanelControllerOptions> = {}) => {
+    const bodyEl = document.createElement('div');
+    document.body.appendChild(bodyEl);
+    const baseOptions: ListPanelControllerOptions = {
+      bodyEl,
+      getSearchQuery: () => '',
+      getSearchTagController: () => null,
+      getActiveInstanceId: () => 'default',
+      icons: {
+        copy: '',
+        duplicate: '',
+        move: '',
+        plus: '',
+        edit: '',
+        trash: '',
+        moreVertical: '',
+        x: '',
+        eye: '',
+        clock: '',
+        clockOff: '',
+        moveTop: '',
+        moveBottom: '',
+        pin: '',
+      },
+      renderTags: () => null,
+      setStatus: () => undefined,
+      dialogManager: new DialogManager(),
+      contextMenuManager: new ContextMenuManager({
+        isSessionPinned: () => false,
+        pinSession: () => undefined,
+        clearHistory: () => undefined,
+        deleteSession: () => undefined,
+        renameSession: () => undefined,
+      }),
+      recentUserItemUpdates: new Set<string>(),
+      userUpdateTimeoutMs: 1000,
+      getSelectedItemIds: () => [],
+      getSelectedItemCount: () => 0,
+      onSelectionChange: () => undefined,
+      getMoveTargetLists: () => [],
+      openListMetadataDialog: () => undefined,
+      getListColumnPreferences: () => null,
+      updateListColumnPreferences: () => undefined,
+      getSortState: () => null,
+      updateSortState: () => undefined,
+      getTimelineField: () => null,
+      updateTimelineField: () => undefined,
+      getFocusMarkerItemId: () => null,
+      getFocusMarkerExpanded: () => false,
+      updateFocusMarker: () => undefined,
+      updateFocusMarkerExpanded: () => undefined,
+      setRightControls: () => undefined,
+    };
+    return new ListPanelController({ ...baseOptions, ...options });
+  };
+
+  const submitEditDialogTitle = async (title: string) => {
+    const form = document.querySelector('form.list-item-form') as HTMLFormElement | null;
+    const titleInput = form?.querySelector('input.list-item-form-input') as
+      | HTMLInputElement
+      | null;
+    expect(form).not.toBeNull();
+    expect(titleInput).not.toBeNull();
+    if (!form || !titleInput) {
+      return;
+    }
+    titleInput.value = title;
+    form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  };
+
+  it('routes focus ordering, source updates, removal, and source deletion separately', async () => {
+    const callOperation = vi.fn(
+      async () => ({} as unknown),
+    ) as NonNullable<ListPanelControllerOptions['callOperation']>;
+    const controller = buildController({ callOperation });
+    controller.render('__focus__', {
+      id: '__focus__',
+      name: 'Focus',
+      viewKind: 'focus',
+      items: [
+        {
+          id: 'item-1',
+          title: 'Focused task',
+          position: 1,
+          sourceListId: 'work',
+          sourceListName: 'Work',
+        },
+      ],
+    });
+
+    const internal = controller as unknown as {
+      updateListItem: (
+        listId: string,
+        itemId: string,
+        updates: Record<string, unknown>,
+      ) => Promise<boolean>;
+      deleteListItem: (listId: string, itemId: string) => Promise<boolean>;
+      deleteSourceListItem: (itemId: string) => Promise<boolean>;
+    };
+
+    await expect(internal.updateListItem('__focus__', 'item-1', { position: 0 })).resolves.toBe(
+      true,
+    );
+    expect(callOperation).toHaveBeenLastCalledWith('focus-update', {
+      itemId: 'item-1',
+      position: 0,
+    });
+
+    await expect(
+      internal.updateListItem('__focus__', 'item-1', { completed: true }),
+    ).resolves.toBe(true);
+    expect(callOperation).toHaveBeenLastCalledWith('item-update', {
+      listId: 'work',
+      id: 'item-1',
+      completed: true,
+    });
+
+    await expect(internal.deleteListItem('__focus__', 'item-1')).resolves.toBe(true);
+    expect(callOperation).toHaveBeenLastCalledWith('focus-remove', { itemId: 'item-1' });
+
+    await expect(internal.deleteSourceListItem('item-1')).resolves.toBe(true);
+    expect(callOperation).toHaveBeenLastCalledWith('item-remove', {
+      listId: 'work',
+      id: 'item-1',
+    });
+  });
+
+  it('does not remove focus when editing a non-focused source item', async () => {
+    const callOperation = vi.fn(
+      async () => ({} as unknown),
+    ) as NonNullable<ListPanelControllerOptions['callOperation']>;
+    const controller = buildController({ callOperation });
+    controller.render('today', {
+      id: 'today',
+      name: 'Today',
+      items: [{ id: 'item-1', title: 'Original', focused: false }],
+    });
+
+    const internal = controller as unknown as {
+      showListItemEditorDialog: (
+        mode: 'edit',
+        listId: string,
+        item: ListPanelItem,
+      ) => void;
+    };
+    internal.showListItemEditorDialog('edit', 'today', {
+      id: 'item-1',
+      title: 'Original',
+      focused: false,
+    });
+    await submitEditDialogTitle('Changed');
+
+    expect(callOperation).toHaveBeenCalledTimes(1);
+    expect(callOperation).toHaveBeenCalledWith(
+      'item-update',
+      expect.objectContaining({
+        listId: 'today',
+        id: 'item-1',
+        title: 'Changed',
+      }),
+    );
+    expect(callOperation).not.toHaveBeenCalledWith('focus-remove', { itemId: 'item-1' });
+  });
+
+  it('does not re-add focus when editing an already-focused source item', async () => {
+    const callOperation = vi.fn(
+      async () => ({} as unknown),
+    ) as NonNullable<ListPanelControllerOptions['callOperation']>;
+    const controller = buildController({ callOperation });
+    controller.render('today', {
+      id: 'today',
+      name: 'Today',
+      items: [{ id: 'item-1', title: 'Original', focused: true }],
+    });
+
+    const internal = controller as unknown as {
+      showListItemEditorDialog: (
+        mode: 'edit',
+        listId: string,
+        item: ListPanelItem,
+      ) => void;
+    };
+    internal.showListItemEditorDialog('edit', 'today', {
+      id: 'item-1',
+      title: 'Original',
+      focused: true,
+    });
+    await submitEditDialogTitle('Changed');
+
+    expect(callOperation).toHaveBeenCalledTimes(1);
+    expect(callOperation).toHaveBeenCalledWith(
+      'item-update',
+      expect.objectContaining({
+        listId: 'today',
+        id: 'item-1',
+        title: 'Changed',
+      }),
+    );
+    expect(callOperation).not.toHaveBeenCalledWith('focus-add', { itemId: 'item-1' });
+  });
+
+  it('bulk deletes source items from focus view', async () => {
+    const callOperation = vi.fn(
+      async () => ({} as unknown),
+    ) as NonNullable<ListPanelControllerOptions['callOperation']>;
+    const selectedIds = ['item-1', 'item-2'];
+    const controller = buildController({
+      callOperation,
+      getSelectedItemIds: () => selectedIds,
+      getSelectedItemCount: () => selectedIds.length,
+    });
+    controller.render('__focus__', {
+      id: '__focus__',
+      name: 'Focus',
+      viewKind: 'focus',
+      items: [
+        {
+          id: 'item-1',
+          title: 'First',
+          sourceListId: 'work',
+          sourceListName: 'Work',
+        },
+        {
+          id: 'item-2',
+          title: 'Second',
+          sourceListId: 'today',
+          sourceListName: 'Today',
+        },
+      ],
+    });
+
+    const internal = controller as unknown as {
+      showDeleteSelectedItemsConfirmation: (listId: string) => void;
+    };
+    internal.showDeleteSelectedItemsConfirmation('__focus__');
+
+    const title = document.querySelector<HTMLElement>('.confirm-dialog-title');
+    const message = document.querySelector<HTMLElement>('.confirm-dialog-message');
+    expect(title?.textContent).toBe('Delete Source Items');
+    expect(message?.textContent).toContain('Delete 2 selected source items');
+
+    document.querySelector<HTMLButtonElement>('.confirm-dialog-button.danger')?.click();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(callOperation).toHaveBeenNthCalledWith(1, 'item-remove', {
+      listId: 'work',
+      id: 'item-1',
+    });
+    expect(callOperation).toHaveBeenNthCalledWith(2, 'item-remove', {
+      listId: 'today',
+      id: 'item-2',
+    });
+  });
+
+  it('bulk removes selected items from Focus without deleting source items', async () => {
+    const callOperation = vi.fn(
+      async () => ({} as unknown),
+    ) as NonNullable<ListPanelControllerOptions['callOperation']>;
+    const selectedIds = ['item-1', 'item-2'];
+    const controller = buildController({
+      callOperation,
+      getSelectedItemIds: () => selectedIds,
+      getSelectedItemCount: () => selectedIds.length,
+    });
+    controller.render('__focus__', {
+      id: '__focus__',
+      name: 'Focus',
+      viewKind: 'focus',
+      items: [
+        {
+          id: 'item-1',
+          title: 'First',
+          sourceListId: 'work',
+          sourceListName: 'Work',
+        },
+        {
+          id: 'item-2',
+          title: 'Second',
+          sourceListId: 'today',
+          sourceListName: 'Today',
+        },
+      ],
+    });
+
+    const internal = controller as unknown as {
+      removeSelectedItemsFromFocus: (listId: string) => Promise<void>;
+    };
+    await internal.removeSelectedItemsFromFocus('__focus__');
+
+    expect(callOperation).toHaveBeenNthCalledWith(1, 'focus-remove', { itemId: 'item-1' });
+    expect(callOperation).toHaveBeenNthCalledWith(2, 'focus-remove', { itemId: 'item-2' });
+    expect(callOperation).not.toHaveBeenCalledWith(
+      'item-remove',
+      expect.objectContaining({ id: expect.any(String) }),
+    );
+  });
+
+  it('bulk adds selected source-list items to Focus without moving already-focused rows', async () => {
+    const callOperation = vi.fn(
+      async () => ({} as unknown),
+    ) as NonNullable<ListPanelControllerOptions['callOperation']>;
+    const selectedIds = ['item-1', 'item-2'];
+    const controller = buildController({
+      callOperation,
+      getSelectedItemIds: () => selectedIds,
+      getSelectedItemCount: () => selectedIds.length,
+    });
+    controller.render('today', {
+      id: 'today',
+      name: 'Today',
+      items: [
+        { id: 'item-1', title: 'Already focused', focused: true },
+        { id: 'item-2', title: 'New focus item', focused: false },
+      ],
+    });
+
+    const internal = controller as unknown as {
+      addSelectedItemsToFocus: () => Promise<void>;
+    };
+    await internal.addSelectedItemsToFocus();
+
+    expect(callOperation).toHaveBeenCalledTimes(1);
+    expect(callOperation).toHaveBeenCalledWith('focus-add', { itemId: 'item-2' });
+  });
+
+  it('bulk removes selected focused source-list items from Focus', async () => {
+    const callOperation = vi.fn(
+      async () => ({} as unknown),
+    ) as NonNullable<ListPanelControllerOptions['callOperation']>;
+    const selectedIds = ['item-1', 'item-2'];
+    const controller = buildController({
+      callOperation,
+      getSelectedItemIds: () => selectedIds,
+      getSelectedItemCount: () => selectedIds.length,
+    });
+    controller.render('today', {
+      id: 'today',
+      name: 'Today',
+      items: [
+        { id: 'item-1', title: 'Focused one', focused: true },
+        { id: 'item-2', title: 'Focused two', focused: true },
+      ],
+    });
+
+    const internal = controller as unknown as {
+      removeSelectedItemsFromFocus: (listId: string) => Promise<void>;
+    };
+    await internal.removeSelectedItemsFromFocus('today');
+
+    expect(callOperation).toHaveBeenNthCalledWith(1, 'focus-remove', { itemId: 'item-1' });
+    expect(callOperation).toHaveBeenNthCalledWith(2, 'focus-remove', { itemId: 'item-2' });
+  });
+
+  it('shows both focus selection actions for any selected rows', () => {
+    let selectedIds: string[] = [];
+    const controller = buildController({
+      getSelectedItemIds: () => selectedIds,
+      getSelectedItemCount: () => selectedIds.length,
+    });
+    const controls = controller.render('today', {
+      id: 'today',
+      name: 'Today',
+      items: [
+        { id: 'item-1', title: 'Focused one', focused: true },
+        { id: 'item-2', title: 'Not focused', focused: false },
+      ],
+    });
+    for (const element of controls.rightControls) {
+      document.body.appendChild(element);
+    }
+
+    const internal = controller as unknown as {
+      handleSelectionChange: () => void;
+    };
+    const addButton = document.querySelector<HTMLElement>(
+      '[data-role="add-focus-selection-button"]',
+    );
+    const removeButton = document.querySelector<HTMLElement>(
+      '[data-role="remove-focus-selection-button"]',
+    );
+
+    selectedIds = ['item-1'];
+    internal.handleSelectionChange();
+    expect(addButton?.classList.contains('visible')).toBe(true);
+    expect(removeButton?.classList.contains('visible')).toBe(true);
+
+    selectedIds = ['item-2'];
+    internal.handleSelectionChange();
+    expect(addButton?.classList.contains('visible')).toBe(true);
+    expect(removeButton?.classList.contains('visible')).toBe(true);
+
+    selectedIds = ['item-1', 'item-2'];
+    internal.handleSelectionChange();
+    expect(addButton?.classList.contains('visible')).toBe(true);
+    expect(removeButton?.classList.contains('visible')).toBe(true);
+  });
+
+  it('adds newly created focus-view items to the selected source list and Focus', async () => {
+    const callOperation = vi.fn(async (operation) => {
+      if (operation === 'item-add') {
+        return { id: 'new-item', title: 'New task' } as unknown;
+      }
+      return {} as unknown;
+    }) as NonNullable<ListPanelControllerOptions['callOperation']>;
+    const controller = buildController({ callOperation });
+    controller.render('__focus__', {
+      id: '__focus__',
+      name: 'Focus',
+      viewKind: 'focus',
+      items: [],
+    });
+
+    const internal = controller as unknown as {
+      createListItem: (listId: string, item: Record<string, unknown>) => Promise<boolean>;
+    };
+
+    await expect(internal.createListItem('work', { title: 'New task' })).resolves.toBe(true);
+    expect(callOperation).toHaveBeenNthCalledWith(1, 'item-add', {
+      listId: 'work',
+      title: 'New task',
+    });
+    expect(callOperation).toHaveBeenNthCalledWith(2, 'focus-add', {
+      itemId: 'new-item',
+    });
+  });
+
+  it('routes the focus header add button through the source-list picker flow', async () => {
+    const callOperation = vi.fn(async (operation) => {
+      if (operation === 'item-add') {
+        return { id: 'new-item', title: 'New task' } as unknown;
+      }
+      return {} as unknown;
+    }) as NonNullable<ListPanelControllerOptions['callOperation']>;
+    const resolveAddItemTarget = vi.fn(async () => ({
+      listId: 'work',
+      instanceId: 'default',
+    }));
+    const controller = buildController({ callOperation, resolveAddItemTarget });
+    const controls = controller.render('__focus__', {
+      id: '__focus__',
+      name: 'Focus',
+      viewKind: 'focus',
+      items: [],
+    });
+    for (const element of controls.rightControls) {
+      document.body.appendChild(element);
+    }
+
+    const addButton = document.querySelector<HTMLButtonElement>('.collection-list-add-button');
+    expect(addButton).not.toBeNull();
+    addButton?.click();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(resolveAddItemTarget).toHaveBeenCalledTimes(1);
+
+    const form = document.querySelector('form.list-item-form') as HTMLFormElement | null;
+    const titleInput = form?.querySelector('input.list-item-form-input') as
+      | HTMLInputElement
+      | null;
+
+    expect(form).not.toBeNull();
+    expect(titleInput).not.toBeNull();
+
+    if (!form || !titleInput) {
+      return;
+    }
+
+    titleInput.value = 'New task';
+    form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(callOperation).toHaveBeenNthCalledWith(
+      1,
+      'item-add',
+      expect.objectContaining({
+        listId: 'work',
+        title: 'New task',
+        instanceId: 'default',
+      }),
+    );
+    expect(callOperation).toHaveBeenNthCalledWith(2, 'focus-add', {
+      itemId: 'new-item',
+      instanceId: 'default',
+    });
+  });
+});
+
 describe('ListPanelController clipboard shortcuts', () => {
   beforeEach(() => {
     __TEST_ONLY.clearListClipboard();
@@ -893,6 +1396,7 @@ describe('ListPanelController clipboard shortcuts', () => {
         trash: '',
         moreVertical: '',
         x: '',
+        eye: '',
         clock: '',
         clockOff: '',
         moveTop: '',

@@ -140,6 +140,51 @@ describe('ListPanelTableController double-click edit', () => {
   });
 });
 
+describe('ListPanelTableController focus source labels', () => {
+  const recentUserItemUpdates = new Set<string>();
+
+  beforeEach(() => {
+    document.body.innerHTML = '';
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    document.body.innerHTML = '';
+  });
+
+  it('renders focus source list names on a separate title line', () => {
+    const controller = new ListPanelTableController({
+      icons: { moreVertical: '', pin: '' },
+      renderTags: () => null,
+      recentUserItemUpdates,
+      userUpdateTimeoutMs: 1000,
+      getSelectedItemCount: () => 0,
+      showListItemMenu: vi.fn(),
+      updateListItem: vi.fn(async () => true),
+    });
+
+    const { tbody } = controller.renderTable({
+      listId: '__focus__',
+      sortedItems: [{ id: 'item1', title: 'Item 1', sourceListName: 'Today' }],
+      showUrlColumn: false,
+      showNotesColumn: false,
+      showTagsColumn: false,
+      showAddedColumn: false,
+      showUpdatedColumn: false,
+      showTouchedColumn: false,
+      rerender: () => {},
+    });
+
+    const titleContent = tbody.querySelector<HTMLElement>('.list-item-title-content');
+    const titleMain = titleContent?.querySelector<HTMLElement>(':scope > .list-item-title-main');
+    const source = titleContent?.querySelector<HTMLElement>(':scope > .list-item-source');
+
+    expect(titleMain?.textContent).toBe('Item 1');
+    expect(source?.textContent).toBe('Today');
+    expect(Array.from(titleContent?.children ?? [])).toEqual([titleMain, source]);
+  });
+});
+
 describe('ListPanelTableController drag reorder and selection', () => {
   const listId = 'list1';
 

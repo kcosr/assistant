@@ -943,11 +943,9 @@ function resolveClientSessionLabel(
       scheduleSnapshotRetry();
 
       const unsubscribeSessionSummaries = host.subscribeContext('session.summaries', () => {
-        console.info('[notifications] session summaries updated');
         render();
       });
       const unsubscribeAgentSummaries = host.subscribeContext('agent.summaries', () => {
-        console.info('[notifications] agent summaries updated');
         render();
       });
       const unsubscribeVoiceSettings = host.subscribeContext('voice.settings', (value) => {

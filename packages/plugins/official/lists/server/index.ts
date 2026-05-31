@@ -24,6 +24,7 @@ import type { ListCustomFieldDefinition, ListDefinition, ListItem } from './type
 type PluginFactoryArgs = { manifest: CombinedPluginManifest };
 
 const LIST_ID_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+const FOCUS_LIST_ID = '__focus__';
 
 function asObject(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
@@ -165,7 +166,8 @@ type ListsUpdateAction =
   | 'list_deleted'
   | 'item_added'
   | 'item_updated'
-  | 'item_removed';
+  | 'item_removed'
+  | 'focus_updated';
 
 type ListsPanelUpdate = {
   instance_id: string;
@@ -209,6 +211,15 @@ function broadcastListsUpdateForAll(
   for (const listId of unique) {
     broadcastListsUpdate(ctx, { ...update, listId });
   }
+}
+
+function broadcastFocusUpdate(ctx: ToolContext, instanceId: string): void {
+  broadcastListsUpdate(ctx, {
+    instance_id: instanceId,
+    listId: FOCUS_LIST_ID,
+    action: 'focus_updated',
+    refresh: true,
+  });
 }
 
 export function createPlugin(_options: PluginFactoryArgs): PluginModule {
@@ -514,14 +525,64 @@ export function createPlugin(_options: PluginFactoryArgs): PluginModule {
         }
         return list;
       },
+      'focus-get': async (args): Promise<unknown> => {
+        const parsed = asObject(args);
+        const { store: listsStore } = await resolveStore(parsed);
+        return listsStore.getFocusList();
+      },
+      'focus-items': async (args): Promise<unknown> => {
+        const parsed = asObject(args);
+        const { store: listsStore } = await resolveStore(parsed);
+        return listsStore.listFocusItems();
+      },
+      'focus-add': async (args, ctx): Promise<unknown> => {
+        const parsed = asObject(args);
+        const { instanceId, store: listsStore } = await resolveStore(parsed);
+        const itemId = requireNonEmptyString(parsed['itemId'], 'itemId');
+        const position = parsed['position'];
+        if (position !== undefined && typeof position !== 'number') {
+          throw new ToolError('invalid_arguments', 'position must be a number');
+        }
+        const entry = await listsStore.addFocusItem({
+          itemId,
+          ...(position !== undefined ? { position: position as number } : {}),
+        });
+        broadcastFocusUpdate(ctx, instanceId);
+        return entry;
+      },
+      'focus-update': async (args, ctx): Promise<unknown> => {
+        const parsed = asObject(args);
+        const { instanceId, store: listsStore } = await resolveStore(parsed);
+        const itemId = requireNonEmptyString(parsed['itemId'], 'itemId');
+        const position = parsed['position'];
+        if (position !== undefined && typeof position !== 'number') {
+          throw new ToolError('invalid_arguments', 'position must be a number');
+        }
+        const entry = await listsStore.updateFocusItem({
+          itemId,
+          ...(position !== undefined ? { position: position as number } : {}),
+        });
+        broadcastFocusUpdate(ctx, instanceId);
+        return entry;
+      },
+      'focus-remove': async (args, ctx): Promise<unknown> => {
+        const parsed = asObject(args);
+        const { instanceId, store: listsStore } = await resolveStore(parsed);
+        const itemId = requireNonEmptyString(parsed['itemId'], 'itemId');
+        await listsStore.removeFocusItem(itemId);
+        broadcastFocusUpdate(ctx, instanceId);
+        return { ok: true };
+      },
       show: async (args, ctx): Promise<{ ok: true; panelId: string }> => {
         const parsed = asObject(args);
         const { instanceId, store: listsStore } = await resolveStore(parsed);
         const id = requireNonEmptyString(parsed['id'], 'id');
         const panelId = requireNonEmptyString(parsed['panelId'], 'panelId');
-        const list = await listsStore.getList(id);
-        if (!list) {
-          throw new ToolError('list_not_found', `List not found: ${id}`);
+        if (id !== FOCUS_LIST_ID) {
+          const list = await listsStore.getList(id);
+          if (!list) {
+            throw new ToolError('list_not_found', `List not found: ${id}`);
+          }
         }
         const sessionHub = requireSessionHub(ctx);
         sessionHub.broadcastToAll({
@@ -1057,6 +1118,7 @@ export function createPlugin(_options: PluginFactoryArgs): PluginModule {
           itemId: updated.id,
           ...(position !== undefined ? { refresh: true } : {}),
         });
+        broadcastFocusUpdate(ctx, instanceId);
         return updated;
       },
       'item-remove': async (args, ctx): Promise<unknown> => {
@@ -1090,6 +1152,7 @@ export function createPlugin(_options: PluginFactoryArgs): PluginModule {
           itemId,
           refresh: true,
         });
+        broadcastFocusUpdate(ctx, instanceId);
         return { ok: true };
       },
       'item-touch': async (args, ctx): Promise<unknown> => {
@@ -1123,6 +1186,7 @@ export function createPlugin(_options: PluginFactoryArgs): PluginModule {
           item: updated,
           itemId: updated.id,
         });
+        broadcastFocusUpdate(ctx, instanceId);
         return updated;
       },
       'item-tags-add': async (args, ctx): Promise<unknown> => {
@@ -1162,6 +1226,7 @@ export function createPlugin(_options: PluginFactoryArgs): PluginModule {
           item: updated,
           itemId: updated.id,
         });
+        broadcastFocusUpdate(ctx, instanceId);
         return updated;
       },
       'item-tags-remove': async (args, ctx): Promise<unknown> => {
@@ -1203,6 +1268,7 @@ export function createPlugin(_options: PluginFactoryArgs): PluginModule {
           item: updated,
           itemId: updated.id,
         });
+        broadcastFocusUpdate(ctx, instanceId);
         return updated;
       },
       'item-copy': async (args, ctx): Promise<unknown> => {
@@ -1279,6 +1345,7 @@ export function createPlugin(_options: PluginFactoryArgs): PluginModule {
           itemId: moved.id,
           refresh: true,
         });
+        broadcastFocusUpdate(ctx, instanceId);
         return moved;
       },
       'items-bulk-update-tags': async (args, ctx): Promise<unknown> => {
@@ -1357,6 +1424,7 @@ export function createPlugin(_options: PluginFactoryArgs): PluginModule {
             results.push({ index, ok: false, error: message });
           }
         }
+        broadcastFocusUpdate(ctx, instanceId);
         return { results };
       },
       'items-bulk-move': async (args, ctx): Promise<unknown> => {
@@ -1411,6 +1479,7 @@ export function createPlugin(_options: PluginFactoryArgs): PluginModule {
           action: 'item_updated',
           refresh: true,
         });
+        broadcastFocusUpdate(ctx, instanceId);
         return { results };
       },
       'items-bulk-copy': async (args, ctx): Promise<unknown> => {
@@ -1533,6 +1602,7 @@ export function createPlugin(_options: PluginFactoryArgs): PluginModule {
           action: 'item_updated',
           refresh: true,
         });
+        broadcastFocusUpdate(ctx, instanceId);
         return { results };
       },
       'items-bulk-update-completed': async (args, ctx): Promise<unknown> => {
@@ -1570,6 +1640,7 @@ export function createPlugin(_options: PluginFactoryArgs): PluginModule {
           action: 'item_updated',
           refresh: true,
         });
+        broadcastFocusUpdate(ctx, instanceId);
         return { results };
       },
     },

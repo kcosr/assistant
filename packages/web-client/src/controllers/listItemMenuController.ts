@@ -9,6 +9,8 @@ export interface ListItemMenuControllerOptions {
     copy: string;
     move: string;
     duplicate: string;
+    x: string;
+    eye: string;
     clock: string;
     clockOff: string;
     moveTop: string;
@@ -28,6 +30,8 @@ export interface ListItemMenuControllerOptions {
     options?: { initialMode?: 'quick' | 'review' },
   ) => void;
   onDeleteItem: (listId: string, itemId: string, title: string) => void;
+  onDeleteUnderlyingItem?: (listId: string, itemId: string, title: string) => void;
+  onToggleItemFocus?: (listId: string, itemId: string, focused: boolean) => void;
   onMoveItemToList: (listId: string, itemId: string, targetListId: string) => void;
   onCopyItemToList: (listId: string, itemId: string, targetListId: string) => void;
   onTouchItem: (listId: string, itemId: string) => void;
@@ -285,14 +289,40 @@ export class ListItemMenuController {
     });
     menu.appendChild(copyButton);
 
-    addMenuButton(
-      this.options.icons.trash,
-      'Delete item',
-      () => {
-        this.options.onDeleteItem(listId, itemId, item.title);
-      },
-      'delete',
-    );
+    const isFocusItem = typeof item.sourceListId === 'string' && item.sourceListId.trim().length > 0;
+    if (this.options.onToggleItemFocus) {
+      const isFocused = isFocusItem || item.focused === true;
+      addMenuButton(
+        this.options.icons.eye,
+        isFocused ? 'Focused' : 'Add to Focus',
+        () => {
+          this.options.onToggleItemFocus?.(listId, itemId, isFocused);
+        },
+        isFocused ? 'focus-toggle active' : 'focus-toggle',
+      );
+    }
+
+    if (!isFocusItem) {
+      addMenuButton(
+        this.options.icons.trash,
+        'Delete item',
+        () => {
+          this.options.onDeleteItem(listId, itemId, item.title);
+        },
+        'delete',
+      );
+    }
+
+    if (isFocusItem && this.options.onDeleteUnderlyingItem) {
+      addMenuButton(
+        this.options.icons.trash,
+        'Delete source item',
+        () => {
+          this.options.onDeleteUnderlyingItem?.(listId, itemId, item.title);
+        },
+        'delete',
+      );
+    }
 
     document.body.appendChild(wrapper);
     this.options.contextMenuManager.setActiveMenu(wrapper);

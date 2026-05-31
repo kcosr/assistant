@@ -44,9 +44,23 @@ export interface ListItem {
   completedAt?: string; // ISO 8601 timestamp when completed
 }
 
+export interface FocusEntry {
+  itemId: string; // Foreign key to ListItem.id
+  position: number; // Zero-based position within the focus view
+  addedAt: string; // ISO 8601
+  updatedAt: string; // ISO 8601
+}
+
+export interface FocusListItem extends ListItem {
+  sourceListId: string;
+  sourceListName: string;
+  focusEntryId: string;
+}
+
 export interface ListsData {
   lists: ListDefinition[];
   items: ListItem[];
+  focusEntries?: FocusEntry[];
 }
 
 export interface ListSavedQuery {

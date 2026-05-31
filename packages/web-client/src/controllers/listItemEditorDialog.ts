@@ -47,6 +47,10 @@ export interface ListItemEditorDialogOpenOptions {
   insertAtTop?: boolean;
   /** Override initial editor mode for this dialog */
   initialMode?: ListItemEditorMode;
+  /** Whether the item should be in the virtual Focus list. */
+  focused?: boolean;
+  /** Show the Focus membership checkbox. */
+  showFocusToggle?: boolean;
 }
 
 type ListItemEditorMode = 'quick' | 'review';
@@ -598,6 +602,27 @@ export class ListItemEditorDialog {
     pinnedRow.appendChild(pinnedCheckbox);
     pinnedRow.appendChild(pinnedLabel);
     quickEditContainer.appendChild(pinnedRow);
+
+    let focusCheckbox: HTMLInputElement | null = null;
+    if (openOptions?.showFocusToggle) {
+      const focusRow = document.createElement('div');
+      focusRow.className = 'list-item-form-checkbox-row';
+
+      focusCheckbox = document.createElement('input');
+      focusCheckbox.type = 'checkbox';
+      focusCheckbox.id = `list-item-focused-${Math.random().toString(36).slice(2)}`;
+      focusCheckbox.className = 'list-item-form-checkbox';
+      focusCheckbox.checked = openOptions.focused === true;
+
+      const focusLabel = document.createElement('label');
+      focusLabel.htmlFor = focusCheckbox.id;
+      focusLabel.className = 'list-item-form-checkbox-label';
+      focusLabel.textContent = 'Focus';
+
+      focusRow.appendChild(focusCheckbox);
+      focusRow.appendChild(focusLabel);
+      quickEditContainer.appendChild(focusRow);
+    }
 
     // Insert at top checkbox (only shown in add mode)
     let insertAtTopCheckbox: HTMLInputElement | null = null;
@@ -1444,6 +1469,7 @@ export class ListItemEditorDialog {
         tags?: string[];
         customFields?: Record<string, unknown>;
         position?: number;
+        focused?: boolean;
       } = {
         title,
         url,
@@ -1469,6 +1495,9 @@ export class ListItemEditorDialog {
       // Add position:0 when "Insert at top" is checked
       if (insertAtTopCheckbox?.checked) {
         payload.position = 0;
+      }
+      if (focusCheckbox) {
+        payload.focused = focusCheckbox.checked;
       }
 
       if (mode === 'add') {

@@ -36,6 +36,8 @@ describe('renderListPanelHeader', () => {
       onDeleteSelection: vi.fn(),
       onMoveSelectionToTop: vi.fn(),
       onMoveSelectionToBottom: vi.fn(),
+      onAddSelectionToFocus: vi.fn(),
+      onRemoveSelectionFromFocus: vi.fn(),
       onAddItem: vi.fn(),
       onToggleView: vi.fn(),
       onEditMetadata,
@@ -92,6 +94,8 @@ describe('renderListPanelHeader', () => {
       onDeleteSelection: vi.fn(),
       onMoveSelectionToTop: vi.fn(),
       onMoveSelectionToBottom: vi.fn(),
+      onAddSelectionToFocus: vi.fn(),
+      onRemoveSelectionFromFocus: vi.fn(),
       onAddItem: vi.fn(),
       onToggleView: vi.fn(),
       onEditMetadata: vi.fn(),
@@ -163,6 +167,8 @@ describe('renderListPanelHeader', () => {
       onDeleteSelection: vi.fn(),
       onMoveSelectionToTop: vi.fn(),
       onMoveSelectionToBottom: vi.fn(),
+      onAddSelectionToFocus: vi.fn(),
+      onRemoveSelectionFromFocus: vi.fn(),
       onAddItem: vi.fn(),
       onToggleView: vi.fn(),
       onEditMetadata: vi.fn(),
@@ -192,9 +198,75 @@ describe('renderListPanelHeader', () => {
       'Move to Bottom',
       'Move to List',
       'Copy',
+      'Add to Focus',
+      'Remove from Focus',
       'Clear',
       'Delete',
     ]);
+  });
+
+  it('invokes focus-selection callback from the selection menu', () => {
+    const data: ListPanelData = {
+      id: 'list1',
+      name: 'My List',
+    };
+    const onAddSelectionToFocus = vi.fn();
+    const onRemoveSelectionFromFocus = vi.fn();
+
+    const { header, controls } = renderListPanelHeader({
+      listId: 'list1',
+      data,
+      selectedCount: 2,
+      icons: {
+        plus: '',
+        trash: '<svg class="trash"></svg>',
+        edit: '<svg></svg>',
+      },
+      showAllColumns: false,
+      timelineField: null,
+      focusMarkerItemId: null,
+      isSortedByPosition: true,
+      customFields: [],
+      onSelectVisible: vi.fn(),
+      onSelectAll: vi.fn(),
+      onClearSelection: vi.fn(),
+      onDeleteSelection: vi.fn(),
+      onMoveSelectionToTop: vi.fn(),
+      onMoveSelectionToBottom: vi.fn(),
+      onAddSelectionToFocus,
+      onRemoveSelectionFromFocus,
+      onAddItem: vi.fn(),
+      onToggleView: vi.fn(),
+      onEditMetadata: vi.fn(),
+      onTimelineFieldChange: vi.fn(),
+      onFocusViewToggle: vi.fn(),
+      getMoveTargetLists: () => [],
+      onMoveSelectedToList: vi.fn(),
+      onCopySelectedToList: vi.fn(),
+      renderTags: () => null,
+    });
+
+    document.body.appendChild(header);
+    for (const el of controls.rightControls) {
+      document.body.appendChild(el);
+    }
+
+    document.body.querySelector<HTMLButtonElement>('[data-role="selection-status"]')?.click();
+    const addFocusBtn = document.body.querySelector<HTMLButtonElement>(
+      '[data-role="add-focus-selection-button"]',
+    );
+    const removeFocusBtn = document.body.querySelector<HTMLButtonElement>(
+      '[data-role="remove-focus-selection-button"]',
+    );
+    expect(addFocusBtn?.textContent).toBe('Add to Focus');
+    expect(removeFocusBtn?.textContent).toBe('Remove from Focus');
+
+    addFocusBtn?.click();
+    document.body.querySelector<HTMLButtonElement>('[data-role="selection-status"]')?.click();
+    removeFocusBtn?.click();
+
+    expect(onAddSelectionToFocus).toHaveBeenCalledTimes(1);
+    expect(onRemoveSelectionFromFocus).toHaveBeenCalledTimes(1);
   });
 
   it('preserves provided target order in the move selected submenu', () => {
@@ -223,6 +295,8 @@ describe('renderListPanelHeader', () => {
       onDeleteSelection: vi.fn(),
       onMoveSelectionToTop: vi.fn(),
       onMoveSelectionToBottom: vi.fn(),
+      onAddSelectionToFocus: vi.fn(),
+      onRemoveSelectionFromFocus: vi.fn(),
       onAddItem: vi.fn(),
       onToggleView: vi.fn(),
       onEditMetadata: vi.fn(),
@@ -283,6 +357,8 @@ describe('renderListPanelHeader', () => {
       onDeleteSelection: vi.fn(),
       onMoveSelectionToTop,
       onMoveSelectionToBottom,
+      onAddSelectionToFocus: vi.fn(),
+      onRemoveSelectionFromFocus: vi.fn(),
       onAddItem: vi.fn(),
       onToggleView: vi.fn(),
       onEditMetadata: vi.fn(),

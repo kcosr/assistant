@@ -13,4 +13,5 @@ export type CollectionItemSummary = {
   updatedAt?: string;
   instanceId?: string;
   instanceLabel?: string;
+  specialKind?: 'focus';
 };

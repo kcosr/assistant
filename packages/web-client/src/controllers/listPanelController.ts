@@ -45,6 +45,10 @@ export interface ListPanelItem {
   position?: number;
   completed?: boolean;
   completedAt?: string;
+  sourceListId?: string;
+  sourceListName?: string;
+  focusEntryId?: string;
+  focused?: boolean;
 }
 
 export interface ListPanelData {
@@ -63,6 +67,7 @@ export interface ListPanelData {
     updatedAt?: string;
   }>;
   items?: ListPanelItem[];
+  viewKind?: 'list' | 'focus';
 }
 
 export interface ListPanelControllerOptions {
@@ -81,6 +86,7 @@ export interface ListPanelControllerOptions {
     trash: string;
     moreVertical: string;
     x: string;
+    eye: string;
     clock: string;
     clockOff: string;
     moveTop: string;
@@ -97,6 +103,11 @@ export interface ListPanelControllerOptions {
   getSelectedItemCount: () => number;
   onSelectionChange?: () => void;
   getMoveTargetLists: () => ListMoveTarget[];
+  resolveAddItemTarget?: () => Promise<{
+    listId: string;
+    instanceId?: string | null;
+    openOptions?: ListItemEditorDialogOpenOptions;
+  } | null>;
   openListMetadataDialog: (listId: string, data: ListPanelData) => void;
   getListColumnPreferences: (listId: string) => ListColumnPreferences | null;
   updateListColumnPreferences: (
@@ -197,6 +208,12 @@ type ListColumnState = {
   getColumnVisibility: (columnKey: string) => ColumnVisibility;
 };
 
+const FOCUS_LIST_ID = '__focus__';
+
+function isFocusListId(listId: string | null | undefined): boolean {
+  return listId === FOCUS_LIST_ID;
+}
+
 export class ListPanelController {
   private listViewShowAllColumns = false;
   private readonly listItemEditorDialog: ListItemEditorDialog;
@@ -249,6 +266,8 @@ export class ListPanelController {
         duplicate: options.icons.duplicate,
         move: options.icons.move,
         trash: options.icons.trash,
+        x: options.icons.x,
+        eye: options.icons.eye,
         clock: options.icons.clock,
         clockOff: options.icons.clockOff,
         moveTop: options.icons.moveTop,
@@ -267,6 +286,12 @@ export class ListPanelController {
       },
       onDeleteItem: (listId, itemId, title) => {
         this.showListItemDeleteConfirmation(listId, itemId, title);
+      },
+      onDeleteUnderlyingItem: (listId, itemId, title) => {
+        this.showSourceListItemDeleteConfirmation(listId, itemId, title);
+      },
+      onToggleItemFocus: (_listId, itemId, focused) => {
+        void this.toggleItemFocus(itemId, focused);
       },
       onMoveItemToList: (listId, itemId, targetListId) => {
         void this.moveItemToList(listId, itemId, targetListId);
@@ -316,9 +341,7 @@ export class ListPanelController {
         ? { isReferenceAvailable: options.isReferenceAvailable }
         : {}),
     };
-    if (options.onSelectionChange) {
-      tableOptions.onSelectionChange = options.onSelectionChange;
-    }
+    tableOptions.onSelectionChange = () => this.handleSelectionChange();
     this.tableController = new ListPanelTableController(tableOptions);
   }
 
@@ -437,12 +460,39 @@ export class ListPanelController {
       instanceId?: string | null;
     },
   ): void {
+    if (isFocusListId(listId)) {
+      void this.openFocusAddItemDialog(options?.openOptions);
+      return;
+    }
     if (options?.instanceId) {
       this.addDialogInstanceOverrides.set(listId, options.instanceId);
     } else {
       this.addDialogInstanceOverrides.delete(listId);
     }
     this.showListItemEditorDialog('add', listId, undefined, options?.openOptions);
+  }
+
+  private async openFocusAddItemDialog(
+    openOptions?: ListItemEditorDialogOpenOptions,
+  ): Promise<void> {
+    if (!this.options.resolveAddItemTarget) {
+      this.options.setStatus('Choose a source list before adding focus items');
+      return;
+    }
+    const target = await this.options.resolveAddItemTarget();
+    if (!target) {
+      return;
+    }
+    const targetOpenOptions: ListItemEditorDialogOpenOptions = {
+      ...(openOptions ?? {}),
+      ...(target.openOptions ?? {}),
+      focused: true,
+      showFocusToggle: true,
+    };
+    this.openAddItemDialog(target.listId, {
+      ...(target.instanceId ? { instanceId: target.instanceId } : {}),
+      openOptions: targetOpenOptions,
+    });
   }
 
   handleKeyboardEvent(event: KeyboardEvent): boolean {
@@ -708,6 +758,7 @@ export class ListPanelController {
 
     // Get custom fields early for the header
     const customFields = Array.isArray(data.customFields) ? data.customFields : [];
+    const isFocusView = data.viewKind === 'focus' || isFocusListId(listId);
 
     // Check if sorted by position (default or explicit)
     const aqlPrimarySort = this.currentAqlQuery?.orderBy?.[0] ?? null;
@@ -745,11 +796,17 @@ export class ListPanelController {
       onMoveSelectionToBottom: () => {
         void this.moveSelectedItemsToBoundary('bottom');
       },
+      onAddSelectionToFocus: () => {
+        void this.addSelectedItemsToFocus();
+      },
+      onRemoveSelectionFromFocus: () => {
+        void this.removeSelectedItemsFromFocus(listId);
+      },
       onDeleteSelection: () => {
         this.showDeleteSelectedItemsConfirmation(listId);
       },
       onAddItem: (targetListId) => {
-        this.showListItemEditorDialog('add', targetListId);
+        this.openAddItemDialog(targetListId);
       },
       onToggleView: () => {
         this.listViewShowAllColumns = !this.listViewShowAllColumns;
@@ -757,9 +814,16 @@ export class ListPanelController {
         this.options.setRightControls(newControls.rightControls);
       },
       onEditMetadata: () => {
+        if (isFocusView) {
+          this.options.setStatus('Focus metadata is managed by the app');
+          return;
+        }
         this.options.openListMetadataDialog(listId, data);
       },
       onTimelineFieldChange: (fieldKey: string | null) => {
+        if (isFocusView) {
+          return;
+        }
         this.currentTimelineField = fieldKey;
         // When enabling timeline view, also sort by that field and disable focus view
         if (fieldKey) {
@@ -777,6 +841,9 @@ export class ListPanelController {
         this.options.setRightControls(newControls.rightControls);
       },
       onFocusViewToggle: () => {
+        if (isFocusView) {
+          return;
+        }
         if (this.currentFocusMarkerItemId) {
           // Disable focus view
           this.currentFocusMarkerItemId = null;
@@ -1237,11 +1304,21 @@ export class ListPanelController {
     }
     try {
       const instanceId = this.addDialogInstanceOverrides.get(listId);
-      await this.runOperation(
+      const shouldFocus = item['focused'] === true;
+      const sourceItem = { ...item };
+      delete sourceItem['focused'];
+      const created = await this.runOperation<ListPanelItem>(
         'item-add',
-        { listId, ...item },
+        { listId, ...sourceItem },
         instanceId ? { instanceId } : undefined,
       );
+      if ((this.currentData?.viewKind === 'focus' || shouldFocus) && created?.id) {
+        await this.runOperation(
+          'focus-add',
+          { itemId: created.id },
+          instanceId ? { instanceId } : undefined,
+        );
+      }
       if (instanceId) {
         this.addDialogInstanceOverrides.delete(listId);
       }
@@ -1260,11 +1337,90 @@ export class ListPanelController {
       return false;
     }
     try {
-      await this.runOperation('item-update', { listId, id: itemId, ...updates });
+      if (this.currentData?.viewKind === 'focus' || isFocusListId(listId)) {
+        const position = updates['position'];
+        const focused = updates['focused'];
+        const currentlyFocused = this.isItemFocused(itemId, listId);
+        const sourceUpdates = { ...updates };
+        delete sourceUpdates['position'];
+        delete sourceUpdates['focused'];
+        if (position !== undefined) {
+          await this.runOperation('focus-update', { itemId, position });
+        }
+        if (focused === false && currentlyFocused) {
+          await this.runOperation('focus-remove', { itemId });
+        } else if (focused === true && !currentlyFocused) {
+          await this.runOperation('focus-add', { itemId });
+        }
+        if (Object.keys(sourceUpdates).length === 0) {
+          return true;
+        }
+        const sourceListId = this.getSourceListIdForItem(itemId);
+        if (!sourceListId) {
+          return false;
+        }
+        await this.runOperation('item-update', {
+          listId: sourceListId,
+          id: itemId,
+          ...sourceUpdates,
+        });
+        return true;
+      }
+      const focused = updates['focused'];
+      const currentlyFocused = this.isItemFocused(itemId, listId);
+      const sourceUpdates = { ...updates };
+      delete sourceUpdates['focused'];
+      if (Object.keys(sourceUpdates).length > 0) {
+        await this.runOperation('item-update', { listId, id: itemId, ...sourceUpdates });
+      }
+      if (focused === true && !currentlyFocused) {
+        await this.runOperation('focus-add', { itemId });
+      } else if (focused === false && currentlyFocused) {
+        await this.runOperation('focus-remove', { itemId });
+      }
       return true;
     } catch {
       return false;
     }
+  }
+
+  private async toggleItemFocus(itemId: string, currentlyFocused: boolean): Promise<boolean> {
+    if (!this.options.callOperation) {
+      this.options.setStatus('Lists tool is unavailable');
+      return false;
+    }
+    try {
+      await this.runOperation(currentlyFocused ? 'focus-remove' : 'focus-add', { itemId });
+      this.markItemFocused(itemId, !currentlyFocused);
+      this.options.setStatus(currentlyFocused ? 'Removed from Focus' : 'Added to Focus');
+      return true;
+    } catch {
+      this.options.setStatus(currentlyFocused ? 'Failed to remove from Focus' : 'Failed to add to Focus');
+      return false;
+    }
+  }
+
+  private markItemFocused(itemId: string, focused: boolean): void {
+    const item = this.currentData?.items?.find((entry) => entry.id === itemId);
+    if (item) {
+      item.focused = focused;
+    }
+  }
+
+  private isItemFocused(itemId: string, listId: string): boolean {
+    if (this.currentData?.viewKind === 'focus' || isFocusListId(listId)) {
+      return true;
+    }
+    const item = this.currentData?.items?.find((entry) => entry.id === itemId);
+    return item?.focused === true || !!item?.sourceListId;
+  }
+
+  private getSourceListIdForItem(itemId: string): string | null {
+    const item = this.currentData?.items?.find((entry) => entry.id === itemId);
+    const sourceListId = item?.sourceListId;
+    return typeof sourceListId === 'string' && sourceListId.trim().length > 0
+      ? sourceListId
+      : null;
   }
 
   private async touchListItem(listId: string, itemId: string): Promise<void> {
@@ -1273,8 +1429,16 @@ export class ListPanelController {
       return;
     }
     try {
+      const operationListId =
+        this.currentData?.viewKind === 'focus' || isFocusListId(listId)
+          ? this.getSourceListIdForItem(itemId)
+          : listId;
+      if (!operationListId) {
+        this.options.setStatus('Source list is unavailable');
+        return;
+      }
       const updated = await this.runOperation<ListPanelItem>('item-touch', {
-        listId,
+        listId: operationListId,
         id: itemId,
       });
       if (updated) {
@@ -1291,8 +1455,16 @@ export class ListPanelController {
       return;
     }
     try {
+      const operationListId =
+        this.currentData?.viewKind === 'focus' || isFocusListId(listId)
+          ? this.getSourceListIdForItem(itemId)
+          : listId;
+      if (!operationListId) {
+        this.options.setStatus('Source list is unavailable');
+        return;
+      }
       const updated = await this.runOperation<ListPanelItem>('item-update', {
-        listId,
+        listId: operationListId,
         id: itemId,
         touchedAt: null,
       });
@@ -1314,7 +1486,27 @@ export class ListPanelController {
       return false;
     }
     try {
+      if (this.currentData?.viewKind === 'focus' || isFocusListId(listId)) {
+        await this.runOperation('focus-remove', { itemId });
+        return true;
+      }
       await this.runOperation('item-remove', { listId, id: itemId });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  private async deleteSourceListItem(itemId: string): Promise<boolean> {
+    if (!this.options.callOperation) {
+      return false;
+    }
+    const sourceListId = this.getSourceListIdForItem(itemId);
+    if (!sourceListId) {
+      return false;
+    }
+    try {
+      await this.runOperation('item-remove', { listId: sourceListId, id: itemId });
       return true;
     } catch {
       return false;
@@ -1341,6 +1533,7 @@ export class ListPanelController {
       availableTags:
         openOptionsOverride?.availableTags ?? withoutPinnedTag(this.currentAvailableTags),
       customFields: openOptionsOverride?.customFields ?? this.currentCustomFields,
+      showFocusToggle: openOptionsOverride?.showFocusToggle ?? true,
     };
     if (openOptionsOverride?.initialMode) {
       openOptions.initialMode = openOptionsOverride.initialMode;
@@ -1388,22 +1581,54 @@ export class ListPanelController {
     ) {
       openOptions.initialCustomFieldValues = item.customFields as Record<string, unknown>;
     }
+    if (mode === 'edit' && item) {
+      openOptions.focused = item.focused === true || !!item.sourceListId;
+    } else if (mode === 'add' && openOptionsOverride?.focused !== undefined) {
+      openOptions.focused = openOptionsOverride.focused;
+    }
 
     this.listItemEditorDialog.open(mode, listId, item, openOptions);
   }
 
   private showListItemDeleteConfirmation(listId: string, itemId: string, title: string): void {
+    const isFocusItem = this.currentData?.viewKind === 'focus' || isFocusListId(listId);
     this.options.dialogManager.showConfirmDialog({
-      title: 'Delete Item',
-      message: `Delete "${title}" from this list?`,
-      confirmText: 'Delete',
-      confirmClassName: 'danger',
+      title: isFocusItem ? 'Remove From Focus' : 'Delete Item',
+      message: isFocusItem
+        ? `Remove "${title}" from Focus? The source item will stay in its list.`
+        : `Delete "${title}" from this list?`,
+      confirmText: isFocusItem ? 'Remove' : 'Delete',
+      confirmClassName: isFocusItem ? 'primary' : 'danger',
       keydownStopsPropagation: true,
       onConfirm: () => {
         void (async () => {
           const ok = await this.deleteListItem(listId, itemId);
           if (!ok) {
             this.options.setStatus('Failed to delete list item');
+          }
+        })();
+      },
+      cancelCloseBehavior: 'remove-only',
+      confirmCloseBehavior: 'remove-only',
+    });
+  }
+
+  private showSourceListItemDeleteConfirmation(
+    _listId: string,
+    itemId: string,
+    title: string,
+  ): void {
+    this.options.dialogManager.showConfirmDialog({
+      title: 'Delete Source Item',
+      message: `Delete "${title}" from its source list? This also removes it from Focus.`,
+      confirmText: 'Delete',
+      confirmClassName: 'danger',
+      keydownStopsPropagation: true,
+      onConfirm: () => {
+        void (async () => {
+          const ok = await this.deleteSourceListItem(itemId);
+          if (!ok) {
+            this.options.setStatus('Failed to delete source item');
           }
         })();
       },
@@ -1419,9 +1644,12 @@ export class ListPanelController {
     }
 
     const count = selectedIds.length;
+    const isFocusList = this.currentData?.viewKind === 'focus' || isFocusListId(listId);
     this.options.dialogManager.showConfirmDialog({
-      title: 'Delete Selected Items',
-      message: `Delete ${count} selected item${count === 1 ? '' : 's'} from this list? This cannot be undone.`,
+      title: isFocusList ? 'Delete Source Items' : 'Delete Selected Items',
+      message: isFocusList
+        ? `Delete ${count} selected source item${count === 1 ? '' : 's'}? This also removes them from Focus.`
+        : `Delete ${count} selected item${count === 1 ? '' : 's'} from this list? This cannot be undone.`,
       confirmText: 'Delete',
       confirmClassName: 'danger',
       keydownStopsPropagation: true,
@@ -1430,7 +1658,9 @@ export class ListPanelController {
         void (async () => {
           let failed = 0;
           for (const itemId of selectedIds) {
-            const ok = await this.deleteListItem(listId, itemId);
+            const ok = isFocusList
+              ? await this.deleteSourceListItem(itemId)
+              : await this.deleteListItem(listId, itemId);
             if (!ok) {
               failed++;
             }
@@ -1581,6 +1811,9 @@ export class ListPanelController {
       this.options.setStatus('Lists tool is unavailable');
       return false;
     }
+    if (isFocusListId(targetListId)) {
+      return this.addItemsToFocus(itemIds, options?.targetPosition ?? null);
+    }
     try {
       const basePosition =
         typeof options?.targetPosition === 'number' && Number.isFinite(options.targetPosition)
@@ -1632,7 +1865,7 @@ export class ListPanelController {
       return;
     }
     const trimmedTargetId = targetListId.trim();
-    if (!trimmedTargetId || trimmedTargetId === sourceListId) {
+    if (!trimmedTargetId || (!isFocusListId(trimmedTargetId) && trimmedTargetId === sourceListId)) {
       return;
     }
     await this.bulkMoveItems(itemIds, trimmedTargetId, {
@@ -1695,7 +1928,15 @@ export class ListPanelController {
       this.options.setStatus('Lists tool is unavailable');
       return;
     }
+    if (isFocusListId(trimmedTargetId)) {
+      await this.addItemsToFocus(itemIds, null);
+      return;
+    }
     try {
+      if (this.currentData?.viewKind === 'focus' || isFocusListId(sourceListId)) {
+        await this.copyFocusItemsToList(itemIds, trimmedTargetId);
+        return;
+      }
       const result = await this.runOperation('items-bulk-copy', {
         sourceListId,
         targetListId: trimmedTargetId,
@@ -1718,6 +1959,157 @@ export class ListPanelController {
       }
     } catch (err) {
       console.error('Error performing bulk copy:', err);
+      this.options.setStatus('Failed to copy items');
+    }
+  }
+
+  private async addItemsToFocus(
+    itemIds: string[],
+    targetPosition: number | null,
+  ): Promise<boolean> {
+    if (!this.options.callOperation || itemIds.length === 0) {
+      return false;
+    }
+    let okCount = 0;
+    for (let index = 0; index < itemIds.length; index += 1) {
+      const itemId = itemIds[index];
+      if (!itemId) {
+        continue;
+      }
+      try {
+        await this.runOperation('focus-add', {
+          itemId,
+          ...(typeof targetPosition === 'number' ? { position: targetPosition + index } : {}),
+        });
+        okCount += 1;
+      } catch {
+        // Continue adding the remaining selection.
+      }
+    }
+    if (okCount > 0) {
+      this.options.setStatus(`Added ${okCount} item${okCount === 1 ? '' : 's'} to Focus`);
+      return okCount === itemIds.length;
+    }
+    this.options.setStatus('Failed to add items to Focus');
+    return false;
+  }
+
+  private async removeItemsFromFocus(itemIds: string[]): Promise<boolean> {
+    if (!this.options.callOperation || itemIds.length === 0) {
+      return false;
+    }
+    let okCount = 0;
+    for (const itemId of itemIds) {
+      if (!itemId) {
+        continue;
+      }
+      try {
+        await this.runOperation('focus-remove', { itemId });
+        this.markItemFocused(itemId, false);
+        okCount += 1;
+      } catch {
+        // Continue removing the remaining selection.
+      }
+    }
+    if (okCount > 0) {
+      this.options.setStatus(`Removed ${okCount} item${okCount === 1 ? '' : 's'} from Focus`);
+      return okCount === itemIds.length;
+    }
+    this.options.setStatus('Failed to remove items from Focus');
+    return false;
+  }
+
+  private handleSelectionChange(): void {
+    this.updateFocusSelectionButtons();
+    this.options.onSelectionChange?.();
+  }
+
+  private updateFocusSelectionButtons(): void {
+    const root =
+      this.options.bodyEl?.closest('.collection-panel') ??
+      this.options.bodyEl?.parentElement ??
+      document;
+    const addButton = root.querySelector<HTMLElement>('[data-role="add-focus-selection-button"]');
+    const removeButton = root.querySelector<HTMLElement>(
+      '[data-role="remove-focus-selection-button"]',
+    );
+    if (!addButton && !removeButton) {
+      return;
+    }
+
+    const hasSelection = this.options.getSelectedItemCount() > 0;
+    addButton?.classList.toggle('visible', hasSelection);
+    removeButton?.classList.toggle('visible', hasSelection);
+  }
+
+  private async addSelectedItemsToFocus(): Promise<void> {
+    const selectedItems = this.getSelectedItems();
+    const addIds = selectedItems
+      .filter((item) => item.focused !== true)
+      .map((item) => item.id)
+      .filter((id): id is string => typeof id === 'string' && id.length > 0);
+    if (addIds.length === 0) {
+      this.options.setStatus('Selected items are already in Focus');
+      return;
+    }
+    await this.addItemsToFocus(addIds, null);
+  }
+
+  private async removeSelectedItemsFromFocus(listId: string): Promise<void> {
+    const selectedIds = this.options.getSelectedItemIds();
+    if (selectedIds.length === 0) {
+      this.options.setStatus('Select at least one item');
+      return;
+    }
+
+    const isFocusList = this.currentData?.viewKind === 'focus' || isFocusListId(listId);
+    const focusIds = isFocusList
+      ? selectedIds
+      : this.getSelectedItems()
+        .filter((item) => item.focused === true)
+        .map((item) => item.id)
+        .filter((id): id is string => typeof id === 'string' && id.length > 0);
+
+    if (focusIds.length === 0) {
+      this.options.setStatus('Selected items are not in Focus');
+      return;
+    }
+
+    await this.removeItemsFromFocus(focusIds);
+    if (isFocusList) {
+      this.clearListSelection();
+    }
+  }
+
+  private async copyFocusItemsToList(itemIds: string[], targetListId: string): Promise<void> {
+    let okCount = 0;
+    for (const itemId of itemIds) {
+      const sourceListId = this.getSourceListIdForItem(itemId);
+      if (!sourceListId) {
+        continue;
+      }
+      try {
+        await this.runOperation('item-copy', {
+          id: itemId,
+          sourceListId,
+          targetListId,
+        });
+        okCount += 1;
+      } catch {
+        // Continue copying the remaining selection.
+      }
+    }
+    if (okCount === itemIds.length) {
+      this.options.setStatus(
+        `Copied ${okCount} item${okCount === 1 ? '' : 's'} to "${targetListId}"`,
+      );
+    } else if (okCount > 0) {
+      this.options.setStatus(
+        `Copied ${okCount} item${okCount === 1 ? '' : 's'} to "${targetListId}", but ${
+          itemIds.length - okCount
+        } failed`,
+      );
+    } else {
       this.options.setStatus('Failed to copy items');
     }
   }

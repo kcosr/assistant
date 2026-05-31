@@ -27,6 +27,8 @@ export interface ListPanelHeaderRendererOptions {
   onDeleteSelection: () => void;
   onMoveSelectionToTop: () => void;
   onMoveSelectionToBottom: () => void;
+  onAddSelectionToFocus: () => void;
+  onRemoveSelectionFromFocus: () => void;
   onAddItem: (listId: string) => void;
   onToggleView: () => void;
   onEditMetadata: () => void;
@@ -451,6 +453,28 @@ export function renderListPanelHeader(
     });
   }
 
+  const addFocusSelectionBtn = addMenuItem(
+    selectionMenu,
+    () => setSelectionMenuOpen(false),
+    'Add to Focus',
+    options.onAddSelectionToFocus,
+    {
+      className: 'collection-list-actions-menu-item add-focus-selection-button',
+    },
+  );
+  addFocusSelectionBtn.dataset['role'] = 'add-focus-selection-button';
+
+  const removeFocusSelectionBtn = addMenuItem(
+    selectionMenu,
+    () => setSelectionMenuOpen(false),
+    'Remove from Focus',
+    options.onRemoveSelectionFromFocus,
+    {
+      className: 'collection-list-actions-menu-item remove-focus-selection-button',
+    },
+  );
+  removeFocusSelectionBtn.dataset['role'] = 'remove-focus-selection-button';
+
   const clearBtn = addMenuItem(
     selectionMenu,
     () => setSelectionMenuOpen(false),
@@ -485,6 +509,8 @@ export function renderListPanelHeader(
     clearBtn.classList.toggle('visible', hasSelection);
     moveTopBtn.classList.toggle('visible', hasSelection);
     moveBottomBtn.classList.toggle('visible', hasSelection);
+    addFocusSelectionBtn.classList.toggle('visible', hasSelection);
+    removeFocusSelectionBtn.classList.toggle('visible', hasSelection);
     deleteBtn.classList.toggle('visible', hasSelection);
     moveSelectedBtn.classList.toggle('visible', hasSelection);
     copySelectedBtn.classList.toggle('visible', hasSelection);

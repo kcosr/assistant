@@ -91,6 +91,84 @@
       "capabilities": ["lists.read"]
     },
     {
+      "id": "focus-get",
+      "summary": "Get the virtual Focus list.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "instance_id": {
+            "type": "string",
+            "description": "Instance id (defaults to \"default\")."
+          }
+        }
+      },
+      "capabilities": ["lists.read"]
+    },
+    {
+      "id": "focus-items",
+      "summary": "List items in the virtual Focus list.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "instance_id": {
+            "type": "string",
+            "description": "Instance id (defaults to \"default\")."
+          }
+        }
+      },
+      "capabilities": ["lists.read"]
+    },
+    {
+      "id": "focus-add",
+      "summary": "Add an existing item to Focus.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "instance_id": {
+            "type": "string",
+            "description": "Instance id (defaults to \"default\")."
+          },
+          "itemId": { "type": "string", "description": "Source item id." },
+          "position": { "type": "number", "description": "Zero-based Focus position." }
+        },
+        "required": ["itemId"]
+      },
+      "capabilities": ["lists.write"]
+    },
+    {
+      "id": "focus-update",
+      "summary": "Update a Focus entry.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "instance_id": {
+            "type": "string",
+            "description": "Instance id (defaults to \"default\")."
+          },
+          "itemId": { "type": "string", "description": "Source item id." },
+          "position": { "type": "number", "description": "Zero-based Focus position." }
+        },
+        "required": ["itemId"]
+      },
+      "capabilities": ["lists.write"]
+    },
+    {
+      "id": "focus-remove",
+      "summary": "Remove an item from Focus without deleting the source item.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "instance_id": {
+            "type": "string",
+            "description": "Instance id (defaults to \"default\")."
+          },
+          "itemId": { "type": "string", "description": "Source item id." }
+        },
+        "required": ["itemId"]
+      },
+      "capabilities": ["lists.write"]
+    },
+    {
       "id": "create",
       "summary": "Create a new list.",
       "inputSchema": {

@@ -263,6 +263,8 @@ const LISTS_PANEL_TEMPLATE = `
 const USER_UPDATE_TIMEOUT_MS = 5000;
 const DEFAULT_INSTANCE_ID = 'default';
 const LISTS_BROWSER_SORT_MODE_KEY = 'aiAssistantListsBrowserSortMode';
+const FOCUS_LIST_ID = '__focus__';
+const FOCUS_DEFAULT_LIST_STORAGE_KEY = 'aiAssistantFocusDefaultListId';
 
 type ViewMode = 'browser' | 'list';
 
@@ -283,6 +285,7 @@ type ListSummary = {
   updatedAt?: string;
   instanceId: string;
   instanceLabel?: string;
+  viewKind?: 'list' | 'focus';
 };
 
 type NoteSummary = {
@@ -348,6 +351,23 @@ function sortListSummariesForMoveTargets(
     }
     return a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
   });
+}
+
+function buildFocusSummary(instanceId: string, instanceLabel?: string): ListSummary {
+  return {
+    id: FOCUS_LIST_ID,
+    name: 'Focus',
+    description: 'Focused items from multiple lists.',
+    tags: [],
+    defaultTags: [],
+    instanceId,
+    ...(instanceLabel ? { instanceLabel } : {}),
+    viewKind: 'focus',
+  };
+}
+
+function isFocusListId(listId: string | null | undefined): boolean {
+  return listId === FOCUS_LIST_ID;
 }
 
 function parseInstance(value: unknown): Instance | null {
@@ -532,7 +552,24 @@ function parseListItem(value: unknown): ListPanelItem | null {
   if (typeof obj['title'] !== 'string') {
     return null;
   }
-  return obj as ListPanelItem;
+  const parsed = obj as ListPanelItem;
+  const sourceListId = typeof obj['sourceListId'] === 'string' ? obj['sourceListId'].trim() : '';
+  if (sourceListId) {
+    parsed.sourceListId = sourceListId;
+  }
+  const sourceListName =
+    typeof obj['sourceListName'] === 'string' ? obj['sourceListName'].trim() : '';
+  if (sourceListName) {
+    parsed.sourceListName = sourceListName;
+  }
+  const focusEntryId = typeof obj['focusEntryId'] === 'string' ? obj['focusEntryId'].trim() : '';
+  if (focusEntryId) {
+    parsed.focusEntryId = focusEntryId;
+  }
+  if (obj['focused'] === true) {
+    parsed.focused = true;
+  }
+  return parsed;
 }
 
 function parseListItems(value: unknown): ListPanelItem[] {
@@ -630,11 +667,13 @@ async function fetchListPreview(
   listId: string,
   callInstanceOperation: <T>(operation: string, body: Record<string, unknown>) => Promise<T>,
 ): Promise<CollectionPreviewCacheEntry | null> {
-  const rawItems = await callInstanceOperation<unknown>('items-list', {
-    listId,
-    limit: 50,
-    sort: 'position',
-  });
+  const rawItems = isFocusListId(listId)
+    ? await callInstanceOperation<unknown>('focus-items', {})
+    : await callInstanceOperation<unknown>('items-list', {
+        listId,
+        limit: 50,
+        sort: 'position',
+      });
   const items = buildListPreviewItems(parseListItems(rawItems));
   if (items.length === 0) {
     return null;
@@ -1259,6 +1298,7 @@ if (!registry || typeof registry.registerPanel !== 'function') {
             updatedAt: list.updatedAt,
             instanceId: list.instanceId,
             instanceLabel: list.instanceLabel ?? getInstanceLabel(list.instanceId),
+            ...(list.viewKind === 'focus' ? { specialKind: 'focus' as const } : {}),
           }));
 
       const emitGlobalTags = (): void => {
@@ -1321,6 +1361,25 @@ if (!registry || typeof registry.registerPanel !== 'function') {
         activeListId && activeListInstanceId
           ? { type: 'list', id: activeListId, instanceId: activeListInstanceId }
           : null;
+
+      const decorateFocusCollectionItem = (
+        itemEl: HTMLElement,
+        item: CollectionItemSummary,
+      ): void => {
+        if (item.specialKind !== 'focus') {
+          return;
+        }
+        const labelEl = itemEl.querySelector<HTMLElement>('.collection-search-dropdown-item-label');
+        if (!labelEl) {
+          return;
+        }
+        const icon = document.createElement('span');
+        icon.className = 'collection-focus-icon';
+        icon.innerHTML = ICONS.eye;
+        icon.setAttribute('aria-hidden', 'true');
+        labelEl.insertAdjacentElement('beforebegin', icon);
+        itemEl.classList.add('collection-search-dropdown-item--focus');
+      };
 
       const openReference = (reference: ListItemReference): void => {
         const normalized = reference.panelType.toLowerCase().trim();
@@ -1658,6 +1717,7 @@ if (!registry || typeof registry.registerPanel !== 'function') {
         if (!dropdownTriggerText) {
           return;
         }
+        dropdownTriggerText.classList.remove('collection-search-dropdown-trigger-text--focus');
         if (!reference) {
           dropdownTriggerText.textContent = 'Select a list...';
           chromeController?.scheduleLayoutCheck();
@@ -1674,6 +1734,19 @@ if (!registry || typeof registry.registerPanel !== 'function') {
           )})`;
         } else {
           dropdownTriggerText.textContent = list?.name ?? 'Select a list...';
+        }
+        if (list?.viewKind === 'focus') {
+          const label = dropdownTriggerText.textContent ?? 'Focus';
+          dropdownTriggerText.textContent = '';
+          const icon = document.createElement('span');
+          icon.className = 'collection-focus-icon';
+          icon.innerHTML = ICONS.eye;
+          icon.setAttribute('aria-hidden', 'true');
+          const labelEl = document.createElement('span');
+          labelEl.textContent = label;
+          dropdownTriggerText.appendChild(icon);
+          dropdownTriggerText.appendChild(labelEl);
+          dropdownTriggerText.classList.add('collection-search-dropdown-trigger-text--focus');
         }
         chromeController?.scheduleLayoutCheck();
       };
@@ -2008,6 +2081,116 @@ if (!registry || typeof registry.registerPanel !== 'function') {
         registerCommand('paste', 'v');
       };
 
+      const openFocusSourceListDialog = (
+        candidates: ListSummary[],
+        initialListId: string,
+      ): Promise<string | null> =>
+        new Promise((resolve) => {
+          const overlay = document.createElement('div');
+          overlay.className = 'confirm-dialog-overlay';
+
+          const dialog = document.createElement('div');
+          dialog.className = 'confirm-dialog';
+          dialog.setAttribute('role', 'dialog');
+          dialog.setAttribute('aria-modal', 'true');
+
+          const titleEl = document.createElement('h3');
+          titleEl.className = 'confirm-dialog-title';
+          titleEl.textContent = 'Add Focus Item';
+          dialog.appendChild(titleEl);
+
+          const messageEl = document.createElement('p');
+          messageEl.className = 'confirm-dialog-message';
+          messageEl.textContent = 'Choose the source list for the new item.';
+          dialog.appendChild(messageEl);
+
+          const form = document.createElement('div');
+          form.className = 'list-item-form';
+
+          const label = document.createElement('label');
+          label.className = 'list-item-form-label';
+          label.textContent = 'Source list';
+
+          const select = document.createElement('select');
+          select.className = 'list-item-form-select focus-source-list-select';
+          for (const list of candidates) {
+            const option = document.createElement('option');
+            option.value = list.id;
+            option.textContent =
+              selectedInstanceIds.length > 1 && list.instanceLabel
+                ? `${list.name} (${list.instanceLabel})`
+                : list.name;
+            option.title = list.id;
+            select.appendChild(option);
+          }
+          select.value = candidates.some((list) => list.id === initialListId)
+            ? initialListId
+            : candidates[0]?.id ?? '';
+          label.appendChild(select);
+          form.appendChild(label);
+          dialog.appendChild(form);
+
+          const buttons = document.createElement('div');
+          buttons.className = 'confirm-dialog-buttons';
+
+          const cancelButton = document.createElement('button');
+          cancelButton.className = 'confirm-dialog-button cancel';
+          cancelButton.textContent = 'Cancel';
+          buttons.appendChild(cancelButton);
+
+          const confirmButton = document.createElement('button');
+          confirmButton.className = 'confirm-dialog-button primary';
+          confirmButton.textContent = 'Continue';
+          buttons.appendChild(confirmButton);
+
+          dialog.appendChild(buttons);
+          overlay.appendChild(dialog);
+          document.body.appendChild(overlay);
+
+          let closed = false;
+          const close = (value: string | null): void => {
+            if (closed) {
+              return;
+            }
+            closed = true;
+            document.removeEventListener('keydown', handleKeyDown);
+            overlay.remove();
+            services.dialogManager.releaseExternalDialog(overlay);
+            resolve(value);
+          };
+
+          const handleKeyDown = (event: KeyboardEvent): void => {
+            if (event.key === 'Escape') {
+              event.preventDefault();
+              close(null);
+              return;
+            }
+            if (event.key === 'Enter') {
+              event.preventDefault();
+              close(select.value || null);
+            }
+          };
+
+          services.dialogManager.registerExternalDialog(overlay, () => {
+            close(null);
+          });
+          document.addEventListener('keydown', handleKeyDown);
+
+          overlay.addEventListener('click', (event) => {
+            if (event.target === overlay) {
+              close(null);
+            }
+          });
+          cancelButton.addEventListener('click', () => {
+            close(null);
+          });
+          confirmButton.addEventListener('click', () => {
+            close(select.value || null);
+          });
+
+          select.focus();
+        });
+
       const listPanelController = new ListPanelController({
         bodyEl: panelContent,
         getSearchQuery: () => sharedSearchController.getQuery(),
@@ -2031,6 +2214,7 @@ if (!registry || typeof registry.registerPanel !== 'function') {
           trash: ICONS.trash,
           moreVertical: ICONS.moreVertical,
           x: ICONS.x,
+          eye: ICONS.eye,
           clock: ICONS.clock,
           clockOff: ICONS.clockOff,
           moveTop: ICONS.chevronUp,
@@ -2059,13 +2243,58 @@ if (!registry || typeof registry.registerPanel !== 'function') {
               }
             })();
           return sortListSummariesForMoveTargets(
-            availableLists.filter((list) => list.instanceId === instanceId),
+            availableLists.filter((list) => list.instanceId === instanceId && !isFocusListId(list.id)),
             sortMode,
           )
             .map((list) => ({
               id: list.id,
               name: list.name,
             }));
+        },
+        resolveAddItemTarget: async () => {
+          const instanceId = activeListInstanceId ?? activeInstanceId;
+          const candidates = availableLists.filter(
+            (list) => list.instanceId === instanceId && !isFocusListId(list.id),
+          );
+          if (candidates.length === 0) {
+            services.setStatus('Create a list before adding focus items');
+            return null;
+          }
+          let initialValue = '';
+          try {
+            const stored = window.localStorage.getItem(FOCUS_DEFAULT_LIST_STORAGE_KEY) ?? '';
+            if (candidates.some((list) => list.id === stored)) {
+              initialValue = stored;
+            }
+          } catch {
+            // Ignore storage errors.
+          }
+          if (!initialValue) {
+            initialValue = candidates[0]?.id ?? '';
+          }
+          const listId = await openFocusSourceListDialog(candidates, initialValue);
+          if (!listId) {
+            return null;
+          }
+          const trimmed = listId.trim();
+          const selectedList = candidates.find((list) => list.id === trimmed) ?? candidates[0];
+          if (!selectedList) {
+            return null;
+          }
+          try {
+            window.localStorage.setItem(FOCUS_DEFAULT_LIST_STORAGE_KEY, trimmed);
+          } catch {
+            // Ignore storage errors.
+          }
+          return {
+            listId: trimmed,
+            instanceId,
+            openOptions: {
+              availableTags: [],
+              defaultTags: selectedList.defaultTags ?? [],
+              customFields: selectedList.customFields ?? [],
+            },
+          };
         },
         openListMetadataDialog: (listId, data) => {
           browserController?.openListMetadataEditor(listId, data);
@@ -2199,6 +2428,7 @@ if (!registry || typeof registry.registerPanel !== 'function') {
           list: ICONS.list,
           pin: ICONS.pin,
           favorite: ICONS.heart,
+          focus: ICONS.eye,
         },
         onTogglePinned: (item, isPinned) => {
           if (item.type !== 'list') {
@@ -2221,9 +2451,11 @@ if (!registry || typeof registry.registerPanel !== 'function') {
         listApi: {
           getList: async (listId, instanceId) => {
             const targetInstanceId = instanceId ?? activeListInstanceId ?? activeInstanceId;
-            const raw = await callInstanceOperation<unknown>(targetInstanceId, 'get', {
-              id: listId,
-            });
+            const raw = await callInstanceOperation<unknown>(
+              targetInstanceId,
+              isFocusListId(listId) ? 'focus-get' : 'get',
+              isFocusListId(listId) ? {} : { id: listId },
+            );
             const list = parseListSummary(raw, targetInstanceId);
             if (!list) {
               return null;
@@ -2250,6 +2482,10 @@ if (!registry || typeof registry.registerPanel !== 'function') {
             return list?.id ?? null;
           },
           updateList: async (listId, payload) => {
+            if (isFocusListId(listId)) {
+              services.setStatus('Focus metadata is managed by the app');
+              return false;
+            }
             const sourceInstanceId = payload.sourceInstanceId ?? activeListInstanceId ?? activeInstanceId;
             const targetInstanceId = payload.instanceId ?? sourceInstanceId;
             if (targetInstanceId !== sourceInstanceId) {
@@ -2272,6 +2508,10 @@ if (!registry || typeof registry.registerPanel !== 'function') {
             return true;
           },
           deleteList: async (listId) => {
+            if (isFocusListId(listId)) {
+              services.setStatus('Focus cannot be deleted');
+              return false;
+            }
             const targetInstanceId = activeListInstanceId ?? activeInstanceId;
             await callInstanceOperation(targetInstanceId, 'delete', { id: listId });
             return true;
@@ -2355,6 +2595,7 @@ if (!registry || typeof registry.registerPanel !== 'function') {
           const instanceId = item.instanceId ?? activeInstanceId;
           void selectList(item.id, instanceId, { focus: false });
         },
+        renderItemContent: decorateFocusCollectionItem,
         renderItemActions: (actionsEl, item) => {
           if (item.type !== 'list') {
             return;
@@ -3156,10 +3397,12 @@ if (!registry || typeof registry.registerPanel !== 'function') {
           const results = await Promise.all(
             selectedInstanceIds.map(async (instanceId) => {
               const raw = await callInstanceOperation<unknown>(instanceId, 'list', {});
-              return parseListSummaries(raw, instanceId).map((list) => ({
+              const instanceLabel = getInstanceLabel(instanceId);
+              const lists = parseListSummaries(raw, instanceId).map((list) => ({
                 ...list,
-                instanceLabel: getInstanceLabel(instanceId),
+                instanceLabel,
               }));
+              return [buildFocusSummary(instanceId, instanceLabel), ...lists];
             }),
           );
           if (currentToken !== refreshToken) {
@@ -3220,25 +3463,51 @@ if (!registry || typeof registry.registerPanel !== 'function') {
             ? listPanelController.consumePendingSelectionScrollItemId()
             : null;
         try {
-          const rawList = await callInstanceOperation<unknown>(instanceId, 'get', { id: listId });
+          const focusView = isFocusListId(listId);
+          const rawList = await callInstanceOperation<unknown>(
+            instanceId,
+            focusView ? 'focus-get' : 'get',
+            focusView ? {} : { id: listId },
+          );
           const list = parseListSummary(rawList, instanceId);
           if (!list) {
             throw new Error('List not found');
           }
-          const rawItems = await callInstanceOperation<unknown>(instanceId, 'items-list', {
-            listId,
-            limit: 0,
-            sort: 'position',
-          });
-          const rawSavedQueries = await callInstanceOperation<unknown>(
+          const rawItems = await callInstanceOperation<unknown>(
             instanceId,
-            'aql-query-list',
-            { listId },
+            focusView ? 'focus-items' : 'items-list',
+            focusView
+              ? {}
+              : {
+                  listId,
+                  limit: 0,
+                  sort: 'position',
+                },
           );
+          const rawSavedQueries = focusView
+            ? []
+            : await callInstanceOperation<unknown>(instanceId, 'aql-query-list', { listId });
           if (currentToken !== loadToken) {
             return;
           }
           const items = parseListItems(rawItems);
+          if (focusView) {
+            for (const item of items) {
+              item.focused = true;
+            }
+          } else {
+            try {
+              const rawFocusItems = await callInstanceOperation<unknown>(instanceId, 'focus-items', {});
+              const focusedIds = new Set(parseListItems(rawFocusItems).map((item) => item.id));
+              for (const item of items) {
+                if (item.id && focusedIds.has(item.id)) {
+                  item.focused = true;
+                }
+              }
+            } catch {
+              // Focus membership is a UI hint; list loading should not fail if it is unavailable.
+            }
+          }
           const savedQueries = parseSavedQueries(rawSavedQueries) ?? [];
           const defaultQuery = savedQueries.find((entry) => entry.isDefault) ?? null;
           if (isSwitchingLists) {
@@ -3264,6 +3533,7 @@ if (!registry || typeof registry.registerPanel !== 'function') {
             customFields: list.customFields,
             savedQueries,
             items,
+            viewKind: focusView ? 'focus' : 'list',
           };
           activeListId = list.id;
           activeListInstanceId = instanceId;
@@ -3448,6 +3718,17 @@ if (!registry || typeof registry.registerPanel !== 'function') {
         if (listsChanged) {
           emitGlobalTags();
           refreshListBrowser();
+        }
+
+        if (action === 'focus_updated') {
+          if (
+            activeListId === FOCUS_LIST_ID &&
+            activeListInstanceId === instanceId &&
+            mode === 'list'
+          ) {
+            await loadList(activeListId, instanceId, { silent: true });
+          }
+          return;
         }
 
         if (action === 'list_deleted') {

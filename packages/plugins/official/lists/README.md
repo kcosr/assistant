@@ -5,6 +5,7 @@ List management with a dedicated lists panel, list item CRUD, tags, and browser 
 ## Table of Contents
 
 - [Overview](#overview)
+- [Focus View](#focus-view)
 - [AQL Search](#aql-search)
 - [Source files](#source-files)
 - [Web UI Architecture](#web-ui-architecture)
@@ -42,6 +43,8 @@ operations.
 - Cmd/Ctrl+C/X/V support copy/cut/paste of selected list items between lists; external paste
   uses the same plain-text item block.
 - The lists dropdown includes a quick-add (+) action to add an item to a list without switching views.
+- The lists dropdown includes a virtual Focus view for ordering and working through items from
+  multiple source lists.
 - Browser mode supports arrow-key grid navigation with Enter to open a list; Escape returns to the
   browser view from list mode.
 - Press **p** in browser mode to toggle pinned lists, or in list view to toggle pinned list items.
@@ -59,6 +62,22 @@ operations.
 
 All operations accept an optional `instance_id` (defaults to `default`), and `instance_list` reports
 configured instances.
+
+## Focus View
+
+Focus is a virtual list with the fixed id `__focus__`. It stores ordered references to existing
+list items instead of copying or moving item data, so completing, editing, touching, moving, copying,
+or deleting the source item still uses the source list item.
+
+- Removing an item from Focus removes only the focus reference; the source item remains in its list.
+- Source list item menus expose a direct Add to Focus action for adding existing items.
+- The item row menu exposes a separate source-delete action when the underlying item should be
+  deleted.
+- Adding an item while Focus is open opens a source-list dropdown, then adds the new item to that
+  list and immediately adds it to Focus.
+- Dragging and keyboard reordering use the normal list UI. Copying Focus items to a real list copies
+  from each item's source list.
+- Focus updates use `focus-get`, `focus-items`, `focus-add`, `focus-update`, and `focus-remove`.
 
 ## AQL Search
 
@@ -175,7 +194,7 @@ The server broadcasts panel updates to keep all lists panels in sync:
   - Payload includes:
     - `instance_id`
     - `listId`
-    - `action`: `list_created` | `list_updated` | `list_deleted` | `item_added` | `item_updated` | `item_removed`
+    - `action`: `list_created` | `list_updated` | `list_deleted` | `item_added` | `item_updated` | `item_removed` | `focus_updated`
     - `list` (optional)
     - `item` (optional)
     - `itemId` (optional)

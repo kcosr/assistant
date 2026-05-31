@@ -1308,6 +1308,9 @@ export class ListPanelTableController {
     if (item.notes) {
       searchParts.push(item.notes);
     }
+    if (item.sourceListName) {
+      searchParts.push(item.sourceListName);
+    }
     const itemTags = Array.isArray(item.tags)
       ? item.tags
           .filter((tag): tag is string => typeof tag === 'string')
@@ -2402,6 +2405,12 @@ export class ListPanelTableController {
       }
 
       titleContent.appendChild(titleMain);
+      if (item.sourceListName) {
+        const source = document.createElement('span');
+        source.className = 'list-item-source';
+        source.textContent = item.sourceListName;
+        titleContent.appendChild(source);
+      }
       titleCell.appendChild(titleContent);
       row.appendChild(titleCell);
     }
