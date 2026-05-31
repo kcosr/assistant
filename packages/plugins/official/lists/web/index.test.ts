@@ -51,16 +51,19 @@ describe('lists panel keyboard shortcuts', () => {
       },
     };
     vi.stubGlobal('ASSISTANT_API_HOST', 'http://localhost');
+    (window as { ASSISTANT_API_HOST?: string }).ASSISTANT_API_HOST = 'http://localhost';
     vi.stubGlobal('fetch', vi.fn(async () => {
       return new Response(JSON.stringify({ ok: true, result: [] }), {
         status: 200,
         headers: { 'Content-Type': 'application/json' },
       });
     }));
+    window.fetch = fetch;
     document.body.innerHTML = '';
   });
 
-  afterEach(() => {
+  afterEach(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 0));
     if (originalRegistry === undefined) {
       delete (globalThis as { ASSISTANT_PANEL_REGISTRY?: unknown }).ASSISTANT_PANEL_REGISTRY;
     } else {

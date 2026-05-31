@@ -26,6 +26,7 @@ const LIST_INLINE_CUSTOM_FIELD_EDITING_STORAGE_KEY =
 export interface ListPanelTableControllerOptions {
   icons: {
     moreVertical: string;
+    eye?: string;
     pin: string;
   };
   renderTags: (tags: string[] | undefined) => HTMLElement | null;
@@ -1308,6 +1309,9 @@ export class ListPanelTableController {
     if (item.notes) {
       searchParts.push(item.notes);
     }
+    if (item.sourceListName) {
+      searchParts.push(item.sourceListName);
+    }
     const itemTags = Array.isArray(item.tags)
       ? item.tags
           .filter((tag): tag is string => typeof tag === 'string')
@@ -1982,12 +1986,21 @@ export class ListPanelTableController {
 
     const menuTrigger = document.createElement('button');
     menuTrigger.type = 'button';
-    menuTrigger.className = 'list-item-menu-trigger';
-    menuTrigger.innerHTML = this.options.icons.moreVertical;
-    menuTrigger.setAttribute('aria-label', 'Item actions');
+    const isFocusedItem = item.focused === true || !!item.sourceListId;
+    menuTrigger.className = isFocusedItem
+      ? 'list-item-menu-trigger list-item-menu-trigger-focused'
+      : 'list-item-menu-trigger';
+    menuTrigger.innerHTML =
+      isFocusedItem && this.options.icons.eye
+        ? this.options.icons.eye
+        : this.options.icons.moreVertical;
+    menuTrigger.setAttribute(
+      'aria-label',
+      isFocusedItem ? 'Item actions, focused' : 'Item actions',
+    );
 
     if (itemId) {
-      menuTrigger.title = 'Item actions';
+      menuTrigger.title = isFocusedItem ? 'Item actions, focused' : 'Item actions';
       const isCoarsePointer =
         typeof window !== 'undefined' &&
         typeof window.matchMedia === 'function' &&
@@ -2402,6 +2415,12 @@ export class ListPanelTableController {
       }
 
       titleContent.appendChild(titleMain);
+      if (item.sourceListName) {
+        const source = document.createElement('span');
+        source.className = 'list-item-source';
+        source.textContent = item.sourceListName;
+        titleContent.appendChild(source);
+      }
       titleCell.appendChild(titleContent);
       row.appendChild(titleCell);
     }

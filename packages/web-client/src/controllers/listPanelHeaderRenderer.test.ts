@@ -36,6 +36,8 @@ describe('renderListPanelHeader', () => {
       onDeleteSelection: vi.fn(),
       onMoveSelectionToTop: vi.fn(),
       onMoveSelectionToBottom: vi.fn(),
+      onAddSelectionToFocus: vi.fn(),
+      onRemoveSelectionFromFocus: vi.fn(),
       onAddItem: vi.fn(),
       onToggleView: vi.fn(),
       onEditMetadata,
@@ -92,6 +94,8 @@ describe('renderListPanelHeader', () => {
       onDeleteSelection: vi.fn(),
       onMoveSelectionToTop: vi.fn(),
       onMoveSelectionToBottom: vi.fn(),
+      onAddSelectionToFocus: vi.fn(),
+      onRemoveSelectionFromFocus: vi.fn(),
       onAddItem: vi.fn(),
       onToggleView: vi.fn(),
       onEditMetadata: vi.fn(),
@@ -163,6 +167,8 @@ describe('renderListPanelHeader', () => {
       onDeleteSelection: vi.fn(),
       onMoveSelectionToTop: vi.fn(),
       onMoveSelectionToBottom: vi.fn(),
+      onAddSelectionToFocus: vi.fn(),
+      onRemoveSelectionFromFocus: vi.fn(),
       onAddItem: vi.fn(),
       onToggleView: vi.fn(),
       onEditMetadata: vi.fn(),
@@ -192,16 +198,84 @@ describe('renderListPanelHeader', () => {
       'Move to Bottom',
       'Move to List',
       'Copy',
+      'Add to Focus',
+      'Remove from Focus',
       'Clear',
       'Delete',
     ]);
   });
 
-  it('preserves provided target order in the move selected submenu', () => {
+  it('invokes focus-selection callback from the selection menu', () => {
     const data: ListPanelData = {
       id: 'list1',
       name: 'My List',
     };
+    const onAddSelectionToFocus = vi.fn();
+    const onRemoveSelectionFromFocus = vi.fn();
+
+    const { header, controls } = renderListPanelHeader({
+      listId: 'list1',
+      data,
+      selectedCount: 2,
+      icons: {
+        plus: '',
+        trash: '<svg class="trash"></svg>',
+        edit: '<svg></svg>',
+      },
+      showAllColumns: false,
+      timelineField: null,
+      focusMarkerItemId: null,
+      isSortedByPosition: true,
+      customFields: [],
+      onSelectVisible: vi.fn(),
+      onSelectAll: vi.fn(),
+      onClearSelection: vi.fn(),
+      onDeleteSelection: vi.fn(),
+      onMoveSelectionToTop: vi.fn(),
+      onMoveSelectionToBottom: vi.fn(),
+      onAddSelectionToFocus,
+      onRemoveSelectionFromFocus,
+      onAddItem: vi.fn(),
+      onToggleView: vi.fn(),
+      onEditMetadata: vi.fn(),
+      onTimelineFieldChange: vi.fn(),
+      onFocusViewToggle: vi.fn(),
+      getMoveTargetLists: () => [],
+      onMoveSelectedToList: vi.fn(),
+      onCopySelectedToList: vi.fn(),
+      renderTags: () => null,
+    });
+
+    document.body.appendChild(header);
+    for (const el of controls.rightControls) {
+      document.body.appendChild(el);
+    }
+
+    document.body.querySelector<HTMLButtonElement>('[data-role="selection-status"]')?.click();
+    const addFocusBtn = document.body.querySelector<HTMLButtonElement>(
+      '[data-role="add-focus-selection-button"]',
+    );
+    const removeFocusBtn = document.body.querySelector<HTMLButtonElement>(
+      '[data-role="remove-focus-selection-button"]',
+    );
+    expect(addFocusBtn?.textContent).toBe('Add to Focus');
+    expect(removeFocusBtn?.textContent).toBe('Remove from Focus');
+
+    addFocusBtn?.click();
+    document.body.querySelector<HTMLButtonElement>('[data-role="selection-status"]')?.click();
+    removeFocusBtn?.click();
+
+    expect(onAddSelectionToFocus).toHaveBeenCalledTimes(1);
+    expect(onRemoveSelectionFromFocus).toHaveBeenCalledTimes(1);
+  });
+
+  it('invokes target-list callbacks from the selection menu', () => {
+    const data: ListPanelData = {
+      id: 'list1',
+      name: 'My List',
+    };
+    const onMoveSelectedToList = vi.fn();
+    const onCopySelectedToList = vi.fn();
 
     const { header, controls } = renderListPanelHeader({
       listId: 'list1',
@@ -223,18 +297,16 @@ describe('renderListPanelHeader', () => {
       onDeleteSelection: vi.fn(),
       onMoveSelectionToTop: vi.fn(),
       onMoveSelectionToBottom: vi.fn(),
+      onAddSelectionToFocus: vi.fn(),
+      onRemoveSelectionFromFocus: vi.fn(),
       onAddItem: vi.fn(),
       onToggleView: vi.fn(),
       onEditMetadata: vi.fn(),
       onTimelineFieldChange: vi.fn(),
       onFocusViewToggle: vi.fn(),
-      getMoveTargetLists: () => [
-        { id: 'list1', name: 'Current' },
-        { id: 'list3', name: 'Zulu' },
-        { id: 'list2', name: 'Alpha' },
-      ],
-      onMoveSelectedToList: vi.fn(),
-      onCopySelectedToList: vi.fn(),
+      getMoveTargetLists: () => [],
+      onMoveSelectedToList,
+      onCopySelectedToList,
       renderTags: () => null,
     });
 
@@ -247,12 +319,13 @@ describe('renderListPanelHeader', () => {
     document.body
       .querySelector<HTMLButtonElement>('[data-role="move-selected-button"]')
       ?.click();
+    document.body.querySelector<HTMLButtonElement>('[data-role="selection-status"]')?.click();
+    document.body
+      .querySelector<HTMLButtonElement>('[data-role="copy-selected-button"]')
+      ?.click();
 
-    const labels = Array.from(
-      document.body.querySelectorAll<HTMLElement>('.collection-list-actions-submenu-item'),
-    ).map((el) => el.textContent);
-
-    expect(labels).toEqual(['Zulu', 'Alpha']);
+    expect(onMoveSelectedToList).toHaveBeenCalledTimes(1);
+    expect(onCopySelectedToList).toHaveBeenCalledTimes(1);
   });
 
   it('invokes move-selection callbacks from the actions menu', () => {
@@ -283,6 +356,8 @@ describe('renderListPanelHeader', () => {
       onDeleteSelection: vi.fn(),
       onMoveSelectionToTop,
       onMoveSelectionToBottom,
+      onAddSelectionToFocus: vi.fn(),
+      onRemoveSelectionFromFocus: vi.fn(),
       onAddItem: vi.fn(),
       onToggleView: vi.fn(),
       onEditMetadata: vi.fn(),

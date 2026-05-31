@@ -5,6 +5,8 @@ import { randomUUID } from 'node:crypto';
 import { matchesTags, normalizeTags } from '@assistant/shared';
 
 import type {
+  FocusEntry,
+  FocusListItem,
   ListCustomFieldDefinition,
   ListDefinition,
   ListItem,
@@ -71,6 +73,7 @@ export class ListsStore {
             }
           }
         });
+        this.normalizeFocusEntries(parsed.focusEntries);
       }
     } catch (err) {
       const error = err as NodeJS.ErrnoException;
@@ -141,6 +144,92 @@ export class ListsStore {
 
   private reflowPositions(listId: string): void {
     reflowPositions(this.data.items, listId);
+  }
+
+  private normalizeFocusEntries(rawEntries: unknown): void {
+    if (!Array.isArray(rawEntries)) {
+      this.data.focusEntries = [];
+      return;
+    }
+    const validItemIds = new Set(this.data.items.map((item) => item.id));
+    const seenItemIds = new Set<string>();
+    const now = new Date().toISOString();
+    const entries: FocusEntry[] = [];
+    for (const rawEntry of rawEntries) {
+      if (!rawEntry || typeof rawEntry !== 'object' || Array.isArray(rawEntry)) {
+        continue;
+      }
+      const entry = rawEntry as Record<string, unknown>;
+      const itemId = typeof entry['itemId'] === 'string' ? entry['itemId'].trim() : '';
+      if (!itemId || !validItemIds.has(itemId) || seenItemIds.has(itemId)) {
+        continue;
+      }
+      seenItemIds.add(itemId);
+      const position =
+        typeof entry['position'] === 'number' && Number.isFinite(entry['position'])
+          ? Math.max(0, Math.floor(entry['position']))
+          : entries.length;
+      const addedAt =
+        typeof entry['addedAt'] === 'string' && entry['addedAt'].trim()
+          ? entry['addedAt']
+          : now;
+      const updatedAt =
+        typeof entry['updatedAt'] === 'string' && entry['updatedAt'].trim()
+          ? entry['updatedAt']
+          : addedAt;
+      entries.push({ itemId, position, addedAt, updatedAt });
+    }
+    this.data.focusEntries = entries;
+    this.reflowFocusPositions();
+  }
+
+  private ensureFocusEntries(): FocusEntry[] {
+    if (!Array.isArray(this.data.focusEntries)) {
+      this.data.focusEntries = [];
+    }
+    return this.data.focusEntries;
+  }
+
+  private reflowFocusPositions(): void {
+    const entries = this.ensureFocusEntries();
+    entries.sort((a, b) => {
+      const aPos = typeof a.position === 'number' ? a.position : 0;
+      const bPos = typeof b.position === 'number' ? b.position : 0;
+      return aPos - bPos;
+    });
+    this.assignFocusPositions(entries);
+  }
+
+  private assignFocusPositions(entries = this.ensureFocusEntries()): void {
+    entries.forEach((entry, index) => {
+      entry.position = index;
+    });
+  }
+
+  private repositionFocusEntry(itemId: string, position?: number): void {
+    const entries = this.ensureFocusEntries();
+    const index = entries.findIndex((entry) => entry.itemId === itemId);
+    if (index === -1) {
+      return;
+    }
+    const [entry] = entries.splice(index, 1);
+    if (!entry) {
+      return;
+    }
+    const targetPosition =
+      typeof position === 'number' && Number.isFinite(position)
+        ? Math.max(0, Math.min(entries.length, Math.floor(position)))
+        : entries.length;
+    entries.splice(targetPosition, 0, entry);
+    this.assignFocusPositions(entries);
+  }
+
+  private removeFocusEntriesForItemIds(itemIds: Set<string>): void {
+    if (!Array.isArray(this.data.focusEntries) || itemIds.size === 0) {
+      return;
+    }
+    this.data.focusEntries = this.data.focusEntries.filter((entry) => !itemIds.has(entry.itemId));
+    this.reflowFocusPositions();
   }
 
   private repositionItem(listId: string, itemId: string, position?: number): void {
@@ -459,7 +548,11 @@ export class ListsStore {
     }
 
     this.data.lists.splice(index, 1);
+    const removedItemIds = new Set(
+      this.data.items.filter((item) => item.listId === id).map((item) => item.id),
+    );
     this.data.items = this.data.items.filter((item) => item.listId !== id);
+    this.removeFocusEntriesForItemIds(removedItemIds);
     await this.save();
   }
 
@@ -667,6 +760,7 @@ export class ListsStore {
     const [item] = this.data.items.splice(index, 1);
     if (item) {
       this.reflowPositions(item.listId);
+      this.removeFocusEntriesForItemIds(new Set([item.id]));
       this.touchList(item.listId);
     }
     await this.save();
@@ -742,6 +836,133 @@ export class ListsStore {
     this.touchList(params.targetListId, now);
     await this.save();
     return copied;
+  }
+
+  async getFocusList(): Promise<ListDefinition> {
+    await this.ensureLoaded();
+    const entries = this.ensureFocusEntries();
+    const now = new Date().toISOString();
+    const updatedAt =
+      entries.reduce((latest, entry) => {
+        const latestMs = Date.parse(latest);
+        const entryMs = Date.parse(entry.updatedAt);
+        return Number.isFinite(entryMs) && (!Number.isFinite(latestMs) || entryMs > latestMs)
+          ? entry.updatedAt
+          : latest;
+      }, '') || now;
+    const createdAt =
+      entries.reduce((earliest, entry) => {
+        const earliestMs = Date.parse(earliest);
+        const entryMs = Date.parse(entry.addedAt);
+        return Number.isFinite(entryMs) && (!Number.isFinite(earliestMs) || entryMs < earliestMs)
+          ? entry.addedAt
+          : earliest;
+      }, '') || now;
+    return {
+      id: '__focus__',
+      name: 'Focus',
+      description: 'Focused items from multiple lists.',
+      tags: [],
+      defaultTags: [],
+      savedQueries: [],
+      createdAt,
+      updatedAt,
+    };
+  }
+
+  async listFocusItems(): Promise<FocusListItem[]> {
+    await this.ensureLoaded();
+    const entries = this.ensureFocusEntries();
+    const itemById = new Map(this.data.items.map((item) => [item.id, item]));
+    const listById = new Map(this.data.lists.map((list) => [list.id, list]));
+    const validEntries: FocusEntry[] = [];
+    const result: FocusListItem[] = [];
+    let changed = false;
+
+    for (const entry of entries) {
+      const item = itemById.get(entry.itemId);
+      const list = item ? listById.get(item.listId) : undefined;
+      if (!item || !list) {
+        changed = true;
+        continue;
+      }
+      validEntries.push(entry);
+      result.push({
+        ...item,
+        tags: [...(item.tags ?? [])],
+        ...(item.customFields ? { customFields: { ...item.customFields } } : {}),
+        position: entry.position,
+        sourceListId: item.listId,
+        sourceListName: list.name,
+        focusEntryId: entry.itemId,
+      });
+    }
+
+    if (changed) {
+      this.data.focusEntries = validEntries;
+      this.reflowFocusPositions();
+      await this.save();
+    }
+
+    return result.sort((a, b) => {
+      const aPos = typeof a.position === 'number' ? a.position : 0;
+      const bPos = typeof b.position === 'number' ? b.position : 0;
+      return aPos - bPos;
+    });
+  }
+
+  async addFocusItem(params: { itemId: string; position?: number }): Promise<FocusEntry> {
+    await this.ensureLoaded();
+    const item = this.data.items.find((candidate) => candidate.id === params.itemId);
+    if (!item) {
+      throw new Error(`Item not found: ${params.itemId}`);
+    }
+    const entries = this.ensureFocusEntries();
+    const existing = entries.find((entry) => entry.itemId === params.itemId);
+    const now = new Date().toISOString();
+    if (existing) {
+      if (params.position === undefined) {
+        return existing;
+      }
+      existing.updatedAt = now;
+      this.repositionFocusEntry(params.itemId, params.position);
+      await this.save();
+      return existing;
+    }
+    const entry: FocusEntry = {
+      itemId: params.itemId,
+      position: entries.length,
+      addedAt: now,
+      updatedAt: now,
+    };
+    entries.push(entry);
+    this.repositionFocusEntry(params.itemId, params.position);
+    await this.save();
+    return entry;
+  }
+
+  async updateFocusItem(params: { itemId: string; position?: number }): Promise<FocusEntry> {
+    await this.ensureLoaded();
+    const entry = this.ensureFocusEntries().find((candidate) => candidate.itemId === params.itemId);
+    if (!entry) {
+      throw new Error(`Focus item not found: ${params.itemId}`);
+    }
+    entry.updatedAt = new Date().toISOString();
+    this.repositionFocusEntry(params.itemId, params.position);
+    await this.save();
+    return entry;
+  }
+
+  async removeFocusItem(itemId: string): Promise<void> {
+    await this.ensureLoaded();
+    const entries = this.ensureFocusEntries();
+    const nextEntries = entries.filter((entry) => entry.itemId !== itemId);
+    if (nextEntries.length === entries.length) {
+      return;
+    }
+    this.data.focusEntries = nextEntries;
+    this.assignFocusPositions();
+    await this.save();
   }
 
   // Query operations

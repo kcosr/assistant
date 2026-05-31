@@ -362,6 +362,86 @@ describe('ListsStore (plugin)', () => {
     expect(shoppingList?.updatedAt).toBe('2024-02-02T00:00:00.000Z');
   });
 
+  it('manages ordered focus entries without owning source items', async () => {
+    const filePath = createTempFilePath();
+    const store = createStore(filePath);
+
+    await store.createList({ id: 'work', name: 'Work' });
+    await store.createList({ id: 'home', name: 'Home' });
+
+    const workItem = await store.addItem({ listId: 'work', title: 'Ship feature' });
+    const homeItem = await store.addItem({ listId: 'home', title: 'Pay bills' });
+
+    await store.addFocusItem({ itemId: homeItem.id });
+    await store.addFocusItem({ itemId: workItem.id, position: 0 });
+
+    let focusItems = await store.listFocusItems();
+    expect(focusItems.map((item) => item.id)).toEqual([workItem.id, homeItem.id]);
+    expect(focusItems.map((item) => item.position)).toEqual([0, 1]);
+    expect(focusItems.map((item) => item.sourceListName)).toEqual(['Work', 'Home']);
+
+    await store.updateFocusItem({ itemId: homeItem.id, position: 0 });
+
+    focusItems = await store.listFocusItems();
+    expect(focusItems.map((item) => item.id)).toEqual([homeItem.id, workItem.id]);
+    expect(focusItems.map((item) => item.sourceListId)).toEqual(['home', 'work']);
+
+    await store.removeFocusItem(homeItem.id);
+    expect((await store.getItem(homeItem.id))?.title).toBe('Pay bills');
+    expect((await store.listFocusItems()).map((item) => item.id)).toEqual([workItem.id]);
+
+    await store.removeItem(workItem.id);
+    expect(await store.listFocusItems()).toEqual([]);
+
+    const anotherHomeItem = await store.addItem({ listId: 'home', title: 'Clean kitchen' });
+    await store.addFocusItem({ itemId: anotherHomeItem.id });
+    await store.deleteList('home');
+    expect(await store.listFocusItems()).toEqual([]);
+  });
+
+  it('keeps existing focus entries in place unless a position is provided', async () => {
+    const filePath = createTempFilePath();
+    const store = createStore(filePath);
+
+    await store.createList({ id: 'work', name: 'Work' });
+    const firstItem = await store.addItem({ listId: 'work', title: 'First' });
+    const secondItem = await store.addItem({ listId: 'work', title: 'Second' });
+
+    vi.setSystemTime(new Date('2024-04-01T00:00:00.000Z'));
+    await store.addFocusItem({ itemId: firstItem.id });
+    vi.setSystemTime(new Date('2024-04-01T00:01:00.000Z'));
+    await store.addFocusItem({ itemId: secondItem.id });
+
+    expect((await store.listFocusItems()).map((item) => item.id)).toEqual([
+      firstItem.id,
+      secondItem.id,
+    ]);
+    expect(await store.getFocusList()).toEqual(
+      expect.objectContaining({
+        createdAt: '2024-04-01T00:00:00.000Z',
+        updatedAt: '2024-04-01T00:01:00.000Z',
+      }),
+    );
+
+    vi.setSystemTime(new Date('2024-04-01T00:02:00.000Z'));
+    await store.addFocusItem({ itemId: firstItem.id });
+
+    expect((await store.listFocusItems()).map((item) => item.id)).toEqual([
+      firstItem.id,
+      secondItem.id,
+    ]);
+    expect((await store.getFocusList()).updatedAt).toBe('2024-04-01T00:01:00.000Z');
+
+    await store.addFocusItem({ itemId: firstItem.id, position: 1 });
+    expect((await store.listFocusItems()).map((item) => item.id)).toEqual([
+      secondItem.id,
+      firstItem.id,
+    ]);
+    expect((await store.getFocusList()).updatedAt).toBe('2024-04-01T00:02:00.000Z');
+
+    await expect(store.removeFocusItem('missing-item')).resolves.toBeUndefined();
+  });
+
   it('touches items without changing updatedAt', async () => {
     const filePath = createTempFilePath();
     const store = createStore(filePath);

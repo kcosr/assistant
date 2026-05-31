@@ -27,14 +27,16 @@ export interface ListPanelHeaderRendererOptions {
   onDeleteSelection: () => void;
   onMoveSelectionToTop: () => void;
   onMoveSelectionToBottom: () => void;
+  onAddSelectionToFocus: () => void;
+  onRemoveSelectionFromFocus: () => void;
   onAddItem: (listId: string) => void;
   onToggleView: () => void;
   onEditMetadata: () => void;
   onTimelineFieldChange: (fieldKey: string | null) => void;
   onFocusViewToggle: () => void;
   getMoveTargetLists: () => ListMoveTarget[];
-  onMoveSelectedToList: (targetListId: string) => void;
-  onCopySelectedToList: (targetListId: string) => void;
+  onMoveSelectedToList: () => void;
+  onCopySelectedToList: () => void;
   renderTags: (tags: string[] | undefined) => HTMLElement | null;
 }
 
@@ -114,8 +116,6 @@ export function renderListPanelHeader(
 
   let isMenuOpen = false;
   let isSelectionMenuOpen = false;
-  let moveSubmenu: HTMLDivElement | null = null;
-  let copySubmenu: HTMLDivElement | null = null;
 
   const handleDocumentClick = (event: MouseEvent): void => {
     const target = event.target as Node;
@@ -138,12 +138,6 @@ export function renderListPanelHeader(
       document.removeEventListener('click', handleDocumentClick);
     }
 
-    if (!isMenuOpen && moveSubmenu) {
-      moveSubmenu.classList.remove('open');
-    }
-    if (!isMenuOpen && copySubmenu) {
-      copySubmenu.classList.remove('open');
-    }
   };
 
   const setSelectionMenuOpen = (open: boolean): void => {
@@ -159,12 +153,6 @@ export function renderListPanelHeader(
       document.removeEventListener('click', handleDocumentClick);
     }
 
-    if (!isSelectionMenuOpen && moveSubmenu) {
-      moveSubmenu.classList.remove('open');
-    }
-    if (!isSelectionMenuOpen && copySubmenu) {
-      copySubmenu.classList.remove('open');
-    }
   };
 
   const addMenuItem = (
@@ -232,89 +220,8 @@ export function renderListPanelHeader(
   moveSelectedBtn.className = 'collection-list-actions-menu-item move-selected-button';
   moveSelectedBtn.dataset['role'] = 'move-selected-button';
   moveSelectedBtn.textContent = 'Move to List';
-  moveSelectedBtn.setAttribute('aria-haspopup', 'menu');
-  moveSelectedBtn.setAttribute('aria-expanded', 'false');
+  moveSelectedBtn.setAttribute('aria-haspopup', 'dialog');
   selectionMenu.appendChild(moveSelectedBtn);
-
-  moveSubmenu = document.createElement('div');
-  moveSubmenu.className = 'collection-list-actions-submenu';
-  selectionMenu.appendChild(moveSubmenu);
-
-  const rebuildMoveSubmenu = (): void => {
-    if (!moveSubmenu) {
-      return;
-    }
-    moveSubmenu.innerHTML = '';
-
-    const targets = options
-      .getMoveTargetLists()
-      .filter((target) => target.id !== options.listId);
-
-    if (targets.length === 0) {
-      const empty = document.createElement('div');
-      empty.className = 'collection-list-actions-submenu-empty';
-      empty.textContent = 'No other lists';
-      moveSubmenu.appendChild(empty);
-      return;
-    }
-
-    for (const target of targets) {
-      const btn = document.createElement('button');
-      btn.type = 'button';
-      btn.className = 'collection-list-actions-submenu-item';
-      btn.textContent = target.name;
-      btn.addEventListener('click', (event) => {
-        event.preventDefault();
-        event.stopPropagation();
-        setSelectionMenuOpen(false);
-        options.onMoveSelectedToList(target.id);
-      });
-      moveSubmenu.appendChild(btn);
-    }
-  };
-
-  const openMoveSubmenu = (): void => {
-    if (!moveSubmenu) {
-      return;
-    }
-    if (copySubmenu) {
-      copySubmenu.classList.remove('open');
-      copySelectedBtn.setAttribute('aria-expanded', 'false');
-    }
-    rebuildMoveSubmenu();
-    const offsetTop = moveSelectedBtn.offsetTop;
-    moveSubmenu.style.top = `${offsetTop}px`;
-    moveSubmenu.classList.add('open');
-    moveSelectedBtn.setAttribute('aria-expanded', 'true');
-  };
-
-  const closeMoveSubmenu = (event?: MouseEvent): void => {
-    if (!moveSubmenu) {
-      return;
-    }
-    if (event) {
-      const related = event.relatedTarget as Node | null;
-      if (related && (related === moveSelectedBtn || moveSubmenu.contains(related))) {
-        return;
-      }
-    }
-    moveSubmenu.classList.remove('open');
-    moveSelectedBtn.setAttribute('aria-expanded', 'false');
-  };
-
-  moveSelectedBtn.addEventListener('mouseenter', () => {
-    if (!moveSelectedBtn.classList.contains('visible')) {
-      return;
-    }
-    openMoveSubmenu();
-  });
-
-  moveSelectedBtn.addEventListener('focus', () => {
-    if (!moveSelectedBtn.classList.contains('visible')) {
-      return;
-    }
-    openMoveSubmenu();
-  });
 
   moveSelectedBtn.addEventListener('click', (event) => {
     if (!moveSelectedBtn.classList.contains('visible')) {
@@ -322,111 +229,17 @@ export function renderListPanelHeader(
     }
     event.preventDefault();
     event.stopPropagation();
-    if (moveSubmenu?.classList.contains('open')) {
-      closeMoveSubmenu();
-    } else {
-      openMoveSubmenu();
-    }
+    setSelectionMenuOpen(false);
+    options.onMoveSelectedToList();
   });
-
-  moveSelectedBtn.addEventListener('mouseleave', (event) => {
-    closeMoveSubmenu(event);
-  });
-
-  if (moveSubmenu) {
-    moveSubmenu.addEventListener('mouseleave', (event) => {
-      closeMoveSubmenu(event as MouseEvent);
-    });
-  }
 
   const copySelectedBtn = document.createElement('button');
   copySelectedBtn.type = 'button';
   copySelectedBtn.className = 'collection-list-actions-menu-item copy-selected-button';
   copySelectedBtn.dataset['role'] = 'copy-selected-button';
   copySelectedBtn.textContent = 'Copy';
-  copySelectedBtn.setAttribute('aria-haspopup', 'menu');
-  copySelectedBtn.setAttribute('aria-expanded', 'false');
+  copySelectedBtn.setAttribute('aria-haspopup', 'dialog');
   selectionMenu.appendChild(copySelectedBtn);
-
-  copySubmenu = document.createElement('div');
-  copySubmenu.className = 'collection-list-actions-submenu';
-  selectionMenu.appendChild(copySubmenu);
-
-  const rebuildCopySubmenu = (): void => {
-    if (!copySubmenu) {
-      return;
-    }
-    copySubmenu.innerHTML = '';
-
-    const targets = options
-      .getMoveTargetLists()
-      .filter((target) => target.id !== options.listId);
-
-    if (targets.length === 0) {
-      const empty = document.createElement('div');
-      empty.className = 'collection-list-actions-submenu-empty';
-      empty.textContent = 'No other lists';
-      copySubmenu.appendChild(empty);
-      return;
-    }
-
-    for (const target of targets) {
-      const btn = document.createElement('button');
-      btn.type = 'button';
-      btn.className = 'collection-list-actions-submenu-item';
-      btn.textContent = target.name;
-      btn.addEventListener('click', (event) => {
-        event.preventDefault();
-        event.stopPropagation();
-        setSelectionMenuOpen(false);
-        options.onCopySelectedToList(target.id);
-      });
-      copySubmenu.appendChild(btn);
-    }
-  };
-
-  const openCopySubmenu = (): void => {
-    if (!copySubmenu) {
-      return;
-    }
-    if (moveSubmenu) {
-      moveSubmenu.classList.remove('open');
-      moveSelectedBtn.setAttribute('aria-expanded', 'false');
-    }
-    rebuildCopySubmenu();
-    const offsetTop = copySelectedBtn.offsetTop;
-    copySubmenu.style.top = `${offsetTop}px`;
-    copySubmenu.classList.add('open');
-    copySelectedBtn.setAttribute('aria-expanded', 'true');
-  };
-
-  const closeCopySubmenu = (event?: MouseEvent): void => {
-    if (!copySubmenu) {
-      return;
-    }
-    if (event) {
-      const related = event.relatedTarget as Node | null;
-      if (related && (related === copySelectedBtn || copySubmenu.contains(related))) {
-        return;
-      }
-    }
-    copySubmenu.classList.remove('open');
-    copySelectedBtn.setAttribute('aria-expanded', 'false');
-  };
-
-  copySelectedBtn.addEventListener('mouseenter', () => {
-    if (!copySelectedBtn.classList.contains('visible')) {
-      return;
-    }
-    openCopySubmenu();
-  });
-
-  copySelectedBtn.addEventListener('focus', () => {
-    if (!copySelectedBtn.classList.contains('visible')) {
-      return;
-    }
-    openCopySubmenu();
-  });
 
   copySelectedBtn.addEventListener('click', (event) => {
     if (!copySelectedBtn.classList.contains('visible')) {
@@ -434,22 +247,31 @@ export function renderListPanelHeader(
     }
     event.preventDefault();
     event.stopPropagation();
-    if (copySubmenu?.classList.contains('open')) {
-      closeCopySubmenu();
-    } else {
-      openCopySubmenu();
-    }
+    setSelectionMenuOpen(false);
+    options.onCopySelectedToList();
   });
 
-  copySelectedBtn.addEventListener('mouseleave', (event) => {
-    closeCopySubmenu(event);
-  });
+  const addFocusSelectionBtn = addMenuItem(
+    selectionMenu,
+    () => setSelectionMenuOpen(false),
+    'Add to Focus',
+    options.onAddSelectionToFocus,
+    {
+      className: 'collection-list-actions-menu-item add-focus-selection-button',
+    },
+  );
+  addFocusSelectionBtn.dataset['role'] = 'add-focus-selection-button';
 
-  if (copySubmenu) {
-    copySubmenu.addEventListener('mouseleave', (event) => {
-      closeCopySubmenu(event as MouseEvent);
-    });
-  }
+  const removeFocusSelectionBtn = addMenuItem(
+    selectionMenu,
+    () => setSelectionMenuOpen(false),
+    'Remove from Focus',
+    options.onRemoveSelectionFromFocus,
+    {
+      className: 'collection-list-actions-menu-item remove-focus-selection-button',
+    },
+  );
+  removeFocusSelectionBtn.dataset['role'] = 'remove-focus-selection-button';
 
   const clearBtn = addMenuItem(
     selectionMenu,
@@ -485,6 +307,8 @@ export function renderListPanelHeader(
     clearBtn.classList.toggle('visible', hasSelection);
     moveTopBtn.classList.toggle('visible', hasSelection);
     moveBottomBtn.classList.toggle('visible', hasSelection);
+    addFocusSelectionBtn.classList.toggle('visible', hasSelection);
+    removeFocusSelectionBtn.classList.toggle('visible', hasSelection);
     deleteBtn.classList.toggle('visible', hasSelection);
     moveSelectedBtn.classList.toggle('visible', hasSelection);
     copySelectedBtn.classList.toggle('visible', hasSelection);

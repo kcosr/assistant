@@ -9,6 +9,8 @@ export interface ListItemMenuControllerOptions {
     copy: string;
     move: string;
     duplicate: string;
+    x: string;
+    eye: string;
     clock: string;
     clockOff: string;
     moveTop: string;
@@ -28,8 +30,10 @@ export interface ListItemMenuControllerOptions {
     options?: { initialMode?: 'quick' | 'review' },
   ) => void;
   onDeleteItem: (listId: string, itemId: string, title: string) => void;
-  onMoveItemToList: (listId: string, itemId: string, targetListId: string) => void;
-  onCopyItemToList: (listId: string, itemId: string, targetListId: string) => void;
+  onDeleteUnderlyingItem?: (listId: string, itemId: string, title: string) => void;
+  onToggleItemFocus?: (listId: string, itemId: string, focused: boolean) => void;
+  onMoveItemToList: (listId: string, itemId: string) => void;
+  onCopyItemToList: (listId: string, itemId: string) => void;
   onTouchItem: (listId: string, itemId: string) => void;
   onClearTouchItem: (listId: string, itemId: string) => void;
 }
@@ -83,82 +87,6 @@ export class ListItemMenuController {
       });
       menu.appendChild(btn);
       return btn;
-    };
-
-    let activeSubmenu: HTMLDivElement | null = null;
-    let activeSubmenuKind: 'move' | 'copy' | null = null;
-
-    const closeSubmenu = (): void => {
-      if (activeSubmenu) {
-        activeSubmenu.remove();
-        activeSubmenu = null;
-        activeSubmenuKind = null;
-      }
-    };
-
-    const buildSubmenu = (
-      kind: 'move' | 'copy',
-      triggerButton: HTMLButtonElement,
-      onSelect: (targetListId: string) => void,
-    ): void => {
-      if (activeSubmenu && activeSubmenuKind === kind) {
-        closeSubmenu();
-        return;
-      }
-
-      closeSubmenu();
-      const submenu = document.createElement('div');
-      submenu.className = 'list-item-menu-submenu';
-      submenu.setAttribute('role', 'menu');
-      submenu.dataset['kind'] = kind;
-
-      const targets = this.options
-        .getMoveTargetLists()
-        .filter((target) => target.id !== listId);
-
-      if (targets.length === 0) {
-        const empty = document.createElement('div');
-        empty.className = 'list-item-menu-submenu-empty';
-        empty.textContent = 'No other lists';
-        submenu.appendChild(empty);
-      } else {
-        for (const target of targets) {
-          const btn = document.createElement('button');
-          btn.type = 'button';
-          btn.className = 'list-item-menu-submenu-item';
-          btn.textContent = target.name;
-          btn.addEventListener('click', (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            this.options.contextMenuManager.close();
-            onSelect(target.id);
-          });
-          submenu.appendChild(btn);
-        }
-      }
-
-      wrapper.appendChild(submenu);
-      activeSubmenu = submenu;
-      activeSubmenuKind = kind;
-
-      const menuRect = menu.getBoundingClientRect();
-      const triggerRect = triggerButton.getBoundingClientRect();
-      const submenuRect = submenu.getBoundingClientRect();
-
-      let left = menuRect.right + 6;
-      if (left + submenuRect.width > window.innerWidth - 8) {
-        left = menuRect.left - submenuRect.width - 6;
-      }
-      let top = triggerRect.top;
-      if (top + submenuRect.height > window.innerHeight - 8) {
-        top = window.innerHeight - submenuRect.height - 8;
-      }
-      if (top < 8) {
-        top = 8;
-      }
-
-      submenu.style.left = `${left}px`;
-      submenu.style.top = `${top}px`;
     };
 
     const toggleCompleted = async () => {
@@ -255,44 +183,48 @@ export class ListItemMenuController {
       }
     });
 
-    const moveButton = document.createElement('button');
-    moveButton.type = 'button';
-    moveButton.className = 'list-item-menu-item';
-    moveButton.innerHTML = this.options.icons.move;
-    moveButton.setAttribute('aria-label', 'Move to list');
-    moveButton.setAttribute('aria-haspopup', 'menu');
-    moveButton.addEventListener('click', (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      buildSubmenu('move', moveButton, (targetListId) => {
-        this.options.onMoveItemToList(listId, itemId, targetListId);
-      });
+    addMenuButton(this.options.icons.move, 'Move to list', () => {
+      this.options.onMoveItemToList(listId, itemId);
     });
-    menu.appendChild(moveButton);
 
-    const copyButton = document.createElement('button');
-    copyButton.type = 'button';
-    copyButton.className = 'list-item-menu-item';
-    copyButton.innerHTML = this.options.icons.duplicate;
-    copyButton.setAttribute('aria-label', 'Copy to list');
-    copyButton.setAttribute('aria-haspopup', 'menu');
-    copyButton.addEventListener('click', (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      buildSubmenu('copy', copyButton, (targetListId) => {
-        this.options.onCopyItemToList(listId, itemId, targetListId);
-      });
+    addMenuButton(this.options.icons.duplicate, 'Copy to list', () => {
+      this.options.onCopyItemToList(listId, itemId);
     });
-    menu.appendChild(copyButton);
 
-    addMenuButton(
-      this.options.icons.trash,
-      'Delete item',
-      () => {
-        this.options.onDeleteItem(listId, itemId, item.title);
-      },
-      'delete',
-    );
+    const isFocusItem = typeof item.sourceListId === 'string' && item.sourceListId.trim().length > 0;
+    if (this.options.onToggleItemFocus) {
+      const isFocused = isFocusItem || item.focused === true;
+      addMenuButton(
+        this.options.icons.eye,
+        isFocused ? 'Focused' : 'Add to Focus',
+        () => {
+          this.options.onToggleItemFocus?.(listId, itemId, isFocused);
+        },
+        isFocused ? 'focus-toggle active' : 'focus-toggle',
+      );
+    }
+
+    if (!isFocusItem) {
+      addMenuButton(
+        this.options.icons.trash,
+        'Delete item',
+        () => {
+          this.options.onDeleteItem(listId, itemId, item.title);
+        },
+        'delete',
+      );
+    }
+
+    if (isFocusItem && this.options.onDeleteUnderlyingItem) {
+      addMenuButton(
+        this.options.icons.trash,
+        'Delete source item',
+        () => {
+          this.options.onDeleteUnderlyingItem?.(listId, itemId, item.title);
+        },
+        'delete',
+      );
+    }
 
     document.body.appendChild(wrapper);
     this.options.contextMenuManager.setActiveMenu(wrapper);
@@ -308,8 +240,5 @@ export class ListItemMenuController {
     }
     menu.style.left = `${left}px`;
     menu.style.top = `${top}px`;
-    if (activeSubmenu) {
-      closeSubmenu();
-    }
   }
 }

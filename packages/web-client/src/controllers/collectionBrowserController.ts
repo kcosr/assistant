@@ -42,6 +42,7 @@ export interface CollectionBrowserControllerOptions {
     list: string;
     pin: string;
     favorite: string;
+    focus: string;
   };
   onTogglePinned?: (item: CollectionReference, isPinned: boolean) => void;
   fetchPreview?: (
@@ -566,6 +567,33 @@ export class CollectionBrowserController {
     titleRow.insertBefore(pin, labelEl);
   }
 
+  private decorateItemSpecialKind(itemEl: HTMLElement, item: CollectionItemSummary): void {
+    if (item.specialKind !== 'focus') {
+      return;
+    }
+    const labelEl = itemEl.querySelector<HTMLElement>('.collection-search-dropdown-item-label');
+    if (!labelEl) {
+      return;
+    }
+    let titleRow: HTMLElement | null = null;
+    if (
+      labelEl.parentElement &&
+      labelEl.parentElement.classList.contains('collection-browser-item-title')
+    ) {
+      titleRow = labelEl.parentElement as HTMLElement;
+    } else {
+      titleRow = document.createElement('div');
+      titleRow.className = 'collection-browser-item-title';
+      labelEl.insertAdjacentElement('beforebegin', titleRow);
+      titleRow.appendChild(labelEl);
+    }
+    const focus = document.createElement('span');
+    focus.className = 'collection-browser-item-focus';
+    focus.innerHTML = this.options.icons.focus;
+    focus.setAttribute('aria-hidden', 'true');
+    titleRow.insertBefore(focus, labelEl);
+  }
+
   private decorateItemFavorite(itemEl: HTMLElement, item: CollectionItemSummary): void {
     if (!item.favorite) {
       return;
@@ -911,6 +939,7 @@ export class CollectionBrowserController {
       onSelectItem: (itemEl) => this.selectItem(itemEl),
       renderItemContent: (itemEl, item) => {
         this.decorateItemFavorite(itemEl, item);
+        this.decorateItemSpecialKind(itemEl, item);
         this.decorateItemPinned(itemEl, item);
         this.decorateItemInstanceBadge(itemEl, item);
         this.decorateListItem(itemEl, item);

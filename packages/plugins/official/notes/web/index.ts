@@ -2121,6 +2121,7 @@ if (!registry || typeof registry.registerPanel !== 'function') {
           list: ICONS.list,
           pin: ICONS.pin,
           favorite: ICONS.heart,
+          focus: ICONS.eye,
         },
         onTogglePinned: (item, isPinned) => {
           if (item.type !== 'note') {

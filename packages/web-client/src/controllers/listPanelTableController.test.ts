@@ -140,6 +140,90 @@ describe('ListPanelTableController double-click edit', () => {
   });
 });
 
+describe('ListPanelTableController focus source labels', () => {
+  const recentUserItemUpdates = new Set<string>();
+
+  beforeEach(() => {
+    document.body.innerHTML = '';
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    document.body.innerHTML = '';
+  });
+
+  it('renders focus source list names on a separate title line', () => {
+    const controller = new ListPanelTableController({
+      icons: { moreVertical: '', pin: '' },
+      renderTags: () => null,
+      recentUserItemUpdates,
+      userUpdateTimeoutMs: 1000,
+      getSelectedItemCount: () => 0,
+      showListItemMenu: vi.fn(),
+      updateListItem: vi.fn(async () => true),
+    });
+
+    const { tbody } = controller.renderTable({
+      listId: '__focus__',
+      sortedItems: [{ id: 'item1', title: 'Item 1', sourceListName: 'Today' }],
+      showUrlColumn: false,
+      showNotesColumn: false,
+      showTagsColumn: false,
+      showAddedColumn: false,
+      showUpdatedColumn: false,
+      showTouchedColumn: false,
+      rerender: () => {},
+    });
+
+    const titleContent = tbody.querySelector<HTMLElement>('.list-item-title-content');
+    const titleMain = titleContent?.querySelector<HTMLElement>(':scope > .list-item-title-main');
+    const source = titleContent?.querySelector<HTMLElement>(':scope > .list-item-source');
+
+    expect(titleMain?.textContent).toBe('Item 1');
+    expect(source?.textContent).toBe('Today');
+    expect(Array.from(titleContent?.children ?? [])).toEqual([titleMain, source]);
+  });
+
+  it('uses the focused eye icon as the row action indicator for focused items', () => {
+    const controller = new ListPanelTableController({
+      icons: {
+        moreVertical: '<span class="dots"></span>',
+        eye: '<span class="eye"></span>',
+        pin: '',
+      },
+      renderTags: () => null,
+      recentUserItemUpdates,
+      userUpdateTimeoutMs: 1000,
+      getSelectedItemCount: () => 0,
+      showListItemMenu: vi.fn(),
+      updateListItem: vi.fn(async () => true),
+    });
+
+    const { tbody } = controller.renderTable({
+      listId: 'today',
+      sortedItems: [
+        { id: 'item1', title: 'Focused item', focused: true },
+        { id: 'item2', title: 'Regular item', focused: false },
+      ],
+      showUrlColumn: false,
+      showNotesColumn: false,
+      showTagsColumn: false,
+      showAddedColumn: false,
+      showUpdatedColumn: false,
+      showTouchedColumn: false,
+      rerender: () => {},
+    });
+
+    const triggers = tbody.querySelectorAll<HTMLButtonElement>('.list-item-menu-trigger');
+    expect(triggers[0]?.classList.contains('list-item-menu-trigger-focused')).toBe(true);
+    expect(triggers[0]?.querySelector('.eye')).not.toBeNull();
+    expect(triggers[0]?.getAttribute('aria-label')).toBe('Item actions, focused');
+    expect(triggers[1]?.classList.contains('list-item-menu-trigger-focused')).toBe(false);
+    expect(triggers[1]?.querySelector('.dots')).not.toBeNull();
+    expect(triggers[1]?.getAttribute('aria-label')).toBe('Item actions');
+  });
+});
+
 describe('ListPanelTableController drag reorder and selection', () => {
   const listId = 'list1';
 

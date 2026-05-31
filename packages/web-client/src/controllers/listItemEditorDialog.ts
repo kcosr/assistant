@@ -38,6 +38,13 @@ export interface ListItemEditorDialogOptions {
   checkReferenceAvailability?: (reference: ListItemReference) => Promise<boolean | null>;
 }
 
+export interface ListItemEditorListTarget {
+  id: string;
+  name: string;
+  defaultTags?: string[];
+  customFields?: ListCustomFieldDefinition[];
+}
+
 export interface ListItemEditorDialogOpenOptions {
   availableTags?: string[];
   defaultTags?: string[];
@@ -47,6 +54,14 @@ export interface ListItemEditorDialogOpenOptions {
   insertAtTop?: boolean;
   /** Override initial editor mode for this dialog */
   initialMode?: ListItemEditorMode;
+  /** Whether the item should be in the virtual Focus list. */
+  focused?: boolean;
+  /** Show the Focus membership checkbox. */
+  showFocusToggle?: boolean;
+  /** Alternate lists that can receive a newly added item. */
+  listTargets?: ListItemEditorListTarget[];
+  /** The currently selected list target when it differs from the visible list id. */
+  selectedListId?: string;
 }
 
 type ListItemEditorMode = 'quick' | 'review';
@@ -500,6 +515,37 @@ export class ListItemEditorDialog {
     const reviewContainer = document.createElement('div');
     reviewContainer.className = 'list-item-review';
 
+    const initialSelectedListId = openOptions?.selectedListId ?? listId;
+    let selectedListId = initialSelectedListId;
+    const listTargets = (openOptions?.listTargets ?? []).filter(
+      (target) => target.id && target.name,
+    );
+    if ((mode === 'add' || mode === 'edit') && listTargets.length > 1) {
+      const listLabel = document.createElement('label');
+      listLabel.className = 'list-item-form-label';
+      const listLabelText = document.createElement('span');
+      listLabelText.className = 'list-item-form-label-text';
+      listLabelText.textContent = 'List';
+      const listSelect = document.createElement('select');
+      listSelect.className = 'list-item-form-select list-item-target-select';
+      for (const target of listTargets) {
+        const option = document.createElement('option');
+        option.value = target.id;
+        option.textContent = target.name;
+        listSelect.appendChild(option);
+      }
+      listSelect.value = listTargets.some((target) => target.id === initialSelectedListId)
+        ? initialSelectedListId
+        : listTargets[0]?.id ?? initialSelectedListId;
+      selectedListId = listSelect.value;
+      listSelect.addEventListener('change', () => {
+        selectedListId = listSelect.value || initialSelectedListId;
+      });
+      listLabel.appendChild(listLabelText);
+      listLabel.appendChild(listSelect);
+      quickEditContainer.appendChild(listLabel);
+    }
+
     const titleLabel = document.createElement('label');
     titleLabel.className = 'list-item-form-label';
     const titleLabelText = document.createElement('span');
@@ -598,6 +644,27 @@ export class ListItemEditorDialog {
     pinnedRow.appendChild(pinnedCheckbox);
     pinnedRow.appendChild(pinnedLabel);
     quickEditContainer.appendChild(pinnedRow);
+
+    let focusCheckbox: HTMLInputElement | null = null;
+    if (openOptions?.showFocusToggle) {
+      const focusRow = document.createElement('div');
+      focusRow.className = 'list-item-form-checkbox-row';
+
+      focusCheckbox = document.createElement('input');
+      focusCheckbox.type = 'checkbox';
+      focusCheckbox.id = `list-item-focused-${Math.random().toString(36).slice(2)}`;
+      focusCheckbox.className = 'list-item-form-checkbox';
+      focusCheckbox.checked = openOptions.focused === true;
+
+      const focusLabel = document.createElement('label');
+      focusLabel.htmlFor = focusCheckbox.id;
+      focusLabel.className = 'list-item-form-checkbox-label';
+      focusLabel.textContent = 'Focus';
+
+      focusRow.appendChild(focusCheckbox);
+      focusRow.appendChild(focusLabel);
+      quickEditContainer.appendChild(focusRow);
+    }
 
     // Insert at top checkbox (only shown in add mode)
     let insertAtTopCheckbox: HTMLInputElement | null = null;
@@ -1435,7 +1502,39 @@ export class ListItemEditorDialog {
       const notes = notesInput.value.trim();
       const tags = applyPinnedTag(selectedTags, pinnedCheckbox.checked);
 
-      const customFieldValues = customFieldsSection.getValues();
+      let customFieldValues = customFieldsSection.getValues();
+      const selectedTarget = listTargets.find((target) => target.id === selectedListId) ?? null;
+      if (
+        selectedListId !== initialSelectedListId &&
+        selectedTarget?.customFields !== undefined
+      ) {
+        const allowedKeys = new Set(
+          selectedTarget.customFields
+            .map((field) => field?.key)
+            .filter((key): key is string => typeof key === 'string' && key.length > 0),
+        );
+        const filteredValues: Record<string, unknown> = {};
+        for (const [key, value] of Object.entries(customFieldValues)) {
+          if (allowedKeys.has(key)) {
+            filteredValues[key] = value;
+          } else if (mode === 'edit') {
+            filteredValues[key] = null;
+          }
+        }
+        if (
+          mode === 'edit' &&
+          item?.customFields &&
+          typeof item.customFields === 'object' &&
+          !Array.isArray(item.customFields)
+        ) {
+          for (const key of Object.keys(item.customFields as Record<string, unknown>)) {
+            if (!allowedKeys.has(key)) {
+              filteredValues[key] = null;
+            }
+          }
+        }
+        customFieldValues = filteredValues;
+      }
 
       const payload: {
         title: string;
@@ -1444,6 +1543,8 @@ export class ListItemEditorDialog {
         tags?: string[];
         customFields?: Record<string, unknown>;
         position?: number;
+        focused?: boolean;
+        targetListId?: string;
       } = {
         title,
         url,
@@ -1470,10 +1571,16 @@ export class ListItemEditorDialog {
       if (insertAtTopCheckbox?.checked) {
         payload.position = 0;
       }
+      if (focusCheckbox) {
+        payload.focused = focusCheckbox.checked;
+      }
+      if (mode === 'edit' && selectedListId && selectedListId !== initialSelectedListId) {
+        payload.targetListId = selectedListId;
+      }
 
       if (mode === 'add') {
         void (async () => {
-          const ok = await this.options.createListItem(listId, payload);
+          const ok = await this.options.createListItem(selectedListId, payload);
           if (!ok) {
             this.options.setStatus('Failed to add list item');
             return;
