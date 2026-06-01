@@ -285,6 +285,26 @@ describe('CollectionBrowserController list CRUD UI', () => {
     });
   });
 
+  it('keeps the Focus list at the top of browser list results', () => {
+    const { controller, containerEl } = makeController({
+      getAvailableItems: () => [
+        { type: 'list', id: 'agent-pack', name: 'Agent Pack' },
+        { type: 'list', id: '__focus__', name: 'Focus', specialKind: 'focus' },
+        { type: 'list', id: 'today', name: 'Today' },
+      ],
+    });
+
+    controller.show(false);
+
+    const ids = Array.from(
+      containerEl.querySelectorAll<HTMLElement>(
+        '.collection-search-dropdown-item[data-collection-type="list"]',
+      ),
+    ).map((el) => el.dataset['collectionId']);
+
+    expect(ids).toEqual(['__focus__', 'agent-pack', 'today']);
+  });
+
   it('sorts items by last updated and persists the choice', () => {
     window.localStorage.setItem('collectionBrowserTestSortMode', 'updated');
 
