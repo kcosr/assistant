@@ -544,10 +544,26 @@ describe('PiSessionWriter', () => {
       },
     });
 
+    const encodedCwd = `--${'/tmp/project'.replace(/^[/\\]/, '').replace(/[\\/:]/g, '-')}--`;
+    const sessionDir = path.join(baseDir, encodedCwd);
+    const files = await fs.readdir(sessionDir);
+    expect(files.length).toBe(1);
+    const filePath = path.join(sessionDir, files[0]!);
+    const staleEntries = parseJsonLines(await fs.readFile(filePath, 'utf8'));
+    staleEntries[0] = {
+      ...staleEntries[0],
+      parentSession: 'parent-session',
+    };
+    await fs.writeFile(
+      filePath,
+      `${staleEntries.map((entry) => JSON.stringify(entry)).join('\n')}\n`,
+      'utf8',
+    );
+
     await writer.appendTurnStart({
       summary,
       turnId: 'current-turn',
-      trigger: 'user',
+      trigger: 'callback',
       updateAttributes: async (patch) => {
         summary.attributes = {
           ...(summary.attributes ?? {}),
@@ -561,7 +577,7 @@ describe('PiSessionWriter', () => {
       summary,
       messages: [
         { role: 'system', content: 'system' },
-        { role: 'user', content: 'current user' },
+        { role: 'user', content: 'current user', meta: { source: 'callback' } },
         { role: 'assistant', content: 'current assistant' },
       ],
       updateAttributes: async (patch) => {
@@ -573,21 +589,20 @@ describe('PiSessionWriter', () => {
       },
     });
 
-    const encodedCwd = `--${'/tmp/project'.replace(/^[/\\]/, '').replace(/[\\/:]/g, '-')}--`;
-    const sessionDir = path.join(baseDir, encodedCwd);
-    const files = await fs.readdir(sessionDir);
-    expect(files.length).toBe(1);
-    const filePath = path.join(sessionDir, files[0]!);
     const entries = parseJsonLines(await fs.readFile(filePath, 'utf8'));
     const messageTexts = extractMessageTexts(entries);
 
+    expect(entries[0]).toMatchObject({
+      type: 'session',
+      parentSession: 'parent-session',
+    });
     expect(messageTexts).toEqual(['current user', 'current assistant']);
     expect(entries).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
           type: 'custom',
           customType: 'assistant.request_start',
-          data: expect.objectContaining({ requestId: 'current-turn' }),
+          data: expect.objectContaining({ requestId: 'current-turn', trigger: 'callback' }),
         }),
       ]),
     );
@@ -634,7 +649,7 @@ describe('PiSessionWriter', () => {
       summary,
       messages: [
         { role: 'system', content: 'system' },
-        { role: 'user', content: 'current user' },
+        { role: 'user', content: 'current user', meta: { source: 'callback' } },
         { role: 'assistant', content: 'current assistant' },
       ],
     });
@@ -647,6 +662,93 @@ describe('PiSessionWriter', () => {
       ]),
     );
   });
+
+  it.each(['delete_request', 'trim_after'] as const)(
+    'keeps earlier repaired turns when applying %s to the open request',
+    async (action) => {
+      const baseDir = await createTempDir(`pi-session-writer-repair-${action}`);
+      const now = () => new Date('2026-02-01T00:00:00.000Z');
+      const writer = new PiSessionWriter({ baseDir, now, log: () => undefined });
+
+      const summary: SessionSummary = {
+        sessionId: `session-repair-${action}`,
+        agentId: 'pi',
+        createdAt: now().toISOString(),
+        updatedAt: now().toISOString(),
+        attributes: {
+          core: { workingDir: '/tmp/project' },
+        },
+      };
+      const updateAttributes = async (patch: Record<string, unknown>) => {
+        summary.attributes = {
+          ...(summary.attributes ?? {}),
+          ...(patch as Record<string, unknown>),
+        } as NonNullable<SessionSummary['attributes']>;
+        return summary;
+      };
+
+      await writer.sync({
+        summary,
+        messages: [
+          { role: 'system', content: 'system' },
+          { role: 'user', content: 'stale user' },
+          { role: 'assistant', content: 'stale assistant' },
+        ],
+        updateAttributes,
+      });
+      await writer.appendTurnStart({
+        summary,
+        turnId: 'turn-2',
+        trigger: 'user',
+        updateAttributes,
+      });
+      await writer.sync({
+        summary,
+        messages: [
+          { role: 'system', content: 'system' },
+          { role: 'user', content: 'first turn' },
+          { role: 'assistant', content: 'First reply' },
+          { role: 'user', content: 'second turn' },
+          { role: 'assistant', content: 'Second reply' },
+        ],
+        updateAttributes,
+      });
+
+      const result = await writer.rewriteHistoryByRequest({
+        summary,
+        action,
+        requestId: 'turn-2',
+        updateAttributes,
+      });
+
+      expect(result.changed).toBe(true);
+      expect(result.droppedRequestIds).toEqual(['turn-2']);
+
+      const encodedCwd = `--${'/tmp/project'.replace(/^[/\\]/, '').replace(/[\\/:]/g, '-')}--`;
+      const sessionDir = path.join(baseDir, encodedCwd);
+      const files = await fs.readdir(sessionDir);
+      const filePath = path.join(sessionDir, files[0]!);
+      const content = await fs.readFile(filePath, 'utf8');
+      const entries = parseJsonLines(content);
+
+      expect(content).toContain('first turn');
+      expect(content).toContain('First reply');
+      expect(content).not.toContain('second turn');
+      expect(content).not.toContain('Second reply');
+      expect(content).not.toContain('"requestId":"turn-2"');
+      expect(
+        entries.some(
+          (entry) =>
+            entry['type'] === 'custom' && entry['customType'] === 'assistant.request_start',
+        ),
+      ).toBe(true);
+      expect(
+        entries.some(
+          (entry) => entry['type'] === 'custom' && entry['customType'] === 'assistant.request_end',
+        ),
+      ).toBe(true);
+    },
+  );
 
   it('does not advance rewrite state or revision when the atomic rewrite fails', async () => {
     const baseDir = await createTempDir('pi-session-writer-rewrite-failed');

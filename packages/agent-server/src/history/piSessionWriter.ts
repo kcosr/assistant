@@ -1480,15 +1480,6 @@ function buildSyncDiagnosticStack(): string[] {
     .filter(Boolean);
 }
 
-function findRewriteOpenRequestStartIndex(messages: ChatCompletionMessage[]): number | null {
-  for (let index = messages.length - 1; index >= 0; index -= 1) {
-    if (messages[index]?.role === 'user') {
-      return index;
-    }
-  }
-  return messages.length > 0 ? 0 : null;
-}
-
 function getRequestBoundaryRecord(entry: PiSessionEntryRecord): {
   kind: 'start' | 'end';
   requestId: string;
@@ -1588,6 +1579,8 @@ function collectSyntheticRequestSpans(entries: PiSessionEntryRecord[]): PiReques
 
   if (startIndexes.length === 0) {
     startIndexes.push(0);
+  } else if (startIndexes[0] !== 0) {
+    startIndexes.unshift(0);
   }
 
   const spans: PiRequestSpan[] = [];
@@ -1639,14 +1632,17 @@ function materializeExplicitRequestBoundaries(options: {
   entries: PiSessionEntryRecord[];
   spans: PiRequestSpan[];
   fallbackTimestamp: string;
+  openRequestId?: string | null;
+  openSpanIndex?: number | null;
 }): PiSessionEntryRecord[] {
-  const { entries, spans, fallbackTimestamp } = options;
+  const { entries, spans, fallbackTimestamp, openRequestId, openSpanIndex } = options;
   if (spans.length === 0) {
     return entries.map((entry) => cloneJson(entry));
   }
 
   const materialized: PiSessionEntryRecord[] = [];
-  for (const span of spans) {
+  for (let spanIndex = 0; spanIndex < spans.length; spanIndex += 1) {
+    const span = spans[spanIndex]!;
     const spanEntries = entries
       .slice(span.startIndex, span.endIndex + 1)
       .map((entry) => cloneJson(entry));
@@ -1655,6 +1651,12 @@ function materializeExplicitRequestBoundaries(options: {
     }
     const firstEntry = spanEntries[0]!;
     const lastEntry = spanEntries[spanEntries.length - 1]!;
+    const isOpenSpan =
+      typeof openSpanIndex === 'number' &&
+      spanIndex === openSpanIndex &&
+      typeof openRequestId === 'string' &&
+      openRequestId.trim().length > 0;
+    const requestId = isOpenSpan ? openRequestId.trim() : span.requestId;
     materialized.push({
       type: 'custom',
       id: generateEntryId(),
@@ -1663,11 +1665,14 @@ function materializeExplicitRequestBoundaries(options: {
       customType: ASSISTANT_REQUEST_START_CUSTOM_TYPE,
       data: {
         v: ASSISTANT_REQUEST_BOUNDARY_VERSION,
-        requestId: span.requestId,
+        requestId,
         trigger: getSyntheticRequestTrigger(firstEntry),
       },
     });
     materialized.push(...spanEntries);
+    if (isOpenSpan) {
+      continue;
+    }
     materialized.push({
       type: 'custom',
       id: generateEntryId(),
@@ -1676,13 +1681,36 @@ function materializeExplicitRequestBoundaries(options: {
       customType: ASSISTANT_REQUEST_END_CUSTOM_TYPE,
       data: {
         v: ASSISTANT_REQUEST_BOUNDARY_VERSION,
-        requestId: span.requestId,
+        requestId,
         status: 'completed',
       },
     });
   }
 
   return materialized;
+}
+
+function toPiSessionEntryRecords(entries: PiSessionEntry[]): PiSessionEntryRecord[] {
+  return entries.map((entry) => cloneJson(entry) as unknown as PiSessionEntryRecord);
+}
+
+function materializeRewrittenRequestBoundaries(options: {
+  entries: PiSessionEntry[];
+  openRequestId: string | null;
+  fallbackTimestamp: string;
+}): PiSessionEntryRecord[] {
+  const entryRecords = toPiSessionEntryRecords(options.entries);
+  const spans = collectSyntheticRequestSpans(entryRecords);
+  const openSpanIndex = options.openRequestId && spans.length > 0 ? spans.length - 1 : null;
+  return rechainEntries(
+    materializeExplicitRequestBoundaries({
+      entries: entryRecords,
+      spans,
+      fallbackTimestamp: options.fallbackTimestamp,
+      ...(options.openRequestId ? { openRequestId: options.openRequestId } : {}),
+      ...(openSpanIndex !== null ? { openSpanIndex } : {}),
+    }),
+  );
 }
 
 function resolveOpenRequestIdFromEntries(entries: PiSessionEntryRecord[]): string | null {
@@ -2061,8 +2089,10 @@ export class PiSessionWriter {
       alignment.mode === 'none' &&
       state.messageSignatures.length > 0 &&
       currentSignatures.length > 0;
+    let rewriteHeader: unknown = state.header;
     if (shouldRewriteFromCurrentMessages) {
       const persistedRecords = await loadPiSessionFileRecords(state.sessionFile);
+      rewriteHeader = persistedRecords?.header ?? state.header;
       const mismatchDiagnostics = buildSyncMismatchDiagnostics({
         persistedSignatures: state.messageSignatures,
         currentSignatures,
@@ -2119,29 +2149,8 @@ export class PiSessionWriter {
     let lastModel = shouldRewriteFromCurrentMessages ? undefined : state.lastModel;
     let lastThinking = shouldRewriteFromCurrentMessages ? undefined : state.lastThinking;
     const rewriteOpenRequestId = shouldRewriteFromCurrentMessages ? state.openRequestId : null;
-    const rewriteOpenRequestStartIndex = rewriteOpenRequestId
-      ? findRewriteOpenRequestStartIndex(newMessages)
-      : null;
-    let rewriteOpenRequestStarted = false;
 
     const entries: PiSessionEntry[] = [];
-    const appendRewriteOpenRequestStart = () => {
-      if (!rewriteOpenRequestId || rewriteOpenRequestStarted) {
-        return;
-      }
-      const requestStart = this.createRequestBoundaryEntry(
-        leafId,
-        ASSISTANT_REQUEST_START_CUSTOM_TYPE,
-        {
-          v: ASSISTANT_REQUEST_BOUNDARY_VERSION,
-          requestId: rewriteOpenRequestId,
-          trigger: 'user',
-        },
-      );
-      entries.push(requestStart);
-      leafId = requestStart.id;
-      rewriteOpenRequestStarted = true;
-    };
 
     if (
       modelInfo &&
@@ -2175,10 +2184,7 @@ export class PiSessionWriter {
       lastThinking = normalizedThinking;
     }
 
-    for (const [messageIndex, message] of newMessages.entries()) {
-      if (rewriteOpenRequestStartIndex === messageIndex) {
-        appendRewriteOpenRequestStart();
-      }
+    for (const message of newMessages) {
       const messageTimestampValue =
         typeof message.historyTimestampMs === 'number' &&
         Number.isFinite(message.historyTimestampMs)
@@ -2268,10 +2274,20 @@ export class PiSessionWriter {
     if (entries.length === 0) {
       return currentSummary === summary ? undefined : currentSummary;
     }
+    const entriesToWrite = shouldRewriteFromCurrentMessages
+      ? materializeRewrittenRequestBoundaries({
+          entries,
+          openRequestId: rewriteOpenRequestId,
+          fallbackTimestamp: this.now().toISOString(),
+        })
+      : entries;
+    if (shouldRewriteFromCurrentMessages) {
+      leafId = entriesToWrite[entriesToWrite.length - 1]?.id ?? null;
+    }
 
     await this.queueWrite(state, async () => {
       if (shouldRewriteFromCurrentMessages) {
-        await this.atomicWriteSessionFile(state, state.header, entries);
+        await this.atomicWriteSessionFile(state, rewriteHeader, entriesToWrite);
         state.flushed = true;
         return;
       }
@@ -2307,7 +2323,7 @@ export class PiSessionWriter {
         piSessionId: state.piSessionId,
         sessionFile: state.sessionFile,
         rewrittenMessageCount: state.messageSignatures.length,
-        writtenEntryCount: entries.length,
+        writtenEntryCount: entriesToWrite.length,
         openRequestId: state.openRequestId,
         leafId: state.leafId,
       });
