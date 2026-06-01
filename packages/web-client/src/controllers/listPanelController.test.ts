@@ -1380,6 +1380,39 @@ describe('ListPanelController focus view', () => {
     });
   });
 
+  it('adds newly created focus-view items to the top of Focus when inserted at top', async () => {
+    const callOperation = vi.fn(async (operation) => {
+      if (operation === 'item-add') {
+        return { id: 'new-item', title: 'New task' } as unknown;
+      }
+      return {} as unknown;
+    }) as NonNullable<ListPanelControllerOptions['callOperation']>;
+    const controller = buildController({ callOperation });
+    controller.render('__focus__', {
+      id: '__focus__',
+      name: 'Focus',
+      viewKind: 'focus',
+      items: [],
+    });
+
+    const internal = controller as unknown as {
+      createListItem: (listId: string, item: Record<string, unknown>) => Promise<boolean>;
+    };
+
+    await expect(internal.createListItem('work', { title: 'New task', position: 0 })).resolves.toBe(
+      true,
+    );
+    expect(callOperation).toHaveBeenNthCalledWith(1, 'item-add', {
+      listId: 'work',
+      title: 'New task',
+      position: 0,
+    });
+    expect(callOperation).toHaveBeenNthCalledWith(2, 'focus-add', {
+      itemId: 'new-item',
+      position: 0,
+    });
+  });
+
   it('routes the focus header add button through the source-list picker flow', async () => {
     const callOperation = vi.fn(async (operation) => {
       if (operation === 'item-add') {

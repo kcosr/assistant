@@ -922,6 +922,11 @@ export class CollectionBrowserController {
       if (idxA !== idxB) {
         return idxA - idxB;
       }
+      const specialRankA = a.specialKind === 'focus' ? 0 : 1;
+      const specialRankB = b.specialKind === 'focus' ? 0 : 1;
+      if (specialRankA !== specialRankB) {
+        return specialRankA - specialRankB;
+      }
       if (this.sortMode === 'updated') {
         const timeA = parseUpdatedAtMs(a.updatedAt);
         const timeB = parseUpdatedAtMs(b.updatedAt);

@@ -2,7 +2,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import type { AssistantMessage } from '@earendil-works/pi-ai';
 
@@ -20,6 +20,20 @@ function parseJsonLines(content: string): Array<Record<string, unknown>> {
     .trim()
     .split('\n')
     .map((line) => JSON.parse(line) as Record<string, unknown>);
+}
+
+function extractMessageTexts(entries: Array<Record<string, unknown>>): string[] {
+  return entries
+    .filter((entry) => entry['type'] === 'message')
+    .map((entry) => entry['message'] as Record<string, unknown> | undefined)
+    .filter((message): message is Record<string, unknown> => !!message)
+    .flatMap((message) => {
+      const contentBlocks = Array.isArray(message['content']) ? message['content'] : [];
+      return contentBlocks
+        .filter((block): block is Record<string, unknown> => !!block && typeof block === 'object')
+        .map((block) => block['text'])
+        .filter((text): text is string => typeof text === 'string');
+    });
 }
 
 describe('PiSessionWriter', () => {
@@ -156,9 +170,7 @@ describe('PiSessionWriter', () => {
       | undefined;
     expect(toolCallBlock?.name).toBe('read');
 
-    const toolResultMessage = messageEntries[2]?.['message'] as
-      | { toolName?: string }
-      | undefined;
+    const toolResultMessage = messageEntries[2]?.['message'] as { toolName?: string } | undefined;
     expect(toolResultMessage?.toolName).toBe('read');
   });
 
@@ -182,12 +194,22 @@ describe('PiSessionWriter', () => {
       {
         role: 'user',
         content: 'Hello from agent',
-        meta: { source: 'agent', fromAgentId: 'agent-a', fromSessionId: 'sess-a', visibility: 'visible' },
+        meta: {
+          source: 'agent',
+          fromAgentId: 'agent-a',
+          fromSessionId: 'sess-a',
+          visibility: 'visible',
+        },
       },
       {
         role: 'user',
         content: 'Hidden callback input',
-        meta: { source: 'callback', fromAgentId: 'agent-b', fromSessionId: 'sess-b', visibility: 'hidden' },
+        meta: {
+          source: 'callback',
+          fromAgentId: 'agent-b',
+          fromSessionId: 'sess-b',
+          visibility: 'hidden',
+        },
       },
       { role: 'assistant', content: 'Ack' },
     ];
@@ -219,13 +241,17 @@ describe('PiSessionWriter', () => {
       .filter(Boolean)
       .filter((message) => message?.['role'] === 'user');
     expect(userMessageEntries.length).toBe(2);
-    expect(userMessageEntries[0]?.['content']).toEqual([{ type: 'text', text: 'Hello from agent' }]);
+    expect(userMessageEntries[0]?.['content']).toEqual([
+      { type: 'text', text: 'Hello from agent' },
+    ]);
     expect(userMessageEntries[0]?.['meta']).toEqual({
       source: 'agent',
       fromAgentId: 'agent-a',
       fromSessionId: 'sess-a',
     });
-    expect(userMessageEntries[1]?.['content']).toEqual([{ type: 'text', text: 'Hidden callback input' }]);
+    expect(userMessageEntries[1]?.['content']).toEqual([
+      { type: 'text', text: 'Hidden callback input' },
+    ]);
     expect(userMessageEntries[1]?.['meta']).toEqual({
       source: 'callback',
       fromAgentId: 'agent-b',
@@ -330,7 +356,12 @@ describe('PiSessionWriter', () => {
       {
         role: 'user',
         content: 'Hello from agent',
-        meta: { source: 'agent', fromAgentId: 'agent-a', fromSessionId: 'sess-a', visibility: 'visible' },
+        meta: {
+          source: 'agent',
+          fromAgentId: 'agent-a',
+          fromSessionId: 'sess-a',
+          visibility: 'visible',
+        },
       },
       { role: 'assistant', content: 'Ack' },
     ];
@@ -436,8 +467,9 @@ describe('PiSessionWriter', () => {
         (message): message is Record<string, unknown> =>
           !!message &&
           message['role'] === 'user' &&
-          typeof (message['meta'] as Record<string, unknown> | undefined)?.['source'] === 'string' &&
-          ((message['meta'] as Record<string, unknown>)['source'] === 'callback'),
+          typeof (message['meta'] as Record<string, unknown> | undefined)?.['source'] ===
+            'string' &&
+          (message['meta'] as Record<string, unknown>)['source'] === 'callback',
       );
     expect(callbackUserMessages).toHaveLength(2);
 
@@ -480,6 +512,327 @@ describe('PiSessionWriter', () => {
     expect(userTexts).toContain('follow-up two');
   });
 
+  it('rewrites the Pi history when persisted and current messages diverge without overlap', async () => {
+    const baseDir = await createTempDir('pi-session-writer-rewrite-diverged');
+    const now = () => new Date('2026-02-01T00:00:00.000Z');
+    const logRecords: unknown[][] = [];
+    const writer = new PiSessionWriter({ baseDir, now, log: (...args) => logRecords.push(args) });
+
+    const summary: SessionSummary = {
+      sessionId: 'session-diverged',
+      agentId: 'pi',
+      createdAt: now().toISOString(),
+      updatedAt: now().toISOString(),
+      attributes: {
+        core: { workingDir: '/tmp/project' },
+      },
+    };
+
+    await writer.sync({
+      summary,
+      messages: [
+        { role: 'system', content: 'system' },
+        { role: 'user', content: 'stale user' },
+        { role: 'assistant', content: 'stale assistant' },
+      ],
+      updateAttributes: async (patch) => {
+        summary.attributes = {
+          ...(summary.attributes ?? {}),
+          ...(patch as Record<string, unknown>),
+        } as NonNullable<SessionSummary['attributes']>;
+        return summary;
+      },
+    });
+
+    const encodedCwd = `--${'/tmp/project'.replace(/^[/\\]/, '').replace(/[\\/:]/g, '-')}--`;
+    const sessionDir = path.join(baseDir, encodedCwd);
+    const files = await fs.readdir(sessionDir);
+    expect(files.length).toBe(1);
+    const filePath = path.join(sessionDir, files[0]!);
+    const staleEntries = parseJsonLines(await fs.readFile(filePath, 'utf8'));
+    staleEntries[0] = {
+      ...staleEntries[0],
+      parentSession: 'parent-session',
+    };
+    await fs.writeFile(
+      filePath,
+      `${staleEntries.map((entry) => JSON.stringify(entry)).join('\n')}\n`,
+      'utf8',
+    );
+
+    await writer.appendTurnStart({
+      summary,
+      turnId: 'current-turn',
+      trigger: 'callback',
+      updateAttributes: async (patch) => {
+        summary.attributes = {
+          ...(summary.attributes ?? {}),
+          ...(patch as Record<string, unknown>),
+        } as NonNullable<SessionSummary['attributes']>;
+        return summary;
+      },
+    });
+
+    await writer.sync({
+      summary,
+      messages: [
+        { role: 'system', content: 'system' },
+        { role: 'user', content: 'current user', meta: { source: 'callback' } },
+        { role: 'assistant', content: 'current assistant' },
+      ],
+      updateAttributes: async (patch) => {
+        summary.attributes = {
+          ...(summary.attributes ?? {}),
+          ...(patch as Record<string, unknown>),
+        } as NonNullable<SessionSummary['attributes']>;
+        return summary;
+      },
+    });
+
+    const entries = parseJsonLines(await fs.readFile(filePath, 'utf8'));
+    const messageTexts = extractMessageTexts(entries);
+
+    expect(entries[0]).toMatchObject({
+      type: 'session',
+      parentSession: 'parent-session',
+    });
+    expect(messageTexts).toEqual(['current user', 'current assistant']);
+    expect(entries).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: 'custom',
+          customType: 'assistant.request_start',
+          data: expect.objectContaining({ requestId: 'current-turn', trigger: 'callback' }),
+        }),
+      ]),
+    );
+    expect(logRecords).toEqual(
+      expect.arrayContaining([
+        [
+          'Pi session sync rewriting history after unreconcilable message alignment',
+          expect.objectContaining({
+            sessionId: 'session-diverged',
+            piSessionId: expect.any(String),
+            sessionFile: expect.stringContaining(baseDir),
+            persistedMessageCount: 2,
+            currentMessageCount: 2,
+            diagnostics: expect.objectContaining({
+              firstMismatchIndex: 0,
+              persistedWindow: expect.arrayContaining([
+                expect.objectContaining({
+                  source: 'persisted',
+                  role: 'user',
+                  textPreview: 'stale user',
+                }),
+              ]),
+              currentWindow: expect.arrayContaining([
+                expect.objectContaining({
+                  source: 'current',
+                  role: 'user',
+                  textPreview: 'current user',
+                }),
+              ]),
+            }),
+            syncCallStack: expect.any(Array),
+          }),
+        ],
+      ]),
+    );
+
+    const reloadLogRecords: unknown[][] = [];
+    const reloadedWriter = new PiSessionWriter({
+      baseDir,
+      now,
+      log: (...args) => reloadLogRecords.push(args),
+    });
+    await reloadedWriter.sync({
+      summary,
+      messages: [
+        { role: 'system', content: 'system' },
+        { role: 'user', content: 'current user', meta: { source: 'callback' } },
+        { role: 'assistant', content: 'current assistant' },
+      ],
+    });
+    expect(reloadLogRecords).not.toEqual(
+      expect.arrayContaining([
+        [
+          'Pi session sync rewriting history after unreconcilable message alignment',
+          expect.anything(),
+        ],
+      ]),
+    );
+  });
+
+  it.each(['delete_request', 'trim_after'] as const)(
+    'keeps earlier repaired turns when applying %s to the open request',
+    async (action) => {
+      const baseDir = await createTempDir(`pi-session-writer-repair-${action}`);
+      const now = () => new Date('2026-02-01T00:00:00.000Z');
+      const writer = new PiSessionWriter({ baseDir, now, log: () => undefined });
+
+      const summary: SessionSummary = {
+        sessionId: `session-repair-${action}`,
+        agentId: 'pi',
+        createdAt: now().toISOString(),
+        updatedAt: now().toISOString(),
+        attributes: {
+          core: { workingDir: '/tmp/project' },
+        },
+      };
+      const updateAttributes = async (patch: Record<string, unknown>) => {
+        summary.attributes = {
+          ...(summary.attributes ?? {}),
+          ...(patch as Record<string, unknown>),
+        } as NonNullable<SessionSummary['attributes']>;
+        return summary;
+      };
+
+      await writer.sync({
+        summary,
+        messages: [
+          { role: 'system', content: 'system' },
+          { role: 'user', content: 'stale user' },
+          { role: 'assistant', content: 'stale assistant' },
+        ],
+        updateAttributes,
+      });
+      await writer.appendTurnStart({
+        summary,
+        turnId: 'turn-2',
+        trigger: 'user',
+        updateAttributes,
+      });
+      await writer.sync({
+        summary,
+        messages: [
+          { role: 'system', content: 'system' },
+          { role: 'user', content: 'first turn' },
+          { role: 'assistant', content: 'First reply' },
+          { role: 'user', content: 'second turn' },
+          { role: 'assistant', content: 'Second reply' },
+        ],
+        updateAttributes,
+      });
+
+      const result = await writer.rewriteHistoryByRequest({
+        summary,
+        action,
+        requestId: 'turn-2',
+        updateAttributes,
+      });
+
+      expect(result.changed).toBe(true);
+      expect(result.droppedRequestIds).toEqual(['turn-2']);
+
+      const encodedCwd = `--${'/tmp/project'.replace(/^[/\\]/, '').replace(/[\\/:]/g, '-')}--`;
+      const sessionDir = path.join(baseDir, encodedCwd);
+      const files = await fs.readdir(sessionDir);
+      const filePath = path.join(sessionDir, files[0]!);
+      const content = await fs.readFile(filePath, 'utf8');
+      const entries = parseJsonLines(content);
+
+      expect(content).toContain('first turn');
+      expect(content).toContain('First reply');
+      expect(content).not.toContain('second turn');
+      expect(content).not.toContain('Second reply');
+      expect(content).not.toContain('"requestId":"turn-2"');
+      expect(
+        entries.some(
+          (entry) =>
+            entry['type'] === 'custom' && entry['customType'] === 'assistant.request_start',
+        ),
+      ).toBe(true);
+      expect(
+        entries.some(
+          (entry) => entry['type'] === 'custom' && entry['customType'] === 'assistant.request_end',
+        ),
+      ).toBe(true);
+    },
+  );
+
+  it('does not advance rewrite state or revision when the atomic rewrite fails', async () => {
+    const baseDir = await createTempDir('pi-session-writer-rewrite-failed');
+    const now = () => new Date('2026-02-01T00:00:00.000Z');
+    const writer = new PiSessionWriter({ baseDir, now, log: () => undefined });
+    const updateAttributes = vi.fn(async (patch: unknown) => {
+      summary.attributes = {
+        ...(summary.attributes ?? {}),
+        ...(patch as Record<string, unknown>),
+      } as NonNullable<SessionSummary['attributes']>;
+      return summary;
+    });
+
+    const summary: SessionSummary = {
+      sessionId: 'session-rewrite-failed',
+      agentId: 'pi',
+      createdAt: now().toISOString(),
+      updatedAt: now().toISOString(),
+      attributes: {
+        core: { workingDir: '/tmp/project' },
+      },
+    };
+
+    await writer.sync({
+      summary,
+      messages: [
+        { role: 'system', content: 'system' },
+        { role: 'user', content: 'stale user' },
+        { role: 'assistant', content: 'stale assistant' },
+      ],
+      updateAttributes,
+    });
+    await writer.appendTurnStart({
+      summary,
+      turnId: 'current-turn',
+      trigger: 'user',
+      updateAttributes,
+    });
+
+    const encodedCwd = `--${'/tmp/project'.replace(/^[/\\]/, '').replace(/[\\/:]/g, '-')}--`;
+    const sessionDir = path.join(baseDir, encodedCwd);
+    const [fileName] = await fs.readdir(sessionDir);
+    const filePath = path.join(sessionDir, fileName!);
+
+    updateAttributes.mockClear();
+    const renameSpy = vi.spyOn(fs, 'rename').mockRejectedValueOnce(new Error('rename failed'));
+    await expect(
+      writer.sync({
+        summary,
+        messages: [
+          { role: 'system', content: 'system' },
+          { role: 'user', content: 'current user' },
+          { role: 'assistant', content: 'current assistant' },
+        ],
+        updateAttributes,
+      }),
+    ).rejects.toThrow('rename failed');
+    renameSpy.mockRestore();
+
+    expect(updateAttributes).not.toHaveBeenCalled();
+    expect(extractMessageTexts(parseJsonLines(await fs.readFile(filePath, 'utf8')))).toEqual([
+      'stale user',
+      'stale assistant',
+    ]);
+    const tempFilesAfterFailure = (await fs.readdir(sessionDir)).filter((entry) =>
+      entry.includes('.tmp-'),
+    );
+    expect(tempFilesAfterFailure).toEqual([]);
+
+    await writer.sync({
+      summary,
+      messages: [
+        { role: 'system', content: 'system' },
+        { role: 'user', content: 'current user' },
+        { role: 'assistant', content: 'current assistant' },
+      ],
+      updateAttributes,
+    });
+    expect(extractMessageTexts(parseJsonLines(await fs.readFile(filePath, 'utf8')))).toEqual([
+      'current user',
+      'current assistant',
+    ]);
+  });
+
   it('appends explicit assistant custom entries without affecting message sync', async () => {
     const baseDir = await createTempDir('pi-session-writer-custom');
     const now = () => new Date('2026-02-01T00:00:00.000Z');
@@ -497,7 +850,10 @@ describe('PiSessionWriter', () => {
 
     await writer.sync({
       summary,
-      messages: [{ role: 'system', content: 'system' }, { role: 'assistant', content: 'Hello' }],
+      messages: [
+        { role: 'system', content: 'system' },
+        { role: 'assistant', content: 'Hello' },
+      ],
       updateAttributes: async (patch) => {
         summary.attributes = {
           ...(summary.attributes ?? {}),
@@ -524,7 +880,13 @@ describe('PiSessionWriter', () => {
     const last = entries[entries.length - 1] as Record<string, unknown> | undefined;
     expect(last?.['type']).toBe('custom');
     expect(last?.['customType']).toBe('assistant.interrupt');
-    expect(((last?.['data'] as Record<string, unknown> | undefined)?.['payload'] as Record<string, unknown> | undefined)?.['reason']).toBe('user_cancel');
+    expect(
+      (
+        (last?.['data'] as Record<string, unknown> | undefined)?.['payload'] as
+          | Record<string, unknown>
+          | undefined
+      )?.['reason'],
+    ).toBe('user_cancel');
   });
 
   it('appends custom transcript messages for visible Pi diagnostics', async () => {
@@ -599,7 +961,10 @@ describe('PiSessionWriter', () => {
     });
     await writer.sync({
       summary,
-      messages: [{ role: 'system', content: 'system' }, { role: 'assistant', content: 'Hello' }],
+      messages: [
+        { role: 'system', content: 'system' },
+        { role: 'assistant', content: 'Hello' },
+      ],
     });
     await writer.appendTurnEnd({ summary, turnId: 'turn-1', status: 'completed' });
 
@@ -708,7 +1073,10 @@ describe('PiSessionWriter', () => {
     });
     await writer.sync({
       summary,
-      messages: [{ role: 'system', content: 'system' }, { role: 'assistant', content: 'Hello' }],
+      messages: [
+        { role: 'system', content: 'system' },
+        { role: 'assistant', content: 'Hello' },
+      ],
     });
 
     const writer2 = new PiSessionWriter({ baseDir, now });
@@ -882,7 +1250,12 @@ describe('PiSessionWriter', () => {
       ],
       updateAttributes,
     });
-    await writer.appendTurnEnd({ summary, turnId: 'turn-1', status: 'completed', updateAttributes });
+    await writer.appendTurnEnd({
+      summary,
+      turnId: 'turn-1',
+      status: 'completed',
+      updateAttributes,
+    });
 
     await writer.appendTurnStart({
       summary,
@@ -901,7 +1274,12 @@ describe('PiSessionWriter', () => {
       ],
       updateAttributes,
     });
-    await writer.appendTurnEnd({ summary, turnId: 'turn-2', status: 'completed', updateAttributes });
+    await writer.appendTurnEnd({
+      summary,
+      turnId: 'turn-2',
+      status: 'completed',
+      updateAttributes,
+    });
 
     const result = await writer.rewriteHistoryByRequest({
       summary,
@@ -1207,8 +1585,16 @@ describe('PiSessionWriter', () => {
     expect(JSON.stringify(entries)).toContain('first turn');
     expect(JSON.stringify(entries)).not.toContain('"se"');
     expect(JSON.stringify(entries)).not.toContain('second turn');
-    expect(entries.some((entry) => entry['type'] === 'custom' && entry['customType'] === 'assistant.request_start')).toBe(true);
-    expect(entries.some((entry) => entry['type'] === 'custom' && entry['customType'] === 'assistant.request_end')).toBe(true);
+    expect(
+      entries.some(
+        (entry) => entry['type'] === 'custom' && entry['customType'] === 'assistant.request_start',
+      ),
+    ).toBe(true);
+    expect(
+      entries.some(
+        (entry) => entry['type'] === 'custom' && entry['customType'] === 'assistant.request_end',
+      ),
+    ).toBe(true);
   });
 
   it('synthesizes request groups when explicit request markers are missing', async () => {
@@ -1284,12 +1670,10 @@ describe('PiSessionWriter', () => {
     const rewrittenContent = await fs.readFile(filePath, 'utf8');
     const rewrittenEntries = parseJsonLines(rewrittenContent);
     const requestStartEntries = rewrittenEntries.filter(
-      (entry) =>
-        entry['type'] === 'custom' && entry['customType'] === 'assistant.request_start',
+      (entry) => entry['type'] === 'custom' && entry['customType'] === 'assistant.request_start',
     );
     const requestEndEntries = rewrittenEntries.filter(
-      (entry) =>
-        entry['type'] === 'custom' && entry['customType'] === 'assistant.request_end',
+      (entry) => entry['type'] === 'custom' && entry['customType'] === 'assistant.request_end',
     );
 
     expect(requestStartEntries.length).toBeGreaterThan(0);
@@ -1368,7 +1752,10 @@ describe('PiSessionWriter', () => {
 
     await writer.sync({
       summary,
-      messages: [{ role: 'system', content: 'system' }, { role: 'assistant', content: 'Hello' }],
+      messages: [
+        { role: 'system', content: 'system' },
+        { role: 'assistant', content: 'Hello' },
+      ],
       updateAttributes: async (patch) => {
         summary.attributes = {
           ...(summary.attributes ?? {}),
@@ -1414,7 +1801,10 @@ describe('PiSessionWriter', () => {
 
     await writer.sync({
       summary,
-      messages: [{ role: 'system', content: 'system' }, { role: 'assistant', content: 'Hello' }],
+      messages: [
+        { role: 'system', content: 'system' },
+        { role: 'assistant', content: 'Hello' },
+      ],
       updateAttributes: async (patch) => {
         summary.attributes = {
           ...(summary.attributes ?? {}),
@@ -1489,7 +1879,9 @@ describe('PiSessionWriter', () => {
 
     const entries = parseJsonLines(first);
     const orphanPlaceholder = entries.find(
-      (entry) => entry['type'] === 'custom_message' && entry['customType'] === 'assistant.orphan_tool_result',
+      (entry) =>
+        entry['type'] === 'custom_message' &&
+        entry['customType'] === 'assistant.orphan_tool_result',
     );
     expect(orphanPlaceholder).toBeTruthy();
     expect(orphanPlaceholder?.['display']).toBe(false);
@@ -1497,7 +1889,11 @@ describe('PiSessionWriter', () => {
     const toolResultEntries = entries.filter((entry) => {
       if (entry['type'] !== 'message') return false;
       const message = entry['message'];
-      return message && typeof message === 'object' && (message as Record<string, unknown>)['role'] === 'toolResult';
+      return (
+        message &&
+        typeof message === 'object' &&
+        (message as Record<string, unknown>)['role'] === 'toolResult'
+      );
     });
     expect(toolResultEntries.length).toBe(0);
 

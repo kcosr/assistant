@@ -1313,6 +1313,7 @@ export class ListPanelController {
     try {
       const instanceId = this.addDialogInstanceOverrides.get(listId);
       const shouldFocus = item['focused'] === true;
+      const shouldAddToFocusTop = this.currentData?.viewKind === 'focus' && item['position'] === 0;
       const sourceItem = { ...item };
       delete sourceItem['focused'];
       const created = await this.runOperation<ListPanelItem>(
@@ -1323,7 +1324,7 @@ export class ListPanelController {
       if ((this.currentData?.viewKind === 'focus' || shouldFocus) && created?.id) {
         await this.runOperation(
           'focus-add',
-          { itemId: created.id },
+          { itemId: created.id, ...(shouldAddToFocusTop ? { position: 0 } : {}) },
           instanceId ? { instanceId } : undefined,
         );
       }
