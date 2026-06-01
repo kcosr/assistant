@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -177,6 +177,41 @@ type MessageSyncAlignment = {
   startIndex: number;
   matchedCount: number;
   mode: 'prefix' | 'suffix' | 'none';
+};
+
+type PiSessionSyncDiagnosticMessage = {
+  index: number;
+  signatureHash: string;
+  source: 'persisted' | 'current';
+  role?: string;
+  entryType?: string;
+  customType?: string;
+  textLength?: number;
+  textPreview?: string;
+  contentTypes?: string[];
+  toolCallIds?: string[];
+  toolCallNames?: string[];
+  toolCallId?: string;
+  toolName?: string;
+  timestamp?: number | string;
+  historyTimestampMs?: number;
+  stopReason?: string;
+  meta?: unknown;
+  hasPiSdkMessage?: boolean;
+  piSdkMessage?: Omit<PiSessionSyncDiagnosticMessage, 'index' | 'signatureHash' | 'source'>;
+};
+
+type PiSessionSyncMismatchDiagnostics = {
+  firstMismatchIndex: number;
+  persistedSignatureHashAtMismatch?: string;
+  currentSignatureHashAtMismatch?: string;
+  persistedWindow: PiSessionSyncDiagnosticMessage[];
+  currentWindow: PiSessionSyncDiagnosticMessage[];
+  persistedTail: PiSessionSyncDiagnosticMessage[];
+  currentTail: PiSessionSyncDiagnosticMessage[];
+  persistedEffectiveEntryCount?: number;
+  persistedDiagnosticEntryCount?: number;
+  persistedRecordsUnavailable?: boolean;
 };
 
 type PiRequestSpan = {
@@ -420,6 +455,135 @@ function stableSerialize(value: unknown): string {
   return JSON.stringify(stableNormalizeJson(value));
 }
 
+function hashDiagnosticSignature(signature: string | undefined): string {
+  if (!signature) {
+    return '';
+  }
+  return createHash('sha256').update(signature).digest('hex').slice(0, 16);
+}
+
+function findFirstSignatureMismatch(left: string[], right: string[]): number {
+  const limit = Math.max(left.length, right.length);
+  for (let index = 0; index < limit; index += 1) {
+    if (left[index] !== right[index]) {
+      return index;
+    }
+  }
+  return -1;
+}
+
+function extractDiagnosticText(value: unknown): string {
+  if (typeof value === 'string') {
+    return value;
+  }
+  if (Array.isArray(value)) {
+    return value.map((item) => extractDiagnosticText(item)).join('');
+  }
+  if (!isRecord(value)) {
+    return '';
+  }
+  return (
+    getString(value['text']) ||
+    getString(value['thinking']) ||
+    getString(value['content']) ||
+    extractDiagnosticText(value['content'])
+  );
+}
+
+function buildTextDiagnostic(text: string): { textLength?: number; textPreview?: string } {
+  if (!text) {
+    return {};
+  }
+  const previewLimit = 240;
+  return {
+    textLength: text.length,
+    textPreview: text.length > previewLimit ? `${text.slice(0, previewLimit)}...` : text,
+  };
+}
+
+function summarizePiMessageForSyncDiagnostics(
+  message: unknown,
+): Omit<PiSessionSyncDiagnosticMessage, 'index' | 'signatureHash' | 'source'> {
+  if (!isRecord(message)) {
+    return { role: typeof message };
+  }
+  const role = getString(message['role']);
+  const content = Array.isArray(message['content']) ? message['content'] : [];
+  const contentTypes = content.flatMap((block) =>
+    isRecord(block) && getString(block['type']) ? [getString(block['type'])] : [],
+  );
+  const toolCallBlocks = content.filter(
+    (block): block is Record<string, unknown> =>
+      isRecord(block) && getString(block['type']) === 'toolCall',
+  );
+  const text = extractDiagnosticText(content);
+  return {
+    ...(role ? { role } : {}),
+    ...buildTextDiagnostic(text),
+    ...(contentTypes.length > 0 ? { contentTypes } : {}),
+    ...(toolCallBlocks.length > 0
+      ? {
+          toolCallIds: toolCallBlocks.flatMap((block) => {
+            const id = getString(block['id']);
+            return id ? [id] : [];
+          }),
+          toolCallNames: toolCallBlocks.flatMap((block) => {
+            const name = getString(block['name']);
+            return name ? [name] : [];
+          }),
+        }
+      : {}),
+    ...(getString(message['toolCallId']) ? { toolCallId: getString(message['toolCallId']) } : {}),
+    ...(getString(message['toolName']) ? { toolName: getString(message['toolName']) } : {}),
+    ...(typeof message['timestamp'] === 'number' || typeof message['timestamp'] === 'string'
+      ? { timestamp: message['timestamp'] as number | string }
+      : {}),
+    ...(getString(message['stopReason']) ? { stopReason: getString(message['stopReason']) } : {}),
+    ...(message['meta'] !== undefined ? { meta: message['meta'] } : {}),
+  };
+}
+
+function summarizeChatMessageForSyncDiagnostics(options: {
+  index: number;
+  signature: string | undefined;
+  message: ChatCompletionMessage;
+}): PiSessionSyncDiagnosticMessage {
+  const { index, signature, message } = options;
+  const toolCalls =
+    message.role === 'assistant' && Array.isArray(message.tool_calls) ? message.tool_calls : [];
+  return {
+    index,
+    signatureHash: hashDiagnosticSignature(signature),
+    source: 'current',
+    role: message.role,
+    ...(message.role === 'user' || message.role === 'assistant'
+      ? buildTextDiagnostic(message.content ?? '')
+      : {}),
+    ...(message.role === 'tool' ? buildTextDiagnostic(message.content) : {}),
+    ...('historyTimestampMs' in message && typeof message.historyTimestampMs === 'number'
+      ? { historyTimestampMs: message.historyTimestampMs }
+      : {}),
+    ...(message.role === 'user' && message.meta !== undefined ? { meta: message.meta } : {}),
+    ...(toolCalls.length > 0
+      ? {
+          toolCallIds: toolCalls.flatMap((call) => (call.id ? [call.id] : [])),
+          toolCallNames: toolCalls.flatMap((call) =>
+            call.function?.name ? [call.function.name] : [],
+          ),
+        }
+      : {}),
+    ...(message.role === 'tool' ? { toolCallId: message.tool_call_id } : {}),
+    ...(message.role === 'assistant'
+      ? {
+          hasPiSdkMessage: Boolean(message.piSdkMessage),
+          ...(message.piSdkMessage
+            ? { piSdkMessage: summarizePiMessageForSyncDiagnostics(message.piSdkMessage) }
+            : {}),
+        }
+      : {}),
+  };
+}
+
 function normalizePiContentBlockForSignature(block: unknown): unknown {
   if (!isRecord(block)) {
     return block;
@@ -522,6 +686,7 @@ function signatureFromCustomMessageEntry(entry: {
 function signatureFromChatCompletionMessage(
   message: ChatCompletionMessage,
   toolCallNameMap: Map<string, string>,
+  knownToolCallIds?: Set<string>,
 ): string {
   switch (message.role) {
     case 'user': {
@@ -566,7 +731,10 @@ function signatureFromChatCompletionMessage(
     }
     case 'tool': {
       const toolCallId = message.tool_call_id;
-      if (!toolCallNameMap.has(toolCallId)) {
+      const hasKnownToolCall = knownToolCallIds
+        ? knownToolCallIds.has(toolCallId)
+        : toolCallNameMap.has(toolCallId);
+      if (!hasKnownToolCall) {
         return signatureFromCustomMessageEntry({
           customType: ORPHAN_TOOL_RESULT_CUSTOM_TYPE,
           content: '',
@@ -589,6 +757,26 @@ function signatureFromChatCompletionMessage(
     default:
       return stableSerialize({ role: message.role });
   }
+}
+
+function buildMessageSyncSignatures(
+  messages: ChatCompletionMessage[],
+  toolCallNameMap: Map<string, string>,
+): string[] {
+  const knownToolCallIds = new Set<string>();
+  return messages.map((message) => {
+    const signature = signatureFromChatCompletionMessage(
+      message,
+      toolCallNameMap,
+      knownToolCallIds,
+    );
+    if (message.role === 'assistant') {
+      for (const toolCallId of collectToolCallIdsFromAssistantMessage(message)) {
+        knownToolCallIds.add(toolCallId);
+      }
+    }
+    return signature;
+  });
 }
 
 function signaturesEqual(
@@ -1130,6 +1318,177 @@ function buildEffectiveMessageSignatures(entries: PiSessionEntryRecord[]): strin
   });
 }
 
+function summarizePersistedEntryForSyncDiagnostics(options: {
+  index: number;
+  signature: string | undefined;
+  entry: PiSessionEntryRecord;
+}): PiSessionSyncDiagnosticMessage[] {
+  const { index, signature, entry } = options;
+  if (entry.type === 'compaction') {
+    const summary = getString(entry['summary']);
+    if (!summary) {
+      return [];
+    }
+    return [
+      {
+        index,
+        signatureHash: hashDiagnosticSignature(signature),
+        source: 'persisted',
+        entryType: entry.type,
+        role: 'user',
+        ...buildTextDiagnostic(buildCompactionSummaryText(summary)),
+        ...(getString(entry['timestamp']) ? { timestamp: getString(entry['timestamp']) } : {}),
+      },
+    ];
+  }
+  if (entry.type === 'message') {
+    return [
+      {
+        index,
+        signatureHash: hashDiagnosticSignature(signature),
+        source: 'persisted',
+        entryType: entry.type,
+        ...summarizePiMessageForSyncDiagnostics(entry['message']),
+      },
+    ];
+  }
+  if (entry.type === 'custom_message') {
+    const customType = getString(entry['customType']);
+    if (customType !== ORPHAN_TOOL_RESULT_CUSTOM_TYPE) {
+      return [];
+    }
+    return [
+      {
+        index,
+        signatureHash: hashDiagnosticSignature(signature),
+        source: 'persisted',
+        entryType: entry.type,
+        customType,
+        ...buildTextDiagnostic(extractDiagnosticText(entry['content'])),
+        ...(getString(entry['timestamp']) ? { timestamp: getString(entry['timestamp']) } : {}),
+        ...(entry['details'] !== undefined ? { meta: { details: entry['details'] } } : {}),
+      },
+    ];
+  }
+  return [];
+}
+
+function buildPersistedSyncDiagnosticMessages(options: {
+  records: PiSessionFileRecords | null;
+  signatures: string[];
+}): {
+  messages: PiSessionSyncDiagnosticMessage[];
+  effectiveEntryCount?: number;
+  diagnosticEntryCount?: number;
+  recordsUnavailable?: boolean;
+} {
+  const { records, signatures } = options;
+  if (!records) {
+    return {
+      recordsUnavailable: true,
+      messages: signatures.map((signature, index) => ({
+        index,
+        signatureHash: hashDiagnosticSignature(signature),
+        source: 'persisted',
+      })),
+    };
+  }
+  const effectiveEntries = buildEffectiveMessageSignatureEntries(records.entries);
+  let signatureIndex = 0;
+  const messages: PiSessionSyncDiagnosticMessage[] = [];
+  for (const entry of effectiveEntries) {
+    const summaries = summarizePersistedEntryForSyncDiagnostics({
+      index: signatureIndex,
+      signature: signatures[signatureIndex],
+      entry,
+    });
+    if (summaries.length === 0) {
+      continue;
+    }
+    messages.push(...summaries);
+    signatureIndex += summaries.length;
+  }
+  return {
+    messages,
+    effectiveEntryCount: effectiveEntries.length,
+    diagnosticEntryCount: messages.length,
+  };
+}
+
+function sliceDiagnosticWindow<T>(items: T[], mismatchIndex: number, radius = 2): T[] {
+  if (items.length === 0) {
+    return [];
+  }
+  const start = Math.max(0, mismatchIndex - radius);
+  const end = Math.min(items.length, mismatchIndex + radius + 1);
+  return items.slice(start, end);
+}
+
+function buildSyncMismatchDiagnostics(options: {
+  persistedSignatures: string[];
+  currentSignatures: string[];
+  currentMessages: ChatCompletionMessage[];
+  persistedRecords: PiSessionFileRecords | null;
+}): PiSessionSyncMismatchDiagnostics {
+  const { persistedSignatures, currentSignatures, currentMessages, persistedRecords } = options;
+  const firstMismatchIndex = findFirstSignatureMismatch(persistedSignatures, currentSignatures);
+  const mismatchIndex = firstMismatchIndex === -1 ? 0 : firstMismatchIndex;
+  const persisted = buildPersistedSyncDiagnosticMessages({
+    records: persistedRecords,
+    signatures: persistedSignatures,
+  });
+  const current = currentMessages.map((message, index) =>
+    summarizeChatMessageForSyncDiagnostics({
+      index,
+      signature: currentSignatures[index],
+      message,
+    }),
+  );
+  return {
+    firstMismatchIndex,
+    ...(persistedSignatures[mismatchIndex]
+      ? {
+          persistedSignatureHashAtMismatch: hashDiagnosticSignature(
+            persistedSignatures[mismatchIndex],
+          ),
+        }
+      : {}),
+    ...(currentSignatures[mismatchIndex]
+      ? {
+          currentSignatureHashAtMismatch: hashDiagnosticSignature(currentSignatures[mismatchIndex]),
+        }
+      : {}),
+    persistedWindow: sliceDiagnosticWindow(persisted.messages, mismatchIndex),
+    currentWindow: sliceDiagnosticWindow(current, mismatchIndex),
+    persistedTail: persisted.messages.slice(-3),
+    currentTail: current.slice(-3),
+    ...(persisted.effectiveEntryCount !== undefined
+      ? { persistedEffectiveEntryCount: persisted.effectiveEntryCount }
+      : {}),
+    ...(persisted.diagnosticEntryCount !== undefined
+      ? { persistedDiagnosticEntryCount: persisted.diagnosticEntryCount }
+      : {}),
+    ...(persisted.recordsUnavailable ? { persistedRecordsUnavailable: true } : {}),
+  };
+}
+
+function buildSyncDiagnosticStack(): string[] {
+  return (new Error().stack ?? '')
+    .split('\n')
+    .slice(2, 10)
+    .map((line) => line.trim())
+    .filter(Boolean);
+}
+
+function findRewriteOpenRequestStartIndex(messages: ChatCompletionMessage[]): number | null {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    if (messages[index]?.role === 'user') {
+      return index;
+    }
+  }
+  return messages.length > 0 ? 0 : null;
+}
+
 function getRequestBoundaryRecord(entry: PiSessionEntryRecord): {
   kind: 'start' | 'end';
   requestId: string;
@@ -1559,15 +1918,8 @@ export class PiSessionWriter {
             fallbackTimestamp: this.now().toISOString(),
           }),
         );
-    const tempFilePath = `${state.sessionFile}.tmp-${randomUUID()}`;
-
     await this.queueWrite(state, async () => {
-      await fs.mkdir(state.sessionDir, { recursive: true });
-      const payload = [records.header, ...keptEntries]
-        .map((entry) => JSON.stringify(entry))
-        .join('\n');
-      await fs.writeFile(tempFilePath, `${payload}\n`, 'utf8');
-      await fs.rename(tempFilePath, state.sessionFile);
+      await this.atomicWriteSessionFile(state, records.header, keptEntries);
     });
 
     this.sessions.delete(summary.sessionId);
@@ -1699,30 +2051,44 @@ export class PiSessionWriter {
 
     const persistableMessages = messages.filter((message) => message.role !== 'system');
     const toolCallNameMap = buildToolCallNameMap(persistableMessages);
-    const currentSignatures = persistableMessages.map((message) =>
-      signatureFromChatCompletionMessage(message, toolCallNameMap),
-    );
+    const currentSignatures = buildMessageSyncSignatures(persistableMessages, toolCallNameMap);
     const alignment = resolveMessageSyncAlignment({
       persistedSignatures: state.messageSignatures,
       currentSignatures,
     });
 
-    if (
+    const shouldRewriteFromCurrentMessages =
       alignment.mode === 'none' &&
       state.messageSignatures.length > 0 &&
-      currentSignatures.length > 0
-    ) {
-      this.log('Pi session sync skipped due to unreconcilable message alignment', {
+      currentSignatures.length > 0;
+    if (shouldRewriteFromCurrentMessages) {
+      const persistedRecords = await loadPiSessionFileRecords(state.sessionFile);
+      const mismatchDiagnostics = buildSyncMismatchDiagnostics({
+        persistedSignatures: state.messageSignatures,
+        currentSignatures,
+        currentMessages: persistableMessages,
+        persistedRecords,
+      });
+      this.log('Pi session sync rewriting history after unreconcilable message alignment', {
         sessionId: summary.sessionId,
         piSessionId: state.piSessionId,
+        sessionFile: state.sessionFile,
         persistedMessageCount: state.messageSignatures.length,
         currentMessageCount: currentSignatures.length,
+        openRequestId: state.openRequestId,
+        leafId: state.leafId,
+        alignment,
+        diagnostics: mismatchDiagnostics,
+        syncCallStack: buildSyncDiagnosticStack(),
       });
-      return currentSummary === summary ? undefined : currentSummary;
     }
 
-    const newMessages = persistableMessages.slice(alignment.startIndex);
-    const newMessageSignatures = currentSignatures.slice(alignment.startIndex);
+    const newMessages = persistableMessages.slice(
+      shouldRewriteFromCurrentMessages ? 0 : alignment.startIndex,
+    );
+    const newMessageSignatures = currentSignatures.slice(
+      shouldRewriteFromCurrentMessages ? 0 : alignment.startIndex,
+    );
     if (newMessages.length === 0) {
       return currentSummary === summary ? undefined : currentSummary;
     }
@@ -1744,18 +2110,44 @@ export class PiSessionWriter {
       ...(defaultProvider ? { defaultProvider } : {}),
     });
 
-    let leafId = state.leafId;
-    let messageCount = state.writtenMessageCount;
-    let hasAssistant = state.hasAssistant;
-    const knownToolCallIds = new Set(state.toolCallIds);
+    let leafId = shouldRewriteFromCurrentMessages ? null : state.leafId;
+    let messageCount = shouldRewriteFromCurrentMessages ? 0 : state.writtenMessageCount;
+    let hasAssistant = shouldRewriteFromCurrentMessages ? false : state.hasAssistant;
+    const knownToolCallIds = shouldRewriteFromCurrentMessages
+      ? new Set<string>()
+      : new Set(state.toolCallIds);
+    let lastModel = shouldRewriteFromCurrentMessages ? undefined : state.lastModel;
+    let lastThinking = shouldRewriteFromCurrentMessages ? undefined : state.lastThinking;
+    const rewriteOpenRequestId = shouldRewriteFromCurrentMessages ? state.openRequestId : null;
+    const rewriteOpenRequestStartIndex = rewriteOpenRequestId
+      ? findRewriteOpenRequestStartIndex(newMessages)
+      : null;
+    let rewriteOpenRequestStarted = false;
 
     const entries: PiSessionEntry[] = [];
+    const appendRewriteOpenRequestStart = () => {
+      if (!rewriteOpenRequestId || rewriteOpenRequestStarted) {
+        return;
+      }
+      const requestStart = this.createRequestBoundaryEntry(
+        leafId,
+        ASSISTANT_REQUEST_START_CUSTOM_TYPE,
+        {
+          v: ASSISTANT_REQUEST_BOUNDARY_VERSION,
+          requestId: rewriteOpenRequestId,
+          trigger: 'user',
+        },
+      );
+      entries.push(requestStart);
+      leafId = requestStart.id;
+      rewriteOpenRequestStarted = true;
+    };
 
     if (
       modelInfo &&
-      (!state.lastModel ||
-        state.lastModel.modelId !== modelInfo.modelId ||
-        state.lastModel.provider !== modelInfo.provider)
+      (!lastModel ||
+        lastModel.modelId !== modelInfo.modelId ||
+        lastModel.provider !== modelInfo.provider)
     ) {
       const modelEntry: PiSessionModelChangeEntry = {
         type: 'model_change',
@@ -1767,10 +2159,10 @@ export class PiSessionWriter {
       };
       entries.push(modelEntry);
       leafId = modelEntry.id;
-      state.lastModel = modelInfo;
+      lastModel = modelInfo;
     }
 
-    if (normalizedThinking && normalizedThinking !== state.lastThinking) {
+    if (normalizedThinking && normalizedThinking !== lastThinking) {
       const thinkingEntry: PiSessionThinkingChangeEntry = {
         type: 'thinking_level_change',
         id: generateEntryId(),
@@ -1780,10 +2172,13 @@ export class PiSessionWriter {
       };
       entries.push(thinkingEntry);
       leafId = thinkingEntry.id;
-      state.lastThinking = normalizedThinking;
+      lastThinking = normalizedThinking;
     }
 
-    for (const message of newMessages) {
+    for (const [messageIndex, message] of newMessages.entries()) {
+      if (rewriteOpenRequestStartIndex === messageIndex) {
+        appendRewriteOpenRequestStart();
+      }
       const messageTimestampValue =
         typeof message.historyTimestampMs === 'number' &&
         Number.isFinite(message.historyTimestampMs)
@@ -1875,6 +2270,12 @@ export class PiSessionWriter {
     }
 
     await this.queueWrite(state, async () => {
+      if (shouldRewriteFromCurrentMessages) {
+        await this.atomicWriteSessionFile(state, state.header, entries);
+        state.flushed = true;
+        return;
+      }
+
       if (!state.flushed) {
         await this.ensureSessionFile(state);
       }
@@ -1884,9 +2285,47 @@ export class PiSessionWriter {
 
     state.leafId = leafId;
     state.writtenMessageCount = messageCount;
-    state.messageSignatures.push(...newMessageSignatures);
+    state.messageSignatures = shouldRewriteFromCurrentMessages
+      ? newMessageSignatures
+      : [...state.messageSignatures, ...newMessageSignatures];
     state.hasAssistant = hasAssistant;
     state.toolCallIds = knownToolCallIds;
+    if (lastModel) {
+      state.lastModel = lastModel;
+    } else {
+      delete state.lastModel;
+    }
+    if (lastThinking) {
+      state.lastThinking = lastThinking;
+    } else {
+      delete state.lastThinking;
+    }
+    if (shouldRewriteFromCurrentMessages) {
+      state.openRequestId = rewriteOpenRequestId;
+      this.log('Pi session sync rewrite completed', {
+        sessionId: summary.sessionId,
+        piSessionId: state.piSessionId,
+        sessionFile: state.sessionFile,
+        rewrittenMessageCount: state.messageSignatures.length,
+        writtenEntryCount: entries.length,
+        openRequestId: state.openRequestId,
+        leafId: state.leafId,
+      });
+      if (updateAttributes) {
+        try {
+          const updated = await updateAttributes(
+            buildPiTranscriptRevisionPatch({
+              revision: getNextPiTranscriptRevision(currentSummary.attributes),
+            }),
+          );
+          if (updated) {
+            currentSummary = updated;
+          }
+        } catch (err) {
+          this.log('Failed to update Pi transcript revision after sync rewrite', err);
+        }
+      }
+    }
 
     return currentSummary === summary ? undefined : currentSummary;
   }
@@ -2292,10 +2731,41 @@ export class PiSessionWriter {
   }
 
   private async queueWrite(state: PiSessionWriterState, task: () => Promise<void>): Promise<void> {
-    state.writeQueue = state.writeQueue.then(task).catch((err) => {
+    const write = state.writeQueue.then(task);
+    state.writeQueue = write.catch((err) => {
       this.log('Pi session write failed', err);
     });
-    await state.writeQueue;
+    await write;
+  }
+
+  private async atomicWriteSessionFile(
+    state: PiSessionWriterState,
+    header: unknown,
+    entries: readonly unknown[],
+  ): Promise<void> {
+    await fs.mkdir(state.sessionDir, { recursive: true });
+    const tempFilePath = `${state.sessionFile}.tmp-${randomUUID()}`;
+    let renamed = false;
+    try {
+      const payload = [header, ...entries].map((entry) => JSON.stringify(entry)).join('\n');
+      await fs.writeFile(tempFilePath, `${payload}\n`, 'utf8');
+      await fs.rename(tempFilePath, state.sessionFile);
+      renamed = true;
+    } finally {
+      if (!renamed) {
+        await fs.unlink(tempFilePath).catch((err) => {
+          const error = err as NodeJS.ErrnoException;
+          if (error.code !== 'ENOENT') {
+            this.log('Failed to remove temporary Pi session rewrite file', {
+              sessionId: state.sessionId,
+              piSessionId: state.piSessionId,
+              tempFilePath,
+              error: error.message,
+            });
+          }
+        });
+      }
+    }
   }
 
   private async ensureSessionFile(state: PiSessionWriterState): Promise<void> {

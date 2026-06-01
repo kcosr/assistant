@@ -37,6 +37,7 @@
 
 ### Fixed
 
+- Fixed Pi session sync so unreconcilable persisted/live message divergence repairs the canonical JSONL from current messages instead of skipping the write, with diagnostics and failed-rewrite safeguards.
 - Fixed chat session picker search so existing sessions match only the displayed label and session id prefix, not hidden agent metadata. ([#101](https://github.com/kcosr/assistant/pull/101))
 - Fixed note edit compact mode to collapse title/description/tag/pinned/favorite rows and fixed split-pane drag resizing to preserve the visible bottom of chat transcripts while resizing stacked panels. ([#97](https://github.com/kcosr/assistant/pull/97))
 - Fixed header dock + button to pin panels to header instead of adding tabs (regression from e6353e8), and fixed compact panel launcher positioning to anchor below the clicked button. ([#96](https://github.com/kcosr/assistant/pull/96))
@@ -70,7 +71,6 @@
 
 ### Removed
 
-
 ## [0.18.1] - 2026-04-05
 
 ### Breaking Changes
@@ -91,7 +91,6 @@
 - Fixed panel inventory and `panels_selected` to report the actual active chat tab as the selected panel instead of surfacing a stale `empty` placeholder when chat is focused.
 
 ### Removed
-
 
 ## [0.18.0] - 2026-04-05
 
@@ -114,6 +113,7 @@
 - Added installable PWA icons to the mobile web manifest so the mobile app can be added to a home screen with proper `any maskable` icon sizes from 48px through 512px.
 
 ### Changed
+
 - Allowed Pi-backed agents to target custom `provider/model` ids through `chat.config.baseUrl` by
   synthesizing an `openai-responses` model when the provider has no built-in Pi model catalog.
 - Changed Android share-intent chat destinations to prefer the configured native voice session
@@ -163,7 +163,6 @@
 - Removed dead Pi EventStore overlay mirroring; Pi sessions now ignore EventStore persistence on the canonical path instead of duplicating overlay writes into the Pi transcript log.
 - Removed the dead Pi `ChatEvent` reconstruction helper and stale Pi history-provider test matrix; Pi replay validation now targets canonical transcript projection only.
 - Removed Pi replay support for legacy assistant overlay custom entries; canonical replay now restores only from canonical Pi `message` records plus request-boundary markers.
-
 
 ## [0.17.5] - 2026-04-01
 
