@@ -63,6 +63,15 @@
   gap: var(--spacing-xs);
 }
 
+.scheduled-sessions-section-title {
+  margin: var(--spacing-sm) 0 var(--spacing-xs);
+  font-size: var(--font-size-xs);
+  font-weight: 700;
+  color: var(--color-text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
 .scheduled-sessions-empty {
   border: 1px dashed var(--color-border-subtle);
   border-radius: var(--radius-md);
@@ -205,6 +214,10 @@
 
 .status-dot--disabled {
   background-color: var(--color-text-muted);
+}
+
+.status-dot--wakeup {
+  background-color: var(--color-accent-primary);
 }
 
 .scheduled-sessions-details {

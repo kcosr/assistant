@@ -40,6 +40,16 @@ function parseOptionalBoolean(value: unknown, field: string): boolean | undefine
   return value;
 }
 
+function parseOptionalNumber(value: unknown, field: string): number | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    throw new ToolError('invalid_arguments', `${field} must be a finite number`);
+  }
+  return value;
+}
+
 function parseOptionalInteger(value: unknown, field: string): number | undefined {
   if (value === undefined) {
     return undefined;
@@ -53,6 +63,51 @@ function parseOptionalInteger(value: unknown, field: string): number | undefined
     throw new ToolError('invalid_arguments', `${field} must be an integer >= 1`);
   }
   return value;
+}
+
+function parseRequiredSessionId(ctx: ToolContext): string {
+  const sessionId = ctx.sessionId?.trim();
+  if (!sessionId) {
+    throw new ToolError('session_unavailable', 'Current session is not available');
+  }
+  return sessionId;
+}
+
+function parseWakeupRunAt(parsed: Record<string, unknown>): Date {
+  const runAtRaw = parsed['runAt'];
+  const delaySeconds = parseOptionalNumber(parsed['delaySeconds'], 'delaySeconds');
+  const hasRunAt = runAtRaw !== undefined;
+  const hasDelay = delaySeconds !== undefined;
+  if (hasRunAt === hasDelay) {
+    throw new ToolError('invalid_arguments', 'Provide exactly one of runAt or delaySeconds');
+  }
+  if (hasDelay) {
+    if (delaySeconds <= 0) {
+      throw new ToolError('invalid_arguments', 'delaySeconds must be greater than zero');
+    }
+    return new Date(Date.now() + Math.ceil(delaySeconds * 1000));
+  }
+  if (typeof runAtRaw !== 'string') {
+    throw new ToolError(
+      'invalid_arguments',
+      'runAt must be an absolute ISO timestamp string with timezone offset or Z',
+    );
+  }
+  const trimmedRunAt = runAtRaw.trim();
+  if (!/(?:Z|[+-]\d{2}:\d{2})$/i.test(trimmedRunAt)) {
+    throw new ToolError(
+      'invalid_arguments',
+      'runAt must include a timezone offset or Z, for example 2026-06-03T08:56:00-05:00 or 2026-06-03T13:56:00Z',
+    );
+  }
+  const runAt = new Date(trimmedRunAt);
+  if (!Number.isFinite(runAt.getTime())) {
+    throw new ToolError(
+      'invalid_arguments',
+      'runAt must be a valid absolute ISO timestamp string with timezone offset or Z',
+    );
+  }
+  return runAt;
 }
 
 function parseOptionalNullableString(
@@ -107,7 +162,9 @@ function wrapServiceError(err: unknown): never {
   if (err instanceof ScheduleNotFoundError) {
     const code = err.message.startsWith('Agent not found:')
       ? 'agent_not_found'
-      : 'schedule_not_found';
+      : err.message.startsWith('Session not found:')
+        ? 'session_not_found'
+        : 'schedule_not_found';
     throw new ToolError(code, err.message);
   }
   throw err;
@@ -213,6 +270,32 @@ export function createPlugin(_options: PluginFactoryArgs): PluginModule {
         try {
           await requireService(ctx).setEnabled(agentId, scheduleId, false);
           return { agentId, scheduleId, enabled: false };
+        } catch (err) {
+          wrapServiceError(err);
+        }
+      },
+      'wakeup-list': async (_args, ctx) => {
+        return { wakeups: await requireService(ctx).listWakeups() };
+      },
+      'wakeup-set': async (args, ctx) => {
+        const parsed = asObject(args);
+        const message = requireNonEmptyString(parsed['message'], 'message');
+        const runAt = parseWakeupRunAt(parsed);
+        const replace = parseOptionalBoolean(parsed['replace'], 'replace');
+        try {
+          return await requireService(ctx).setWakeupForSession({
+            sessionId: parseRequiredSessionId(ctx),
+            message,
+            runAt,
+            ...(replace !== undefined ? { replace } : {}),
+          });
+        } catch (err) {
+          wrapServiceError(err);
+        }
+      },
+      'wakeup-cancel': async (_args, ctx) => {
+        try {
+          return await requireService(ctx).cancelWakeupForSession(parseRequiredSessionId(ctx));
         } catch (err) {
           wrapServiceError(err);
         }

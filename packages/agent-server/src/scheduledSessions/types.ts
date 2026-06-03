@@ -112,3 +112,54 @@ export interface ScheduleDeletedEvent {
     scheduleId: string;
   };
 }
+
+export interface SessionWakeupConfig {
+  wakeupId: string;
+  sessionId: string;
+  agentId: string;
+  message: string;
+  runAt: Date;
+  createdAt: Date;
+  status: 'pending' | 'queued' | 'delivering';
+}
+
+export interface PersistedSessionWakeupRecord {
+  wakeupId: string;
+  sessionId: string;
+  agentId: string;
+  message: string;
+  runAt: string;
+  createdAt: string;
+  status: 'pending' | 'queued' | 'delivering';
+}
+
+export interface SessionWakeupCreateInput {
+  sessionId: string;
+  message: string;
+  runAt: Date;
+  replace?: boolean;
+}
+
+export interface SessionWakeupInfo {
+  wakeupId: string;
+  sessionId: string;
+  sessionName: string | null;
+  agentId: string;
+  message: string;
+  runAt: string;
+  createdAt: string;
+  status: 'pending' | 'queued' | 'delivering';
+}
+
+export interface SessionWakeupSetEvent {
+  type: 'session_wakeup:set';
+  payload: SessionWakeupInfo;
+}
+
+export interface SessionWakeupDeletedEvent {
+  type: 'session_wakeup:deleted';
+  payload: {
+    wakeupId: string;
+    sessionId: string;
+  };
+}

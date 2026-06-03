@@ -586,6 +586,12 @@ Scheduled sessions are no longer configured on agents. Use the `scheduled-sessio
 create and manage them dynamically. They are stored in the plugin data directory under
 `data/plugins/scheduled-sessions/default/schedules.json`.
 
+The same plugin also stores pending one-shot session wake-ups under
+`data/plugins/scheduled-sessions/default/wakeups.json`. Wake-ups are limited to native Pi SDK
+sessions (`chat.provider: "pi"`), target the current tool session for set/cancel operations, and
+send the configured message back to that session at the requested time. If the session is busy when
+the wake-up fires, the message is added to the existing per-session message queue.
+
 Each persisted schedule record includes:
 
 - `agentId`
@@ -615,7 +621,22 @@ Notes:
   after edits.
 - When `reuseSession` is `false`, each run creates a fresh backing session.
 - `maxConcurrent` only matters when `reuseSession` is `false`.
-- Enable the `scheduled-sessions` plugin to create, edit, delete, run, and toggle schedules.
+- Enable the `scheduled-sessions` plugin to create, edit, delete, run, and toggle schedules, and to
+  list/set/cancel pending session wake-ups.
+
+Wake-up tools:
+
+- `scheduled_sessions_wakeup_set`
+  - `message`
+  - exactly one of `runAt` or `delaySeconds`
+  - `runAt` must be an absolute ISO timestamp with an explicit timezone offset or `Z`, for example
+    `2026-06-03T08:56:00-05:00` or `2026-06-03T13:56:00Z`
+  - optional `replace` to replace the current session's existing pending wake-up
+- `scheduled_sessions_wakeup_cancel`
+- `scheduled_sessions_wakeup_list`
+
+`set` and `cancel` intentionally do not accept a `sessionId`; they use the current tool context.
+`list` returns pending wake-ups across sessions for user visibility.
 
 #### `pi` Provider
 

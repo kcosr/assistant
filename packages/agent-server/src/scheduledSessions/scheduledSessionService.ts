@@ -21,9 +21,11 @@ import { buildCliEnv } from '../ws/cliEnv';
 
 import { describeCron, parseNextRun } from './cronUtils';
 import { ScheduledSessionStore } from './scheduledSessionStore';
+import { SessionWakeupStore } from './sessionWakeupStore';
 import type {
   LastRunInfo,
   PersistedScheduleRecord,
+  PersistedSessionWakeupRecord,
   ScheduleCreateInput,
   ScheduleDeletedEvent,
   PreCheckResult,
@@ -33,6 +35,11 @@ import type {
   ScheduleStatusEvent,
   TriggerResult,
   ScheduleUpdateInput,
+  SessionWakeupConfig,
+  SessionWakeupCreateInput,
+  SessionWakeupDeletedEvent,
+  SessionWakeupInfo,
+  SessionWakeupSetEvent,
 } from './types';
 
 type ScheduledRunProvider = NonNullable<NonNullable<AgentDefinition['chat']>['provider']>;
@@ -59,6 +66,7 @@ export interface ScheduledSessionServiceOptions {
   agentRegistry: AgentRegistry;
   logger: Logger;
   store: ScheduledSessionStore;
+  wakeupStore?: SessionWakeupStore;
   sessionHub?: SessionHub;
   sessionIndex?: SessionIndex;
   envConfig?: EnvConfig;
@@ -66,7 +74,13 @@ export interface ScheduledSessionServiceOptions {
   eventStore?: EventStore;
   searchService?: SearchService;
   defaultSessionTimeoutSeconds?: number;
-  broadcast?: (event: ScheduleStatusEvent | ScheduleDeletedEvent) => void;
+  broadcast?: (
+    event:
+      | ScheduleStatusEvent
+      | ScheduleDeletedEvent
+      | SessionWakeupSetEvent
+      | SessionWakeupDeletedEvent,
+  ) => void;
   spawnFn?: typeof spawn;
   startSessionMessageFn?: typeof startSessionMessage;
 }
@@ -88,13 +102,18 @@ export class ScheduleValidationError extends Error {
 export class ScheduledSessionService {
   private static readonly MAX_TIMEOUT_MS = 2_147_483_647;
   private readonly schedules = new Map<string, ScheduleState>();
+  private readonly wakeups = new Map<string, SessionWakeupConfig>();
+  private readonly wakeupTimers = new Map<string, NodeJS.Timeout>();
+  private readonly wakeupSessionLocks = new Map<string, Promise<unknown>>();
   private initialized = false;
   private readonly spawnFn: typeof spawn;
   private readonly startSessionMessageFn: typeof startSessionMessage;
+  private readonly wakeupStore: SessionWakeupStore;
 
   constructor(private readonly options: ScheduledSessionServiceOptions) {
     this.spawnFn = options.spawnFn ?? spawn;
     this.startSessionMessageFn = options.startSessionMessageFn ?? startSessionMessage;
+    this.wakeupStore = options.wakeupStore ?? new SessionWakeupStore(options.store.getDataDir());
   }
 
   async initialize(): Promise<void> {
@@ -133,6 +152,10 @@ export class ScheduledSessionService {
       this.broadcastStatus(state);
     }
 
+    if (this.hasSessionDependencies()) {
+      await this.initializeWakeups();
+    }
+
     this.initialized = true;
   }
 
@@ -144,6 +167,11 @@ export class ScheduledSessionService {
       }
     }
     this.schedules.clear();
+    for (const timer of this.wakeupTimers.values()) {
+      clearTimeout(timer);
+    }
+    this.wakeupTimers.clear();
+    this.wakeups.clear();
     this.initialized = false;
   }
 
@@ -309,6 +337,99 @@ export class ScheduledSessionService {
     }
     state.nextRunAt = null;
     this.broadcastStatus(state);
+  }
+
+  async listWakeups(): Promise<SessionWakeupInfo[]> {
+    const sessions = await this.buildSessionSummaryMap();
+    return Array.from(this.wakeups.values())
+      .map((wakeup) => this.buildWakeupInfo(wakeup, sessions))
+      .sort((left, right) => left.runAt.localeCompare(right.runAt));
+  }
+
+  async setWakeupForSession(input: SessionWakeupCreateInput): Promise<SessionWakeupInfo> {
+    const sessionId = this.normalizeRequiredString(input.sessionId, 'sessionId');
+    const message = this.normalizeRequiredString(input.message, 'message');
+    const runAt = this.normalizeWakeupRunAt(input.runAt);
+    return this.withWakeupSessionLock(sessionId, async () => {
+      const session = await this.requireWakeupSession(sessionId);
+      const existing = this.findWakeupForSession(sessionId);
+      if (existing && input.replace !== true) {
+        throw new ScheduleValidationError('session already has a pending wake-up');
+      }
+
+      if (existing) {
+        this.removeWakeupInMemory(existing.wakeupId);
+      }
+
+      const wakeup: SessionWakeupConfig = {
+        wakeupId: `wakeup-${randomUUID().slice(0, 8)}`,
+        sessionId,
+        agentId: session.agentId,
+        message,
+        runAt,
+        createdAt: new Date(),
+        status: 'pending',
+      };
+
+      this.wakeups.set(wakeup.wakeupId, wakeup);
+      try {
+        await this.persistWakeups();
+      } catch (error) {
+        this.removeWakeupInMemory(wakeup.wakeupId);
+        if (existing) {
+          this.wakeups.set(existing.wakeupId, existing);
+          this.scheduleWakeup(existing);
+        }
+        throw error;
+      }
+
+      this.scheduleWakeup(wakeup);
+      if (existing) {
+        this.broadcastWakeupDeleted(existing);
+      }
+      const info = this.buildWakeupInfo(wakeup, new Map([[sessionId, session]]));
+      this.broadcastWakeupSet(info);
+      return info;
+    });
+  }
+
+  async cancelWakeupForSession(
+    sessionIdInput: string,
+  ): Promise<{ cancelled: boolean; sessionId: string; wakeupId: string | null }> {
+    const sessionId = this.normalizeRequiredString(sessionIdInput, 'sessionId');
+    return this.withWakeupSessionLock(sessionId, async () => {
+      const existing = this.findWakeupForSession(sessionId);
+      if (!existing) {
+        return { cancelled: false, sessionId, wakeupId: null };
+      }
+      await this.deleteWakeup(existing.wakeupId);
+      return { cancelled: true, sessionId, wakeupId: existing.wakeupId };
+    });
+  }
+
+  private async withWakeupSessionLock<T>(
+    sessionId: string,
+    task: () => Promise<T>,
+  ): Promise<T> {
+    const previous = this.wakeupSessionLocks.get(sessionId) ?? Promise.resolve();
+    let release!: () => void;
+    const current = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const next = previous
+      .catch(() => undefined)
+      .then(() => current);
+    this.wakeupSessionLocks.set(sessionId, next);
+
+    await previous.catch(() => undefined);
+    try {
+      return await task();
+    } finally {
+      release();
+      if (this.wakeupSessionLocks.get(sessionId) === next) {
+        this.wakeupSessionLocks.delete(sessionId);
+      }
+    }
   }
 
   private scheduleNext(key: string, state: ScheduleState): void {
@@ -656,6 +777,379 @@ export class ScheduledSessionService {
     }
 
     return { result: 'failed', error: 'Unexpected session response status' };
+  }
+
+  private async initializeWakeups(): Promise<void> {
+    let persisted: PersistedSessionWakeupRecord[];
+    try {
+      persisted = await this.wakeupStore.load();
+    } catch (err) {
+      this.options.logger.error(
+        `[scheduled-sessions] Failed to load session wake-ups; starting without wake-ups: ${String(err)}`,
+      );
+      this.wakeups.clear();
+      return;
+    }
+    let pruned = false;
+    this.wakeups.clear();
+
+    for (const record of persisted) {
+      const wakeup = await this.normalizePersistedWakeup(record);
+      if (!wakeup) {
+        pruned = true;
+        continue;
+      }
+      if (this.findWakeupForSession(wakeup.sessionId)) {
+        this.options.logger.warn(
+          `[scheduled-sessions] Dropping duplicate wake-up for session "${wakeup.sessionId}"`,
+        );
+        pruned = true;
+        continue;
+      }
+      if (wakeup.status === 'delivering') {
+        this.options.logger.warn(
+          `[scheduled-sessions] Dropping already-claimed wake-up "${wakeup.wakeupId}" after restart`,
+        );
+        pruned = true;
+        continue;
+      }
+      if (wakeup.status === 'queued') {
+        wakeup.status = 'pending';
+        pruned = true;
+      }
+      this.wakeups.set(wakeup.wakeupId, wakeup);
+      this.scheduleWakeup(wakeup);
+      this.broadcastWakeupSet(this.buildWakeupInfo(wakeup));
+    }
+
+    if (pruned) {
+      await this.persistWakeups();
+    }
+  }
+
+  private async normalizePersistedWakeup(
+    record: PersistedSessionWakeupRecord,
+  ): Promise<SessionWakeupConfig | null> {
+    const runAt = new Date(record.runAt);
+    const createdAt = new Date(record.createdAt);
+    if (!Number.isFinite(runAt.getTime()) || !Number.isFinite(createdAt.getTime())) {
+      return null;
+    }
+    try {
+      const session = await this.requireWakeupSession(record.sessionId);
+      if (session.agentId !== record.agentId) {
+        this.options.logger.warn(
+          `[scheduled-sessions] Dropping wake-up for session "${record.sessionId}" because its agent changed`,
+        );
+        return null;
+      }
+    } catch (err) {
+      this.options.logger.warn(
+        `[scheduled-sessions] Dropping wake-up for unavailable session "${record.sessionId}": ${String(err)}`,
+      );
+      return null;
+    }
+    return {
+      wakeupId: record.wakeupId,
+      sessionId: record.sessionId,
+      agentId: record.agentId,
+      message: record.message,
+      runAt,
+      createdAt,
+      status: record.status,
+    };
+  }
+
+  private scheduleWakeup(wakeup: SessionWakeupConfig): void {
+    if (wakeup.status !== 'pending') {
+      return;
+    }
+    const existingTimer = this.wakeupTimers.get(wakeup.wakeupId);
+    if (existingTimer) {
+      clearTimeout(existingTimer);
+      this.wakeupTimers.delete(wakeup.wakeupId);
+    }
+
+    const delayRaw = wakeup.runAt.getTime() - Date.now();
+    const delay = Math.max(0, delayRaw);
+    const timeoutMs = Math.min(delay, ScheduledSessionService.MAX_TIMEOUT_MS);
+    const timer = setTimeout(() => {
+      if (delay > ScheduledSessionService.MAX_TIMEOUT_MS) {
+        this.scheduleWakeup(wakeup);
+        return;
+      }
+      void this.executeWakeup(wakeup.wakeupId);
+    }, timeoutMs);
+    this.wakeupTimers.set(wakeup.wakeupId, timer);
+  }
+
+  private async executeWakeup(wakeupId: string): Promise<void> {
+    const wakeup = this.wakeups.get(wakeupId);
+    this.wakeupTimers.delete(wakeupId);
+    if (!wakeup || wakeup.status !== 'pending') {
+      return;
+    }
+
+    const sessionHub = this.options.sessionHub;
+    if (!sessionHub) {
+      this.options.logger.error('[scheduled-sessions] Session hub unavailable for wake-up');
+      return;
+    }
+
+    try {
+      const state = await sessionHub.ensureSessionState(wakeup.sessionId);
+      if (state.activeChatRun) {
+        await this.queueWakeupDelivery(wakeup);
+        this.options.logger.info(
+          `[scheduled-sessions] Queued wake-up "${wakeup.wakeupId}" for busy session "${wakeup.sessionId}"`,
+        );
+        return;
+      }
+
+      await this.updateWakeupStatus(wakeup, 'delivering');
+      const result = await this.startWakeupMessage(wakeup);
+      if (result === 'busy') {
+        await this.queueWakeupDelivery(wakeup);
+        this.options.logger.info(
+          `[scheduled-sessions] Queued wake-up "${wakeup.wakeupId}" after busy response for session "${wakeup.sessionId}"`,
+        );
+        return;
+      }
+      await this.deleteWakeup(wakeup.wakeupId);
+    } catch (err) {
+      this.options.logger.error(
+        `[scheduled-sessions] Failed to deliver wake-up "${wakeup.wakeupId}": ${String(err)}`,
+      );
+      if (this.wakeups.has(wakeup.wakeupId)) {
+        await this.updateWakeupStatus(wakeup, 'pending').catch(() => undefined);
+        this.scheduleWakeupRetry(wakeup);
+      }
+    }
+  }
+
+  private async queueWakeupDelivery(wakeup: SessionWakeupConfig): Promise<void> {
+    const sessionHub = this.options.sessionHub;
+    if (!sessionHub) {
+      throw new Error('Session hub unavailable for wake-up');
+    }
+    await this.updateWakeupStatus(wakeup, 'queued');
+    await sessionHub.queueMessage({
+      sessionId: wakeup.sessionId,
+      text: wakeup.message,
+      source: 'user',
+      execute: async () => {
+        const current = this.wakeups.get(wakeup.wakeupId);
+        if (!current || current.status !== 'queued') {
+          return;
+        }
+        try {
+          await this.updateWakeupStatus(current, 'delivering');
+          const result = await this.startWakeupMessage(current);
+          if (result === 'busy') {
+            await this.queueWakeupDelivery(current);
+            return;
+          }
+          await this.deleteWakeup(current.wakeupId);
+        } catch (err) {
+          this.options.logger.error(
+            `[scheduled-sessions] Failed to deliver queued wake-up "${current.wakeupId}": ${String(err)}`,
+          );
+          if (this.wakeups.has(current.wakeupId)) {
+            await this.updateWakeupStatus(current, 'pending').catch(() => undefined);
+            this.scheduleWakeupRetry(current);
+          }
+        }
+      },
+    });
+  }
+
+  private async updateWakeupStatus(
+    wakeup: SessionWakeupConfig,
+    status: SessionWakeupConfig['status'],
+  ): Promise<void> {
+    const current = this.wakeups.get(wakeup.wakeupId);
+    if (!current) {
+      return;
+    }
+    current.status = status;
+    wakeup.status = status;
+    await this.persistWakeups();
+    this.broadcastWakeupSet(this.buildWakeupInfo(current));
+  }
+
+  private scheduleWakeupRetry(wakeup: SessionWakeupConfig): void {
+    const existingTimer = this.wakeupTimers.get(wakeup.wakeupId);
+    if (existingTimer) {
+      clearTimeout(existingTimer);
+    }
+    const timer = setTimeout(() => {
+      void this.executeWakeup(wakeup.wakeupId);
+    }, 60_000);
+    this.wakeupTimers.set(wakeup.wakeupId, timer);
+  }
+
+  private async startWakeupMessage(wakeup: SessionWakeupConfig): Promise<'accepted' | 'busy'> {
+    const sessionIndex = this.options.sessionIndex;
+    const sessionHub = this.options.sessionHub;
+    const toolHost = this.options.toolHost;
+    const envConfig = this.options.envConfig;
+    if (!sessionIndex || !sessionHub || !toolHost || !envConfig) {
+      throw new Error('Scheduled session dependencies are missing');
+    }
+
+    const timeoutSeconds = this.options.defaultSessionTimeoutSeconds ?? 300;
+    const { response } = await this.startSessionMessageFn({
+      input: {
+        sessionId: wakeup.sessionId,
+        content: wakeup.message,
+        mode: 'sync',
+        timeoutSeconds,
+      },
+      sessionIndex,
+      sessionHub,
+      agentRegistry: this.options.agentRegistry,
+      toolHost,
+      envConfig,
+      ...(this.options.eventStore ? { eventStore: this.options.eventStore } : {}),
+      ...(this.options.searchService ? { searchService: this.options.searchService } : {}),
+      scheduledSessionService: this,
+    });
+
+    if (response.status === 'busy') {
+      return 'busy';
+    }
+    if (response.status === 'error') {
+      throw new Error(response.error);
+    }
+    if (response.status === 'timeout') {
+      throw new Error(response.message);
+    }
+    return 'accepted';
+  }
+
+  private async requireWakeupSession(
+    sessionId: string,
+  ): Promise<SessionSummary & { agentId: string }> {
+    const sessionIndex = this.options.sessionIndex;
+    if (!sessionIndex) {
+      throw new ScheduleValidationError('session index is not available');
+    }
+    const summary = await sessionIndex.getSession(sessionId);
+    if (!summary || summary.deleted) {
+      throw new ScheduleNotFoundError(`Session not found: ${sessionId}`);
+    }
+    const agentId = summary.agentId;
+    if (!agentId) {
+      throw new ScheduleValidationError('session must belong to an agent');
+    }
+    const agent = this.options.agentRegistry.getAgent(agentId);
+    if (!agent || agent.type === 'external') {
+      throw new ScheduleValidationError('session agent is not available for wake-ups');
+    }
+    const provider = agent.chat?.provider ?? 'pi';
+    if (provider !== 'pi') {
+      throw new ScheduleValidationError('wake-ups are only supported for native Pi SDK sessions');
+    }
+    return { ...summary, agentId };
+  }
+
+  private normalizeWakeupRunAt(value: Date): Date {
+    if (!(value instanceof Date) || !Number.isFinite(value.getTime())) {
+      throw new ScheduleValidationError('runAt must be a valid timestamp');
+    }
+    if (value.getTime() < Date.now() - 1000) {
+      throw new ScheduleValidationError('runAt must not be in the past');
+    }
+    return value;
+  }
+
+  private findWakeupForSession(sessionId: string): SessionWakeupConfig | null {
+    for (const wakeup of this.wakeups.values()) {
+      if (wakeup.sessionId === sessionId) {
+        return wakeup;
+      }
+    }
+    return null;
+  }
+
+  private removeWakeupInMemory(wakeupId: string): SessionWakeupConfig | null {
+    const wakeup = this.wakeups.get(wakeupId) ?? null;
+    const timer = this.wakeupTimers.get(wakeupId);
+    if (timer) {
+      clearTimeout(timer);
+      this.wakeupTimers.delete(wakeupId);
+    }
+    this.wakeups.delete(wakeupId);
+    return wakeup;
+  }
+
+  private async deleteWakeup(wakeupId: string): Promise<SessionWakeupConfig | null> {
+    const wakeup = this.removeWakeupInMemory(wakeupId);
+    if (!wakeup) {
+      return null;
+    }
+    await this.persistWakeups();
+    this.broadcastWakeupDeleted(wakeup);
+    return wakeup;
+  }
+
+  private buildPersistedWakeups(): PersistedSessionWakeupRecord[] {
+    return Array.from(this.wakeups.values()).map((wakeup) => ({
+      wakeupId: wakeup.wakeupId,
+      sessionId: wakeup.sessionId,
+      agentId: wakeup.agentId,
+      message: wakeup.message,
+      runAt: wakeup.runAt.toISOString(),
+      createdAt: wakeup.createdAt.toISOString(),
+      status: wakeup.status,
+    }));
+  }
+
+  private async persistWakeups(): Promise<void> {
+    await this.wakeupStore.save(this.buildPersistedWakeups());
+  }
+
+  private async buildSessionSummaryMap(): Promise<Map<string, SessionSummary>> {
+    const sessionIndex = this.options.sessionIndex;
+    if (!sessionIndex) {
+      return new Map();
+    }
+    const sessions = await sessionIndex.listSessions();
+    return new Map(sessions.map((session) => [session.sessionId, session]));
+  }
+
+  private buildWakeupInfo(
+    wakeup: SessionWakeupConfig,
+    sessions?: Map<string, SessionSummary>,
+  ): SessionWakeupInfo {
+    const summary = sessions?.get(wakeup.sessionId);
+    return {
+      wakeupId: wakeup.wakeupId,
+      sessionId: wakeup.sessionId,
+      sessionName: summary?.name ?? null,
+      agentId: wakeup.agentId,
+      message: wakeup.message,
+      runAt: wakeup.runAt.toISOString(),
+      createdAt: wakeup.createdAt.toISOString(),
+      status: wakeup.status,
+    };
+  }
+
+  private broadcastWakeupSet(info: SessionWakeupInfo): void {
+    this.options.broadcast?.({
+      type: 'session_wakeup:set',
+      payload: info,
+    });
+  }
+
+  private broadcastWakeupDeleted(wakeup: SessionWakeupConfig): void {
+    this.options.broadcast?.({
+      type: 'session_wakeup:deleted',
+      payload: {
+        wakeupId: wakeup.wakeupId,
+        sessionId: wakeup.sessionId,
+      },
+    });
   }
 
   private async resolveScheduledSession(
