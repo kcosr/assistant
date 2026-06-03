@@ -41,6 +41,17 @@ type ScheduleInfo = {
   } | null;
 };
 
+type SessionWakeupInfo = {
+  wakeupId: string;
+  sessionId: string;
+  sessionName: string | null;
+  agentId: string;
+  message: string;
+  runAt: string;
+  createdAt: string;
+  status: 'pending' | 'queued' | 'delivering';
+};
+
 const SCHEDULES: ScheduleInfo[] = [
   {
     agentId: 'agent-a',
@@ -83,18 +94,43 @@ describe('scheduled sessions panel', () => {
   const originalRegistry = (globalThis as { ASSISTANT_PANEL_REGISTRY?: unknown })
     .ASSISTANT_PANEL_REGISTRY;
   let panelFactory: PanelFactory | null = null;
+  let wakeups: SessionWakeupInfo[] = [];
 
   beforeEach(() => {
     panelFactory = null;
+    wakeups = [];
     apiFetch.mockReset();
-    apiFetch.mockImplementation(async () => ({
-      ok: true,
-      status: 200,
-      json: async () => ({
+    apiFetch.mockImplementation(async (url: RequestInfo | URL) => {
+      const path = String(url);
+      if (path.includes('/operations/wakeup-list')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            ok: true,
+            result: { wakeups },
+          }),
+        };
+      }
+      if (path.includes('/operations/wakeup-cancel')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            ok: true,
+            result: { cancelled: true },
+          }),
+        };
+      }
+      return {
         ok: true,
-        result: { schedules: SCHEDULES },
-      }),
-    }));
+        status: 200,
+        json: async () => ({
+          ok: true,
+          result: { schedules: SCHEDULES },
+        }),
+      };
+    });
 
     (globalThis as { ASSISTANT_PANEL_REGISTRY?: unknown }).ASSISTANT_PANEL_REGISTRY = {
       registerPanel: (panelType: string, factory: PanelFactory) => {
@@ -287,7 +323,7 @@ describe('scheduled sessions panel', () => {
       ).toBe('schedule-2');
       expect(
         container.querySelector<HTMLElement>('[data-role="summary"]')?.textContent?.trim(),
-      ).toBe('1 of 2 schedules | 0 running | 1 disabled');
+      ).toBe('1 of 2 schedules | 0 of 0 wake-ups | 0 running | 1 disabled');
 
       search!.value = 'morning';
       search!.dispatchEvent(new Event('input', { bubbles: true }));
@@ -300,7 +336,52 @@ describe('scheduled sessions panel', () => {
       search!.dispatchEvent(new Event('input', { bubbles: true }));
       expect(container.querySelectorAll('.scheduled-sessions-item')).toHaveLength(0);
       expect(container.querySelector('.scheduled-sessions-empty')?.textContent).toContain(
-        'No schedules match',
+        'No schedules or wake-ups match',
+      );
+    } finally {
+      handle.unmount();
+    }
+  });
+
+  it('renders pending wake-ups and cancels them by session context', async () => {
+    wakeups = [
+      {
+        wakeupId: 'wakeup-1',
+        sessionId: 'session-1',
+        sessionName: 'Issue Watch',
+        agentId: 'agent-a',
+        message: 'Check the issue status',
+        runAt: '2026-04-01T12:00:00.000Z',
+        createdAt: '2026-04-01T11:00:00.000Z',
+        status: 'pending',
+      },
+    ];
+
+    const { container, handle } = await mountPanel();
+
+    try {
+      expect(container.querySelectorAll('.scheduled-sessions-wakeup-item')).toHaveLength(1);
+      expect(container.querySelector('.scheduled-sessions-section-title')?.textContent).toBe(
+        'Wake-ups',
+      );
+      expect(container.querySelector('.scheduled-sessions-wakeup-item')?.textContent).toContain(
+        'Check the issue status',
+      );
+
+      const cancel = container.querySelector<HTMLButtonElement>(
+        '[data-action="cancel-wakeup"][data-session-id="session-1"]',
+      );
+      expect(cancel).not.toBeNull();
+      cancel?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await flushPromises();
+
+      expect(apiFetch).toHaveBeenCalledWith(
+        '/api/plugins/scheduled-sessions/operations/wakeup-cancel',
+        expect.objectContaining({
+          headers: expect.objectContaining({
+            'x-session-id': 'session-1',
+          }),
+        }),
       );
     } finally {
       handle.unmount();

@@ -26,6 +26,9 @@ Schedules are stored in the plugin default instance data directory at
 `data/plugins/scheduled-sessions/default/schedules.json`.
 They are persisted immediately on create, update, delete, enable, and disable.
 
+Pending one-shot session wake-ups are stored in the same plugin instance under
+`data/plugins/scheduled-sessions/default/wakeups.json`.
+
 Each schedule can also carry an optional `sessionConfig` block with:
 - `model`
 - `thinking`
@@ -38,6 +41,11 @@ These values are validated against the selected agent when the schedule is creat
 then revalidated again when the schedule runs. When `reuseSession` is enabled, the backing
 session is created up front and reconciled from the schedule on later runs after edits.
 
+Wake-ups target native Pi SDK sessions only. `wakeup-set` and `wakeup-cancel` operate on the
+current session context; `wakeup-list` returns pending wake-ups across sessions so users can see
+what is armed. When a wake-up fires while its target session is busy, the wake-up message is added
+to the session message queue.
+
 ## Source files
 
 - `packages/plugins/official/scheduled-sessions/manifest.json`
@@ -48,7 +56,7 @@ session is created up front and reconciled from the schedule on later runs after
 ## Panel
 
 - Panel type: `scheduled-sessions` (multi-instance, global scope).
-- Shows schedules in a flat compact list with collapsed-by-default details, a live title/agent filter, and enable/disable plus run controls.
+- Shows pending wake-ups and schedules in a flat compact list with collapsed-by-default schedule details, a live title/session/message/agent filter, wake-up cancel controls, and schedule enable/disable plus run controls.
 - Live updates via WebSocket events from the server.
 
 ## Tools
@@ -62,6 +70,9 @@ Tools are exposed when plugin tools are enabled:
 - `scheduled_sessions_run`: trigger a run by agentId + scheduleId.
 - `scheduled_sessions_enable`: enable a schedule at runtime.
 - `scheduled_sessions_disable`: disable a schedule at runtime.
+- `scheduled_sessions_wakeup_list`: list pending session wake-ups across sessions.
+- `scheduled_sessions_wakeup_set`: schedule a wake-up for the current session using `delaySeconds` or an absolute `runAt` ISO timestamp with a timezone offset or `Z` (for example `2026-06-03T08:56:00-05:00` or `2026-06-03T13:56:00Z`).
+- `scheduled_sessions_wakeup_cancel`: cancel the current session's pending wake-up.
 
 ## HTTP
 
@@ -74,6 +85,9 @@ Endpoints:
 - `POST /api/plugins/scheduled-sessions/operations/run`
 - `POST /api/plugins/scheduled-sessions/operations/enable`
 - `POST /api/plugins/scheduled-sessions/operations/disable`
+- `POST /api/plugins/scheduled-sessions/operations/wakeup-list`
+- `POST /api/plugins/scheduled-sessions/operations/wakeup-set`
+- `POST /api/plugins/scheduled-sessions/operations/wakeup-cancel`
 
 Responses use the standard generated plugin operations envelope:
 

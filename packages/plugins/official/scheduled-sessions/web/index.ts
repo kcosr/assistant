@@ -57,8 +57,8 @@ const SCHEDULED_SESSIONS_TEMPLATE = `
         type="search"
         class="scheduled-sessions-search"
         data-role="search"
-        placeholder="Filter by title or agent..."
-        aria-label="Filter schedules by title or agent"
+        placeholder="Filter by title, session, message, or agent..."
+        aria-label="Filter scheduled sessions and wake-ups"
         autocomplete="off"
       />
     </div>
@@ -97,6 +97,21 @@ type SchedulesResponse = {
   schedules: ScheduleInfo[];
 };
 
+type SessionWakeupInfo = {
+  wakeupId: string;
+  sessionId: string;
+  sessionName: string | null;
+  agentId: string;
+  message: string;
+  runAt: string;
+  createdAt: string;
+  status: 'pending' | 'queued' | 'delivering';
+};
+
+type WakeupsResponse = {
+  wakeups: SessionWakeupInfo[];
+};
+
 type OperationResponse<T> = {
   ok: boolean;
   result: T;
@@ -112,6 +127,19 @@ type ScheduleDeletedEvent = {
   payload: {
     agentId: string;
     scheduleId: string;
+  };
+};
+
+type SessionWakeupSetEvent = {
+  type: 'session_wakeup:set';
+  payload: SessionWakeupInfo;
+};
+
+type SessionWakeupDeletedEvent = {
+  type: 'session_wakeup:deleted';
+  payload: {
+    wakeupId: string;
+    sessionId: string;
   };
 };
 
@@ -236,6 +264,10 @@ function sortSchedules(schedules: ScheduleInfo[]): ScheduleInfo[] {
   });
 }
 
+function sortWakeups(wakeups: SessionWakeupInfo[]): SessionWakeupInfo[] {
+  return [...wakeups].sort((a, b) => a.runAt.localeCompare(b.runAt));
+}
+
 function getScheduleTitle(schedule: ScheduleInfo): string {
   return schedule.sessionTitle?.trim() || schedule.scheduleId;
 }
@@ -261,6 +293,24 @@ async function fetchSchedules(): Promise<ScheduleInfo[]> {
     throw new Error(`Request failed (${response.status})`);
   }
   return payload.result.schedules;
+}
+
+async function fetchWakeups(): Promise<SessionWakeupInfo[]> {
+  const response = await apiFetch('/api/plugins/scheduled-sessions/operations/wakeup-list', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({}),
+  });
+  let payload: OperationResponse<WakeupsResponse> | null = null;
+  try {
+    payload = (await response.json()) as OperationResponse<WakeupsResponse>;
+  } catch {
+    // ignore
+  }
+  if (!response.ok || !payload?.ok || !payload.result || !Array.isArray(payload.result.wakeups)) {
+    throw new Error(`Request failed (${response.status})`);
+  }
+  return payload.result.wakeups;
 }
 
 async function runSchedule(agentId: string, scheduleId: string): Promise<RunResponse> {
@@ -299,6 +349,20 @@ async function setScheduleEnabled(agentId: string, scheduleId: string, enabled: 
   }
 }
 
+async function cancelWakeup(sessionId: string): Promise<void> {
+  const response = await apiFetch('/api/plugins/scheduled-sessions/operations/wakeup-cancel', {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      'x-session-id': sessionId,
+    },
+    body: JSON.stringify({}),
+  });
+  if (!response.ok) {
+    throw new Error(`Request failed (${response.status})`);
+  }
+}
+
 if (!registry || typeof registry.registerPanel !== 'function') {
   console.warn('ASSISTANT_PANEL_REGISTRY is not available for scheduled-sessions plugin.');
 } else {
@@ -329,6 +393,7 @@ if (!registry || typeof registry.registerPanel !== 'function') {
       });
 
       let schedules = new Map<string, ScheduleInfo>();
+      let wakeups = new Map<string, SessionWakeupInfo>();
       let loading = false;
       let message = '';
       let searchQuery = '';
@@ -377,6 +442,11 @@ if (!registry || typeof registry.registerPanel !== 'function') {
         render();
       };
 
+      const updateWakeups = (nextWakeups: SessionWakeupInfo[]): void => {
+        wakeups = new Map(nextWakeups.map((wakeup) => [wakeup.wakeupId, wakeup]));
+        render();
+      };
+
       const refresh = async (): Promise<void> => {
         if (loading) {
           return;
@@ -384,8 +454,9 @@ if (!registry || typeof registry.registerPanel !== 'function') {
         loading = true;
         setMessage('Loading schedules...');
         try {
-          const data = await fetchSchedules();
-          updateSchedules(data);
+          const [scheduleData, wakeupData] = await Promise.all([fetchSchedules(), fetchWakeups()]);
+          updateSchedules(scheduleData);
+          updateWakeups(wakeupData);
           message = '';
         } catch (err) {
           message = (err as Error).message || 'Failed to fetch schedules';
@@ -411,6 +482,24 @@ if (!registry || typeof registry.registerPanel !== 'function') {
           render();
           return;
         }
+        if (payload['type'] === 'session_wakeup:deleted') {
+          const deleted = (payload as SessionWakeupDeletedEvent).payload;
+          if (!deleted?.wakeupId) {
+            return;
+          }
+          wakeups.delete(deleted.wakeupId);
+          render();
+          return;
+        }
+        if (payload['type'] === 'session_wakeup:set') {
+          const wakeup = (payload as SessionWakeupSetEvent).payload;
+          if (!wakeup?.wakeupId || !wakeup.sessionId) {
+            return;
+          }
+          wakeups.set(wakeup.wakeupId, wakeup);
+          render();
+          return;
+        }
         if (payload['type'] !== 'scheduled_session:status') {
           return;
         }
@@ -424,6 +513,7 @@ if (!registry || typeof registry.registerPanel !== 'function') {
 
       const render = (): void => {
         const allSchedules = Array.from(schedules.values());
+        const allWakeups = Array.from(wakeups.values());
         const normalizedQuery = searchQuery.trim().toLowerCase();
         const orderedSchedules = sortSchedules(allSchedules).filter((schedule) => {
           if (!normalizedQuery) {
@@ -433,24 +523,93 @@ if (!registry || typeof registry.registerPanel !== 'function') {
           const agent = schedule.agentId.toLowerCase();
           return title.includes(normalizedQuery) || agent.includes(normalizedQuery);
         });
+        const orderedWakeups = sortWakeups(allWakeups).filter((wakeup) => {
+          if (!normalizedQuery) {
+            return true;
+          }
+          const sessionName = (wakeup.sessionName ?? '').toLowerCase();
+          const sessionId = wakeup.sessionId.toLowerCase();
+          const messageText = wakeup.message.toLowerCase();
+          const agent = wakeup.agentId.toLowerCase();
+          return (
+            sessionName.includes(normalizedQuery) ||
+            sessionId.includes(normalizedQuery) ||
+            messageText.includes(normalizedQuery) ||
+            agent.includes(normalizedQuery)
+          );
+        });
         const runningCount = orderedSchedules.filter((schedule) => schedule.status === 'running').length;
         const disabledCount = orderedSchedules.filter((schedule) => schedule.status === 'disabled').length;
         summaryEl.textContent = normalizedQuery
-          ? `${orderedSchedules.length} of ${allSchedules.length} schedules | ${runningCount} running | ${disabledCount} disabled`
-          : `${allSchedules.length} schedules | ${runningCount} running | ${disabledCount} disabled`;
+          ? `${orderedSchedules.length} of ${allSchedules.length} schedules | ${orderedWakeups.length} of ${allWakeups.length} wake-ups | ${runningCount} running | ${disabledCount} disabled`
+          : `${allSchedules.length} schedules | ${allWakeups.length} wake-ups | ${runningCount} running | ${disabledCount} disabled`;
         statusEl.textContent = message;
         chromeController?.scheduleLayoutCheck();
 
-        if (allSchedules.length === 0 && !loading) {
-          bodyEl.innerHTML = '<div class="scheduled-sessions-empty">No schedules configured.</div>';
+        if (allSchedules.length === 0 && allWakeups.length === 0 && !loading) {
+          bodyEl.innerHTML = '<div class="scheduled-sessions-empty">No schedules or wake-ups configured.</div>';
           return;
         }
-        if (orderedSchedules.length === 0 && !loading) {
-          bodyEl.innerHTML = `<div class="scheduled-sessions-empty">No schedules match "${escapeHtml(searchQuery.trim())}".</div>`;
+        if (orderedSchedules.length === 0 && orderedWakeups.length === 0 && !loading) {
+          bodyEl.innerHTML = `<div class="scheduled-sessions-empty">No schedules or wake-ups match "${escapeHtml(searchQuery.trim())}".</div>`;
           return;
         }
 
         let html = '';
+        if (orderedWakeups.length > 0) {
+          html += '<div class="scheduled-sessions-section-title">Wake-ups</div>';
+          html += '<div class="scheduled-sessions-list scheduled-sessions-wakeup-list">';
+          for (const wakeup of orderedWakeups) {
+            const sessionTitle = wakeup.sessionName?.trim() || wakeup.sessionId;
+            const wakeupStatus =
+              wakeup.status === 'queued'
+                ? 'Queued'
+                : wakeup.status === 'delivering'
+                  ? 'Delivering'
+                  : 'Wake-up';
+            html += `
+              <section class="scheduled-sessions-item scheduled-sessions-wakeup-item" data-wakeup-id="${escapeHtml(wakeup.wakeupId)}" data-session-id="${escapeHtml(wakeup.sessionId)}">
+                <div class="scheduled-sessions-row">
+                  <span class="status-dot status-dot--wakeup"></span>
+                  <div class="scheduled-sessions-row-main">
+                    <div class="scheduled-sessions-row-title-line">
+                      <div class="scheduled-sessions-row-title">${escapeHtml(sessionTitle)}</div>
+                      <span class="scheduled-sessions-agent">${escapeHtml(wakeup.agentId)}</span>
+                    </div>
+                    <div class="scheduled-sessions-row-sub">${escapeHtml(wakeup.message)}</div>
+                  </div>
+                  <div class="scheduled-sessions-row-meta">
+                    <div class="scheduled-sessions-row-next">${escapeHtml(formatRelative(wakeup.runAt))}</div>
+                    <div class="scheduled-sessions-row-status">${escapeHtml(wakeupStatus)}</div>
+                  </div>
+                  <div class="scheduled-sessions-row-actions">
+                    <button type="button" class="scheduled-sessions-button" data-action="cancel-wakeup" data-session-id="${escapeHtml(wakeup.sessionId)}">Cancel</button>
+                  </div>
+                </div>
+                <div class="scheduled-sessions-details">
+                  <div class="scheduled-sessions-detail-grid">
+                    <div class="scheduled-sessions-detail">
+                      <div class="scheduled-sessions-detail-label">Run at</div>
+                      <div class="scheduled-sessions-detail-value">${escapeHtml(formatTimestamp(wakeup.runAt))} (${escapeHtml(formatRelative(wakeup.runAt))})</div>
+                    </div>
+                    <div class="scheduled-sessions-detail">
+                      <div class="scheduled-sessions-detail-label">Session</div>
+                      <div class="scheduled-sessions-detail-value">${escapeHtml(wakeup.sessionId)}</div>
+                    </div>
+                    <div class="scheduled-sessions-detail scheduled-sessions-detail-wide">
+                      <div class="scheduled-sessions-detail-label">Message</div>
+                      <div class="scheduled-sessions-detail-value">${escapeHtml(wakeup.message)}</div>
+                    </div>
+                  </div>
+                </div>
+              </section>
+            `;
+          }
+          html += '</div>';
+        }
+        if (orderedSchedules.length > 0) {
+          html += '<div class="scheduled-sessions-section-title">Cron Schedules</div>';
+        }
         html += '<div class="scheduled-sessions-list">';
         for (const schedule of orderedSchedules) {
           const scheduleKey = `${schedule.agentId}:${schedule.scheduleId}`;
@@ -549,6 +708,7 @@ if (!registry || typeof registry.registerPanel !== 'function') {
         const action = actionEl.dataset.action;
         const agentId = actionEl.dataset.agentId ?? '';
         const scheduleId = actionEl.dataset.scheduleId ?? '';
+        const sessionId = actionEl.dataset.sessionId ?? '';
 
         if (action === 'toggle-schedule') {
           if (!agentId || !scheduleId) {
@@ -601,6 +761,20 @@ if (!registry || typeof registry.registerPanel !== 'function') {
           }
           return;
         }
+
+        if (action === 'cancel-wakeup') {
+          event.preventDefault();
+          event.stopPropagation();
+          if (!sessionId) {
+            return;
+          }
+          try {
+            await cancelWakeup(sessionId);
+            setMessage('Wake-up cancelled');
+          } catch (err) {
+            setMessage((err as Error).message || 'Failed to cancel wake-up');
+          }
+        }
       };
 
       loadPanelState();
@@ -628,7 +802,7 @@ if (!registry || typeof registry.registerPanel !== 'function') {
       });
 
       const timer = window.setInterval(() => {
-        if (schedules.size > 0) {
+        if (schedules.size > 0 || wakeups.size > 0) {
           render();
         }
       }, 30_000);

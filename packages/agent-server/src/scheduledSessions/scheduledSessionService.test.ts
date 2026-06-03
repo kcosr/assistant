@@ -172,6 +172,10 @@ function createSessionIndexStub() {
 
   return {
     sessions,
+    getSession: vi.fn(async (sessionId: string) => {
+      const session = sessions.find((item) => item.sessionId === sessionId);
+      return session ? { ...session } : null;
+    }),
     listSessions: vi.fn(async () => sessions.filter((session) => !session.deleted)),
     createSession: vi.fn(
       async ({
@@ -402,8 +406,155 @@ function createServiceWithSessions(
   return { service, schedule, sessionIndex, sessionHub, startSessionMessageFn, storeDir };
 }
 
+function createWakeupService(options?: {
+  provider?: 'pi' | 'codex-cli';
+  active?: boolean;
+  startStatus?: 'complete' | 'busy' | 'error';
+}) {
+  const storeDir = mkdtempSync(path.join(os.tmpdir(), 'session-wakeups-'));
+  mkdirSync(storeDir, { recursive: true });
+  const registry = new AgentRegistry([
+    {
+      agentId: 'agent',
+      displayName: 'Agent',
+      description: 'Test agent',
+      chat: {
+        provider: options?.provider ?? 'pi',
+        models: ['gpt-5.4'],
+        thinking: ['low'],
+      },
+    },
+  ]);
+  const sessionIndex = createSessionIndexStub();
+  const timestamp = new Date().toISOString();
+  sessionIndex.sessions.push({
+    sessionId: 'session-1',
+    agentId: 'agent',
+    name: 'Issue Watch',
+    createdAt: timestamp,
+    updatedAt: timestamp,
+  });
+
+  const startSessionMessageFn = vi.fn(
+    async (): Promise<SessionMessageStartResult> => {
+      if (options?.startStatus === 'busy') {
+        return {
+          response: {
+            sessionId: 'session-1',
+            sessionName: 'Issue Watch',
+            agentId: 'agent',
+            created: false,
+            status: 'busy',
+            code: 'session_busy',
+            message: 'busy',
+          },
+        };
+      }
+      if (options?.startStatus === 'error') {
+        return {
+          response: {
+            sessionId: 'session-1',
+            sessionName: 'Issue Watch',
+            agentId: 'agent',
+            created: false,
+            status: 'error',
+            responseId: 'resp-error',
+            error: 'delivery failed',
+            durationMs: 0,
+          },
+        };
+      }
+      return {
+        response: {
+          sessionId: 'session-1',
+          sessionName: 'Issue Watch',
+          agentId: 'agent',
+          created: false,
+          status: 'complete',
+          responseId: 'resp-1',
+          response: 'ok',
+          truncated: false,
+          durationMs: 0,
+          toolCallCount: 0,
+          toolCalls: [],
+        },
+      };
+    },
+  );
+
+  const queuedTasks: Array<() => Promise<void>> = [];
+  const sessionHub = {
+    ensureSessionState: vi.fn(async (sessionId: string) => ({
+      summary:
+        sessionIndex.sessions.find((session) => session.sessionId === sessionId) ??
+        (() => {
+          throw new Error(`Session not found: ${sessionId}`);
+        })(),
+      chatMessages: [],
+      ...(options?.active
+        ? {
+            activeChatRun: {
+              responseId: 'active-response',
+              abortController: new AbortController(),
+              accumulatedText: '',
+            },
+          }
+        : {}),
+      messageQueue: [],
+    })),
+    queueMessage: vi.fn(
+      async (queueOptions: {
+        sessionId: string;
+        text: string;
+        source: 'user' | 'agent';
+        execute: () => Promise<void>;
+      }) => {
+        queuedTasks.push(queueOptions.execute);
+        return {
+          id: 'queued-1',
+          text: queueOptions.text,
+          queuedAt: new Date().toISOString(),
+          source: queueOptions.source,
+        };
+      },
+    ),
+  };
+  const logger = {
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+    debug: vi.fn(),
+  };
+  const broadcast = vi.fn();
+  const service = new ScheduledSessionService({
+    agentRegistry: registry,
+    logger,
+    store: new ScheduledSessionStore(storeDir),
+    sessionIndex: sessionIndex as unknown as SessionIndex,
+    sessionHub: sessionHub as unknown as SessionHub,
+    envConfig: {} as EnvConfig,
+    toolHost: {} as ToolHost,
+    startSessionMessageFn,
+    broadcast,
+  });
+
+  return {
+    service,
+    sessionIndex,
+    sessionHub,
+    startSessionMessageFn,
+    queuedTasks,
+    broadcast,
+    storeDir,
+  };
+}
+
 async function tick(): Promise<void> {
   await new Promise((resolve) => setImmediate(resolve));
+}
+
+async function wait(ms: number): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 describe('ScheduledSessionService', () => {
@@ -744,6 +895,315 @@ describe('ScheduledSessionService', () => {
         scheduledSession: { agentId: 'agent', scheduleId: 'daily-review' },
       },
     });
+
+    service.shutdown();
+  });
+
+  it('sets, lists, and cancels one current-session wake-up', async () => {
+    const { service } = createWakeupService();
+    await service.initialize();
+
+    const runAt = new Date(Date.now() + 60_000);
+    const created = await service.setWakeupForSession({
+      sessionId: 'session-1',
+      message: 'Check the status of the issue',
+      runAt,
+    });
+
+    expect(created).toMatchObject({
+      sessionId: 'session-1',
+      sessionName: 'Issue Watch',
+      agentId: 'agent',
+      message: 'Check the status of the issue',
+      runAt: runAt.toISOString(),
+    });
+    await expect(service.listWakeups()).resolves.toHaveLength(1);
+
+    const cancel = await service.cancelWakeupForSession('session-1');
+    expect(cancel).toEqual({
+      cancelled: true,
+      sessionId: 'session-1',
+      wakeupId: created.wakeupId,
+    });
+    await expect(service.listWakeups()).resolves.toEqual([]);
+
+    service.shutdown();
+  });
+
+  it('rejects a second wake-up for the same session unless replace is true', async () => {
+    const { service } = createWakeupService();
+    await service.initialize();
+
+    const runAt = new Date(Date.now() + 60_000);
+    await service.setWakeupForSession({
+      sessionId: 'session-1',
+      message: 'First',
+      runAt,
+    });
+
+    await expect(
+      service.setWakeupForSession({
+        sessionId: 'session-1',
+        message: 'Second',
+        runAt,
+      }),
+    ).rejects.toThrow(/already has a pending wake-up/i);
+
+    const replacement = await service.setWakeupForSession({
+      sessionId: 'session-1',
+      message: 'Second',
+      runAt,
+      replace: true,
+    });
+    expect(replacement.message).toBe('Second');
+    await expect(service.listWakeups()).resolves.toHaveLength(1);
+
+    service.shutdown();
+  });
+
+  it('preserves one wake-up per session under concurrent set calls', async () => {
+    const { service } = createWakeupService();
+    await service.initialize();
+
+    const runAt = new Date(Date.now() + 60_000);
+    const results = await Promise.allSettled([
+      service.setWakeupForSession({
+        sessionId: 'session-1',
+        message: 'First',
+        runAt,
+      }),
+      service.setWakeupForSession({
+        sessionId: 'session-1',
+        message: 'Second',
+        runAt,
+      }),
+    ]);
+
+    expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
+    expect(results.filter((result) => result.status === 'rejected')).toHaveLength(1);
+    await expect(service.listWakeups()).resolves.toHaveLength(1);
+
+    service.shutdown();
+  });
+
+  it('rejects wake-ups for non-native Pi sessions', async () => {
+    const { service } = createWakeupService({ provider: 'codex-cli' });
+    await service.initialize();
+
+    await expect(
+      service.setWakeupForSession({
+        sessionId: 'session-1',
+        message: 'Check the issue',
+        runAt: new Date(Date.now() + 60_000),
+      }),
+    ).rejects.toThrow(/only supported for native Pi SDK sessions/i);
+
+    service.shutdown();
+  });
+
+  it('retries queued wake-ups after restart and prunes already-claimed wake-ups', async () => {
+    const { service, sessionIndex, storeDir } = createWakeupService();
+    const timestamp = new Date().toISOString();
+    sessionIndex.sessions.push({
+      sessionId: 'session-2',
+      agentId: 'agent',
+      name: 'Claimed Wakeup',
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    });
+    const runAt = new Date(Date.now() + 60_000).toISOString();
+    writeFileSync(
+      path.join(storeDir, 'wakeups.json'),
+      `${JSON.stringify({
+        version: 1,
+        wakeups: [
+          {
+            wakeupId: 'wakeup-queued',
+            sessionId: 'session-1',
+            agentId: 'agent',
+            message: 'Queued retry',
+            runAt,
+            createdAt: timestamp,
+            status: 'queued',
+          },
+          {
+            wakeupId: 'wakeup-delivering',
+            sessionId: 'session-2',
+            agentId: 'agent',
+            message: 'Already claimed',
+            runAt,
+            createdAt: timestamp,
+            status: 'delivering',
+          },
+        ],
+      })}\n`,
+      'utf8',
+    );
+
+    await service.initialize();
+
+    await expect(service.listWakeups()).resolves.toEqual([
+      expect.objectContaining({
+        wakeupId: 'wakeup-queued',
+        status: 'pending',
+      }),
+    ]);
+    const persisted = JSON.parse(
+      await fs.readFile(path.join(storeDir, 'wakeups.json'), 'utf8'),
+    ) as { wakeups: Array<{ wakeupId: string; status: string }> };
+    expect(persisted.wakeups).toEqual([
+      expect.objectContaining({
+        wakeupId: 'wakeup-queued',
+        status: 'pending',
+      }),
+    ]);
+
+    service.shutdown();
+  });
+
+  it('continues startup when the wake-up store is corrupt', async () => {
+    const { service, storeDir } = createWakeupService();
+    writeFileSync(path.join(storeDir, 'wakeups.json'), '{bad json\n', 'utf8');
+
+    await expect(service.initialize()).resolves.toBeUndefined();
+    await expect(service.listWakeups()).resolves.toEqual([]);
+
+    service.shutdown();
+  });
+
+  it('delivers due wake-ups to the target session and removes them', async () => {
+    const { service, startSessionMessageFn } = createWakeupService();
+    await service.initialize();
+
+    await service.setWakeupForSession({
+      sessionId: 'session-1',
+      message: 'Check the issue',
+      runAt: new Date(Date.now() + 5),
+    });
+    await wait(40);
+
+    expect(startSessionMessageFn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        input: expect.objectContaining({
+          sessionId: 'session-1',
+          content: 'Check the issue',
+          mode: 'sync',
+        }),
+      }),
+    );
+    await expect(service.listWakeups()).resolves.toEqual([]);
+
+    service.shutdown();
+  });
+
+  it('claims due wake-ups before synchronous delivery completes', async () => {
+    const { service, startSessionMessageFn } = createWakeupService();
+    let resolveDelivery!: (result: SessionMessageStartResult) => void;
+    const delivery = new Promise<SessionMessageStartResult>((resolve) => {
+      resolveDelivery = resolve;
+    });
+    startSessionMessageFn.mockImplementationOnce(async () => delivery);
+    await service.initialize();
+
+    await service.setWakeupForSession({
+      sessionId: 'session-1',
+      message: 'Check the issue',
+      runAt: new Date(Date.now() + 5),
+    });
+    await wait(40);
+
+    expect(startSessionMessageFn).toHaveBeenCalled();
+    await expect(service.listWakeups()).resolves.toEqual([
+      expect.objectContaining({
+        sessionId: 'session-1',
+        status: 'delivering',
+      }),
+    ]);
+
+    resolveDelivery({
+      response: {
+        sessionId: 'session-1',
+        sessionName: 'Issue Watch',
+        agentId: 'agent',
+        created: false,
+        status: 'complete',
+        responseId: 'resp-1',
+        response: 'ok',
+        truncated: false,
+        durationMs: 0,
+        toolCallCount: 0,
+        toolCalls: [],
+      },
+    });
+    await tick();
+    await expect(service.listWakeups()).resolves.toEqual([]);
+
+    service.shutdown();
+  });
+
+  it('keeps failed wake-up deliveries pending for retry', async () => {
+    const { service, startSessionMessageFn } = createWakeupService({
+      startStatus: 'error',
+    });
+    await service.initialize();
+
+    await service.setWakeupForSession({
+      sessionId: 'session-1',
+      message: 'Check the issue',
+      runAt: new Date(Date.now() + 5),
+    });
+    await wait(40);
+
+    expect(startSessionMessageFn).toHaveBeenCalled();
+    await expect(service.listWakeups()).resolves.toEqual([
+      expect.objectContaining({
+        sessionId: 'session-1',
+        status: 'pending',
+      }),
+    ]);
+
+    service.shutdown();
+  });
+
+  it('queues due wake-ups when the target session is busy', async () => {
+    const { service, sessionHub, startSessionMessageFn, queuedTasks } = createWakeupService({
+      active: true,
+    });
+    await service.initialize();
+
+    await service.setWakeupForSession({
+      sessionId: 'session-1',
+      message: 'Check the issue',
+      runAt: new Date(Date.now() + 5),
+    });
+    await wait(40);
+
+    expect(sessionHub.queueMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sessionId: 'session-1',
+        text: 'Check the issue',
+        source: 'user',
+      }),
+    );
+    expect(startSessionMessageFn).not.toHaveBeenCalled();
+    await expect(service.listWakeups()).resolves.toEqual([
+      expect.objectContaining({
+        sessionId: 'session-1',
+        message: 'Check the issue',
+        status: 'queued',
+      }),
+    ]);
+
+    await queuedTasks[0]?.();
+    expect(startSessionMessageFn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        input: expect.objectContaining({
+          sessionId: 'session-1',
+          content: 'Check the issue',
+        }),
+      }),
+    );
+    await expect(service.listWakeups()).resolves.toEqual([]);
 
     service.shutdown();
   });

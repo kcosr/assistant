@@ -33,6 +33,9 @@ describe('scheduled-sessions plugin operations', () => {
     expect(typeof plugin.operations?.run).toBe('function');
     expect(typeof plugin.operations?.enable).toBe('function');
     expect(typeof plugin.operations?.disable).toBe('function');
+    expect(typeof plugin.operations?.['wakeup-list']).toBe('function');
+    expect(typeof plugin.operations?.['wakeup-set']).toBe('function');
+    expect(typeof plugin.operations?.['wakeup-cancel']).toBe('function');
   });
 
   it('returns schedules from the list operation', async () => {
@@ -180,5 +183,210 @@ describe('scheduled-sessions plugin operations', () => {
       code: 'schedule_not_found',
       message: 'Schedule not found: missing',
     } satisfies Partial<ToolError>);
+  });
+
+  it('lists wake-ups across sessions', async () => {
+    const plugin = createPlugin({
+      manifest: manifestJson as CombinedPluginManifest,
+    });
+    const list = plugin.operations?.['wakeup-list'];
+    if (!list) {
+      throw new Error('Expected wakeup-list operation');
+    }
+
+    const result = await list(
+      {},
+      createCtx({
+        scheduledSessionService: {
+          listWakeups: vi.fn().mockResolvedValue([{ wakeupId: 'wakeup-1' }]),
+        },
+      }),
+    );
+
+    expect(result).toEqual({ wakeups: [{ wakeupId: 'wakeup-1' }] });
+  });
+
+  it('sets a wake-up for the current session using delaySeconds', async () => {
+    const plugin = createPlugin({
+      manifest: manifestJson as CombinedPluginManifest,
+    });
+    const set = plugin.operations?.['wakeup-set'];
+    if (!set) {
+      throw new Error('Expected wakeup-set operation');
+    }
+
+    const setWakeupForSession = vi.fn().mockResolvedValue({ wakeupId: 'wakeup-1' });
+    const before = Date.now();
+    const result = await set(
+      {
+        message: 'Check issue status',
+        delaySeconds: 60,
+        replace: true,
+      },
+      createCtx({
+        sessionId: 'session-1',
+        scheduledSessionService: {
+          setWakeupForSession,
+        },
+      }),
+    );
+
+    expect(setWakeupForSession).toHaveBeenCalledWith({
+      sessionId: 'session-1',
+      message: 'Check issue status',
+      runAt: expect.any(Date),
+      replace: true,
+    });
+    const runAt = setWakeupForSession.mock.calls[0]?.[0]?.runAt as Date;
+    expect(runAt.getTime()).toBeGreaterThanOrEqual(before + 60_000);
+    expect(result).toEqual({ wakeupId: 'wakeup-1' });
+  });
+
+  it('sets a wake-up for the current session using runAt', async () => {
+    const plugin = createPlugin({
+      manifest: manifestJson as CombinedPluginManifest,
+    });
+    const set = plugin.operations?.['wakeup-set'];
+    if (!set) {
+      throw new Error('Expected wakeup-set operation');
+    }
+
+    const runAt = '2026-06-03T12:00:00.000Z';
+    const setWakeupForSession = vi.fn().mockResolvedValue({ wakeupId: 'wakeup-1' });
+    await set(
+      {
+        message: 'Check issue status',
+        runAt,
+      },
+      createCtx({
+        sessionId: 'session-1',
+        scheduledSessionService: {
+          setWakeupForSession,
+        },
+      }),
+    );
+
+    expect(setWakeupForSession).toHaveBeenCalledWith({
+      sessionId: 'session-1',
+      message: 'Check issue status',
+      runAt: new Date(runAt),
+    });
+  });
+
+  it('sets a wake-up using runAt with an explicit timezone offset', async () => {
+    const plugin = createPlugin({
+      manifest: manifestJson as CombinedPluginManifest,
+    });
+    const set = plugin.operations?.['wakeup-set'];
+    if (!set) {
+      throw new Error('Expected wakeup-set operation');
+    }
+
+    const runAt = '2026-06-03T08:56:00-05:00';
+    const setWakeupForSession = vi.fn().mockResolvedValue({ wakeupId: 'wakeup-1' });
+    await set(
+      {
+        message: 'Check issue status',
+        runAt,
+      },
+      createCtx({
+        sessionId: 'session-1',
+        scheduledSessionService: {
+          setWakeupForSession,
+        },
+      }),
+    );
+
+    expect(setWakeupForSession).toHaveBeenCalledWith({
+      sessionId: 'session-1',
+      message: 'Check issue status',
+      runAt: new Date(runAt),
+    });
+  });
+
+  it('rejects wake-up set without exactly one time input', async () => {
+    const plugin = createPlugin({
+      manifest: manifestJson as CombinedPluginManifest,
+    });
+    const set = plugin.operations?.['wakeup-set'];
+    if (!set) {
+      throw new Error('Expected wakeup-set operation');
+    }
+
+    await expect(
+      set(
+        {
+          message: 'Check issue status',
+        },
+        createCtx({
+          scheduledSessionService: {
+            setWakeupForSession: vi.fn(),
+          },
+        }),
+      ),
+    ).rejects.toMatchObject({
+      code: 'invalid_arguments',
+      message: 'Provide exactly one of runAt or delaySeconds',
+    } satisfies Partial<ToolError>);
+  });
+
+  it('rejects wake-up runAt without a timezone offset', async () => {
+    const plugin = createPlugin({
+      manifest: manifestJson as CombinedPluginManifest,
+    });
+    const set = plugin.operations?.['wakeup-set'];
+    if (!set) {
+      throw new Error('Expected wakeup-set operation');
+    }
+
+    await expect(
+      set(
+        {
+          message: 'Check issue status',
+          runAt: '2026-06-03T08:56:00',
+        },
+        createCtx({
+          scheduledSessionService: {
+            setWakeupForSession: vi.fn(),
+          },
+        }),
+      ),
+    ).rejects.toMatchObject({
+      code: 'invalid_arguments',
+      message:
+        'runAt must include a timezone offset or Z, for example 2026-06-03T08:56:00-05:00 or 2026-06-03T13:56:00Z',
+    } satisfies Partial<ToolError>);
+  });
+
+  it('cancels the current session wake-up', async () => {
+    const plugin = createPlugin({
+      manifest: manifestJson as CombinedPluginManifest,
+    });
+    const cancel = plugin.operations?.['wakeup-cancel'];
+    if (!cancel) {
+      throw new Error('Expected wakeup-cancel operation');
+    }
+
+    const cancelWakeupForSession = vi.fn().mockResolvedValue({
+      cancelled: true,
+      sessionId: 'session-1',
+      wakeupId: 'wakeup-1',
+    });
+    const result = await cancel(
+      {},
+      createCtx({
+        sessionId: 'session-1',
+        scheduledSessionService: {
+          cancelWakeupForSession,
+        },
+      }),
+    );
+
+    expect(cancelWakeupForSession).toHaveBeenCalledWith('session-1');
+    expect(result).toEqual({
+      cancelled: true,
+      sessionId: 'session-1',
+      wakeupId: 'wakeup-1',
+    });
   });
 });

@@ -8,6 +8,7 @@
 
 ### Added
 
+- Added one-shot Pi SDK session wake-ups to the scheduled-sessions plugin, including durable wake-up storage, current-session set/cancel tools, cross-session listing, busy-session queue delivery, and panel visibility/cancel controls. ([#105](https://github.com/kcosr/assistant/pull/105))
 - Added a virtual Focus list view with focus toggles, source-list editing, searchable list move/copy pickers, and add/edit list target selection for list items. ([#103](https://github.com/kcosr/assistant/pull/103))
 - Added Pi SDK custom-model config support for `api`, `authHeader`, `compat`, synthesized model metadata, and compaction so Assistant agents can target OpenAI-compatible endpoints that need Pi compatibility flags. ([#102](https://github.com/kcosr/assistant/pull/102))
 - Added Pi SDK session context compaction with Pi-compatible JSONL `compaction` entries, manual chat menu/API compaction, effective replay context, and threshold auto-compaction. ([#98](https://github.com/kcosr/assistant/pull/98))
