@@ -22,6 +22,7 @@ import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.util.Collections;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 import static org.junit.Assert.assertEquals;
@@ -32,6 +33,96 @@ import static org.junit.Assert.assertFalse;
 
 @RunWith(RobolectricTestRunner.class)
 public final class AssistantVoiceRuntimeServiceTest {
+    @Test
+    @Config(sdk = Build.VERSION_CODES.N)
+    public void playTextIntentCarriesManualPlaybackPayload() {
+        Context context = RuntimeEnvironment.getApplication();
+
+        Intent intent = AssistantVoiceRuntimeService.playTextIntent(
+            context,
+            " session-1 ",
+            " Read this ",
+            " Replay ",
+            " turn-1 "
+        );
+
+        assertEquals(AssistantVoiceRuntimeService.ACTION_PLAY_TEXT, intent.getAction());
+        assertEquals(
+            "session-1",
+            intent.getStringExtra(AssistantVoiceRuntimeService.EXTRA_PLAY_TEXT_SESSION_ID)
+        );
+        assertEquals(
+            "Read this",
+            intent.getStringExtra(AssistantVoiceRuntimeService.EXTRA_PLAY_TEXT_TEXT)
+        );
+        assertEquals(
+            "Replay",
+            intent.getStringExtra(AssistantVoiceRuntimeService.EXTRA_PLAY_TEXT_TITLE)
+        );
+        assertEquals(
+            "turn-1",
+            intent.getStringExtra(AssistantVoiceRuntimeService.EXTRA_PLAY_TEXT_SOURCE_EVENT_ID)
+        );
+    }
+
+    @Test
+    @Config(sdk = Build.VERSION_CODES.N)
+    public void explainPlayActionBlockMatchesVoicePlaybackAdmission() {
+        assertEquals(
+            "",
+            AssistantVoiceRuntimeService.explainPlayActionBlock(
+                createConfig(AssistantVoiceConfig.AUDIO_MODE_TOOL, Collections.emptyMap())
+            )
+        );
+        assertEquals(
+            "Voice mode is off",
+            AssistantVoiceRuntimeService.explainPlayActionBlock(
+                createConfig(AssistantVoiceConfig.AUDIO_MODE_OFF, Collections.emptyMap())
+            )
+        );
+    }
+
+    @Test
+    @Config(sdk = Build.VERSION_CODES.N)
+    public void handlePlayTextActionQueuesManualTextAtFrontWhileBusy() throws Exception {
+        Context context = RuntimeEnvironment.getApplication();
+        AssistantVoiceRuntimeService service = new AssistantVoiceRuntimeService();
+        setRuntimeConfig(
+            service,
+            createConfig(AssistantVoiceConfig.AUDIO_MODE_TOOL, sessionTitles("session-1", "Assistant"))
+        );
+        setPrivateField(service, "activeTtsRequestId", "tts-active");
+        List<AssistantVoiceQueueItem> queue = getQueuedVoiceItems(service);
+        queue.add(AssistantVoiceQueueItem.fromManualText(
+            "queued-old",
+            "",
+            "",
+            "Existing",
+            "Existing speech"
+        ));
+
+        invokeHandlePlayTextAction(
+            service,
+            AssistantVoiceRuntimeService.playTextIntent(
+                context,
+                "session-1",
+                "Replay this",
+                "Replay",
+                "turn-1"
+            )
+        );
+
+        assertEquals(2, queue.size());
+        AssistantVoiceQueueItem item = queue.get(0);
+        assertEquals("manual_text", item.notificationKind);
+        assertEquals("turn-1", item.sourceEventId);
+        assertEquals("session-1", item.sessionId);
+        assertEquals("Assistant", item.sessionTitle);
+        assertEquals("Replay", item.displayTitle);
+        assertEquals("Replay this", item.spokenText);
+        assertEquals("queued-old", queue.get(1).sourceEventId);
+    }
+
     @Test
     @Config(sdk = Build.VERSION_CODES.N)
     public void buildNotificationUsesPublicVisibilityDefaultPriorityAndServiceCategory() {
@@ -912,8 +1003,15 @@ public final class AssistantVoiceRuntimeServiceTest {
     }
 
     private static AssistantVoiceConfig createConfig(Map<String, String> sessionTitles) {
+        return createConfig(AssistantVoiceConfig.AUDIO_MODE_TOOL, sessionTitles);
+    }
+
+    private static AssistantVoiceConfig createConfig(
+        String audioMode,
+        Map<String, String> sessionTitles
+    ) {
         return new AssistantVoiceConfig(
-            AssistantVoiceConfig.AUDIO_MODE_TOOL,
+            audioMode,
             true,
             "",
             AssistantVoiceConfig.DEFAULT_RECOGNITION_START_TIMEOUT_MS,
@@ -955,6 +1053,37 @@ public final class AssistantVoiceRuntimeServiceTest {
         Field field = AssistantVoiceRuntimeService.class.getDeclaredField("config");
         field.setAccessible(true);
         field.set(service, config);
+    }
+
+    private static void setPrivateField(
+        AssistantVoiceRuntimeService service,
+        String fieldName,
+        Object value
+    ) throws Exception {
+        Field field = AssistantVoiceRuntimeService.class.getDeclaredField(fieldName);
+        field.setAccessible(true);
+        field.set(service, value);
+    }
+
+    @SuppressWarnings("unchecked")
+    private static List<AssistantVoiceQueueItem> getQueuedVoiceItems(
+        AssistantVoiceRuntimeService service
+    ) throws Exception {
+        Field field = AssistantVoiceRuntimeService.class.getDeclaredField("queuedVoiceItems");
+        field.setAccessible(true);
+        return (List<AssistantVoiceQueueItem>) field.get(service);
+    }
+
+    private static void invokeHandlePlayTextAction(
+        AssistantVoiceRuntimeService service,
+        Intent intent
+    ) throws Exception {
+        Method method = AssistantVoiceRuntimeService.class.getDeclaredMethod(
+            "handlePlayTextAction",
+            Intent.class
+        );
+        method.setAccessible(true);
+        method.invoke(service, intent);
     }
 
     private static String invokePrivateStringMethod(

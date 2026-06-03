@@ -148,6 +148,7 @@ describe('AssistantNativeVoiceBridge', () => {
       retargetActiveRecognition: vi.fn(),
       setSessionTitles: vi.fn(),
       setAssistantBaseUrl: vi.fn(),
+      playText: vi.fn(),
     };
 
     const bridge = new AssistantNativeVoiceBridge(() => ({
@@ -168,6 +169,14 @@ describe('AssistantNativeVoiceBridge', () => {
     await expect(bridge.retargetActiveRecognition('session-2')).resolves.toBe(true);
     await expect(bridge.setSessionTitles({ 'session-1': 'Daily Assistant' })).resolves.toBe(true);
     await expect(bridge.setAssistantBaseUrl('https://assistant')).resolves.toBe(true);
+    expect(
+      bridge.playText({
+        sessionId: 'session-1',
+        text: 'Read this',
+        title: 'Daily Assistant',
+        sourceEventId: 'turn:1',
+      }),
+    ).toBe(true);
     expect(target.setVoiceSettings).toHaveBeenCalledWith({
       settings: createInitialVoiceSettings({
         audioMode: 'tool',
@@ -189,6 +198,12 @@ describe('AssistantNativeVoiceBridge', () => {
       },
     });
     expect(target.setAssistantBaseUrl).toHaveBeenCalledWith({ url: 'https://assistant' });
+    expect(target.playText).toHaveBeenCalledWith({
+      sessionId: 'session-1',
+      text: 'Read this',
+      title: 'Daily Assistant',
+      sourceEventId: 'turn:1',
+    });
   });
 
   it('passes null selected session through the direct bridge', async () => {

@@ -1083,6 +1083,33 @@ async function main(): Promise<void> {
     return getPrimaryChatInputRuntime()?.getVoiceSettings() ?? currentVoiceSettings;
   }
 
+  function canPlayNativeVoiceText(): boolean {
+    return (
+      useNativeVoiceRuntime &&
+      nativeVoiceBridge.isAvailable() &&
+      getCurrentVoiceSettings().audioMode !== 'off'
+    );
+  }
+
+  function playNativeVoiceText(options: {
+    sessionId?: string | null;
+    text: string;
+    title?: string | null;
+    sourceEventId?: string | null;
+  }): boolean {
+    const text = options.text.trim();
+    if (!text || !canPlayNativeVoiceText()) {
+      return false;
+    }
+    void nativeVoiceBridge.setSessionTitles(getNativeVoiceSessionTitles());
+    return nativeVoiceBridge.playText({
+      sessionId: normalizeSessionId(options.sessionId ?? null),
+      text,
+      title: options.title ?? null,
+      sourceEventId: options.sourceEventId ?? null,
+    });
+  }
+
   function getPreferredVoiceSessionLabel(settings: VoiceSettings): string {
     const selectedSessionId = settings.preferredVoiceSessionId;
     if (!selectedSessionId) {
@@ -1762,7 +1789,7 @@ async function main(): Promise<void> {
       inputRuntime.focusInput();
     });
     runtime.chatRenderer.setRequestDividerActionHandler(
-      ({ requestId, anchorEl, hasBefore, hasAfter }) => {
+      ({ requestId, anchorEl, hasBefore, hasAfter, playableText, sourceEventId }) => {
         if (!bindingSessionId || !isSessionPiBacked(bindingSessionId)) {
           return;
         }
@@ -1772,6 +1799,8 @@ async function main(): Promise<void> {
           anchorEl,
           hasBefore,
           hasAfter,
+          ...(playableText ? { playableText } : {}),
+          ...(sourceEventId ? { sourceEventId } : {}),
         });
       },
     );
@@ -3099,6 +3128,8 @@ async function main(): Promise<void> {
       autoScrollEnabled,
       getAgentDisplayName,
       getInteractionEnabled: () => interactionEnabled,
+      getTextPlaybackAvailable: canPlayNativeVoiceText,
+      playText: playNativeVoiceText,
       isMobileViewport,
       sendInteractionResponse,
       sendQuestionnaireSubmit,
@@ -3448,13 +3479,31 @@ async function main(): Promise<void> {
     anchorEl: HTMLElement;
     hasBefore: boolean;
     hasAfter: boolean;
+    playableText?: string;
+    sourceEventId?: string;
   }): void {
-    const { sessionId, requestId, anchorEl, hasBefore, hasAfter } = options;
+    const { sessionId, requestId, anchorEl, hasBefore, hasAfter, playableText, sourceEventId } =
+      options;
     contextMenuManager.showAnchoredMenu({
       anchorEl,
       menuClassName: 'context-menu request-history-menu',
       closeOnScrollTarget: anchorEl.closest<HTMLElement>('.chat-log'),
       items: [
+        ...(playableText && canPlayNativeVoiceText()
+          ? [
+              {
+                label: 'Play',
+                onClick: () => {
+                  playNativeVoiceText({
+                    sessionId,
+                    text: playableText,
+                    title: getSessionLabel(sessionId),
+                    sourceEventId: sourceEventId ?? `turn:${requestId}`,
+                  });
+                },
+              },
+            ]
+          : []),
         ...(hasBefore
           ? [
               {

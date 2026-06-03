@@ -197,4 +197,31 @@ public final class AssistantVoiceQueueItemTest {
         assertNotNull(item);
         assertEquals("Project Alpha: Speak me", item.spokenText);
     }
+
+    @Test
+    public void manualTextBuildsSpeakOnlyQueueItemWithoutSessionRequirement() {
+        AssistantVoiceQueueItem item = AssistantVoiceQueueItem.fromManualText(
+            "turn-1",
+            "",
+            "",
+            "Replay",
+            "Read this"
+        );
+
+        assertNotNull(item);
+        assertEquals("manual_text", item.notificationKind);
+        assertEquals("app", item.source);
+        assertEquals("turn-1", item.dedupKey());
+        assertEquals("", item.sessionId);
+        assertEquals("Replay", item.displayTitle);
+        assertEquals("Read this", item.spokenText);
+        assertEquals("speak", item.executionMode);
+        assertTrue(item.manual);
+        assertTrue(!item.requiresSession());
+    }
+
+    @Test
+    public void manualTextReturnsNullForBlankSpeech() {
+        assertNull(AssistantVoiceQueueItem.fromManualText("turn-2", "session-2", "Session", "", " "));
+    }
 }

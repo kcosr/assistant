@@ -57,10 +57,31 @@ import {
   type QuestionnaireRequestView,
 } from '../utils/interactionRenderer';
 import { dedupeProjectedTranscriptEvents } from '../utils/transcriptReplay';
+export interface ChatTextPlaybackOptions {
+  sessionId?: string | null;
+  text: string;
+  title?: string | null;
+  sourceEventId?: string | null;
+}
+
+export type ChatTextPlaybackHandler = (options: ChatTextPlaybackOptions) => boolean;
+
+export interface RequestDividerActionOptions {
+  requestId: string;
+  timestamp: number;
+  anchorEl: HTMLElement;
+  hasBefore: boolean;
+  hasAfter: boolean;
+  playableText?: string;
+  sourceEventId?: string;
+}
+
 export interface ChatRendererOptions {
   getAgentDisplayName?: (agentId: string) => string | undefined;
   getExpandToolOutput?: () => boolean;
   getInteractionEnabled?: () => boolean;
+  getTextPlaybackAvailable?: () => boolean;
+  playText?: ChatTextPlaybackHandler;
   getShouldAutoFocusQuestionnaire?: () => boolean;
   getShouldRestoreFocusAfterInteraction?: () => boolean;
   sendInteractionResponse?: (options: {
@@ -79,13 +100,7 @@ export interface ChatRendererOptions {
     questionnaireRequestId: string;
     reason?: string;
   }) => void;
-  onRequestDividerActivate?: (options: {
-    requestId: string;
-    timestamp: number;
-    anchorEl: HTMLElement;
-    hasBefore: boolean;
-    hasAfter: boolean;
-  }) => void;
+  onRequestDividerActivate?: (options: RequestDividerActionOptions) => void;
 }
 
 export type ProjectedTranscriptApplyResult = 'applied' | 'ignored' | 'reload';
@@ -231,6 +246,8 @@ export class ChatRenderer {
         anchorEl: HTMLElement;
         hasBefore: boolean;
         hasAfter: boolean;
+        playableText?: string;
+        sourceEventId?: string;
       }) => void)
     | null;
   private readonly turnTimestampFormatter = new Intl.DateTimeFormat(undefined, {
@@ -817,6 +834,8 @@ export class ChatRenderer {
           anchorEl: HTMLElement;
           hasBefore: boolean;
           hasAfter: boolean;
+          playableText?: string;
+          sourceEventId?: string;
         }) => void)
       | null,
   ): void {
@@ -2909,12 +2928,15 @@ export class ChatRenderer {
       }
       const previousTurn = turnEl.previousElementSibling;
       const nextTurn = turnEl.nextElementSibling;
+      const playableText = this.getPlayableTurnText(turnEl);
       this.requestDividerActionHandler({
         requestId,
         timestamp,
         anchorEl: label,
         hasBefore: previousTurn instanceof HTMLElement && previousTurn.classList.contains('turn'),
         hasAfter: nextTurn instanceof HTMLElement && nextTurn.classList.contains('turn'),
+        ...(playableText ? { playableText } : {}),
+        sourceEventId: `turn:${requestId}`,
       });
     });
     const rightLine = document.createElement('span');
@@ -3511,6 +3533,72 @@ export class ChatRenderer {
     return temp.textContent ?? '';
   }
 
+  private isTextPlaybackAvailable(): boolean {
+    return Boolean(this.options.getTextPlaybackAvailable?.() && this.options.playText);
+  }
+
+  private getPlayableTurnText(turnEl: HTMLDivElement): string | undefined {
+    const parts = Array.from(turnEl.querySelectorAll<HTMLElement>('.assistant-text'))
+      .map((element) => {
+        const clone = element.cloneNode(true) as HTMLElement;
+        clone.querySelectorAll('.markdown-code-copy-wrapper').forEach((copyEl) => copyEl.remove());
+        return (clone.textContent ?? '').trim();
+      })
+      .filter((text) => text.length > 0);
+    const text = parts.join('\n\n').trim();
+    return text.length > 0 ? text : undefined;
+  }
+
+  private async resolveAttachmentPlayText(
+    bubble: HTMLDivElement,
+    attachment: AttachmentDescriptor,
+  ): Promise<string> {
+    const text = await this.resolveAttachmentCopyText(bubble, attachment);
+    return attachment.previewType === 'markdown'
+      ? this.renderMarkdownAttachmentAsPlainText(text)
+      : text;
+  }
+
+  private createAttachmentPlayButton(
+    bubble: HTMLDivElement,
+    attachment: AttachmentDescriptor,
+  ): HTMLButtonElement {
+    const button = this.createAttachmentActionButton('Play', () => {
+      const originalLabel = button.textContent ?? 'Play';
+      button.disabled = true;
+      button.textContent = 'Playing…';
+      this.clearAttachmentToolActionError(bubble);
+      void this.resolveAttachmentPlayText(bubble, attachment)
+        .then((text) => {
+          const trimmed = text.trim();
+          if (!trimmed) {
+            throw new Error('Attachment has no playable text');
+          }
+          const queued = this.options.playText?.({
+            sessionId: null,
+            text: trimmed,
+            title: attachment.title || attachment.fileName,
+            sourceEventId: `attachment:${attachment.attachmentId}`,
+          });
+          if (!queued) {
+            throw new Error('Text playback is unavailable');
+          }
+          button.textContent = 'Queued';
+          window.setTimeout(() => {
+            button.disabled = false;
+            button.textContent = originalLabel;
+          }, 1500);
+        })
+        .catch((error) => {
+          console.error('[attachments] Failed to play attachment', error);
+          button.disabled = false;
+          button.textContent = originalLabel;
+          this.showAttachmentToolActionError(bubble, 'Failed to play attachment.');
+        });
+    });
+    return button;
+  }
+
   private async resolveAttachmentCopyText(
     bubble: HTMLDivElement,
     attachment: AttachmentDescriptor,
@@ -3878,6 +3966,10 @@ export class ChatRenderer {
           this.renderAttachmentToolBubble(bubble, attachment);
         });
         actionsEl.appendChild(collapseButton);
+      }
+
+      if (this.isTextPlaybackAvailable() && this.isAttachmentInlinePreviewable(attachment)) {
+        actionsEl.appendChild(this.createAttachmentPlayButton(bubble, attachment));
       }
 
       if (attachment.previewType === 'markdown') {

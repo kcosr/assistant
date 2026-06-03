@@ -217,6 +217,11 @@ adb -s <device> exec-out run-as com.assistant.work cat files/voice-runtime.log
   system notification shade and from the in-app Notifications panel cards. Manual actions
   reconstruct fresh local queue items from the stored notification, jump ahead of automatic work,
   and discard interrupted automatic playback instead of requeueing it.
+- When Android native voice mode is enabled, Pi request divider menus expose `Play` for the
+  assistant text in that request, and text/markdown attachment actions expose `Play` for rendered
+  text content, loading the full attachment text when the preview is truncated. These
+  app-initiated replay actions use the same native local queue, jump to the front of queued work,
+  and do not interrupt the currently active playback or recognition pass.
 - Automatic voice admission remains local-only. If the Android runtime was not alive when a
   notification arrived, the notification stays durable for manual recovery later, but missed
   automatic playback is not replayed by default when the app comes back.

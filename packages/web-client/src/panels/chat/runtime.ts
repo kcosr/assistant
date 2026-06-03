@@ -1,5 +1,5 @@
 import { ChatScrollManager } from '../../controllers/chatScroll';
-import { ChatRenderer } from '../../controllers/chatRenderer';
+import { ChatRenderer, type ChatTextPlaybackHandler } from '../../controllers/chatRenderer';
 import {
   setToolOutputBlockExpanded,
   setToolOutputBlockNearViewport,
@@ -24,6 +24,8 @@ export interface ChatRuntimeOptions {
   autoScrollEnabled: boolean;
   getAgentDisplayName: (agentId: string) => string;
   getInteractionEnabled?: () => boolean;
+  getTextPlaybackAvailable?: () => boolean;
+  playText?: ChatTextPlaybackHandler;
   isMobileViewport?: () => boolean;
   sendInteractionResponse?: (options: {
     sessionId: string;
@@ -254,6 +256,10 @@ export function createChatRuntime(options: ChatRuntimeOptions): ChatRuntime {
     getAgentDisplayName: options.getAgentDisplayName,
     getExpandToolOutput: () => toolOutputPreferencesClient.getExpandToolOutput(),
     ...(options.getInteractionEnabled ? { getInteractionEnabled: options.getInteractionEnabled } : {}),
+    ...(options.getTextPlaybackAvailable
+      ? { getTextPlaybackAvailable: options.getTextPlaybackAvailable }
+      : {}),
+    ...(options.playText ? { playText: options.playText } : {}),
     getShouldAutoFocusQuestionnaire: () => !(options.isMobileViewport?.() ?? false),
     getShouldRestoreFocusAfterInteraction: () => !(options.isMobileViewport?.() ?? false),
     ...(options.sendInteractionResponse

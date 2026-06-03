@@ -228,6 +228,34 @@ public final class AssistantVoicePlugin extends Plugin {
     }
 
     @PluginMethod
+    public void playText(PluginCall call) {
+        String text = trim(call.getString("text"));
+        if (text.isEmpty()) {
+            call.reject("text is required");
+            return;
+        }
+        String sessionId = call.getString("sessionId");
+        String title = call.getString("title");
+        String sourceEventId = call.getString("sourceEventId");
+        JSONObject details = AssistantVoiceEventLog.details();
+        AssistantVoiceEventLog.put(details, "sessionId", safe(sessionId));
+        AssistantVoiceEventLog.put(details, "sourceEventId", safe(sourceEventId));
+        AssistantVoiceEventLog.put(details, "textLength", text.length());
+        AssistantVoiceEventLog.record(getContext(), "plugin_play_text", details);
+        ContextCompat.startForegroundService(
+            getContext(),
+            AssistantVoiceRuntimeService.playTextIntent(
+                getContext(),
+                sessionId,
+                text,
+                title,
+                sourceEventId
+            )
+        );
+        call.resolve(buildStatePayload());
+    }
+
+    @PluginMethod
     public void performNotificationSpeaker(PluginCall call) {
         AssistantVoiceNotificationRecord notification = extractNotification(call);
         if (notification == null) {
@@ -570,5 +598,9 @@ public final class AssistantVoicePlugin extends Plugin {
     private static String safe(String value) {
         String trimmed = value == null ? "" : value.trim();
         return trimmed.isEmpty() ? "<empty>" : trimmed;
+    }
+
+    private static String trim(String value) {
+        return value == null ? "" : value.trim();
     }
 }

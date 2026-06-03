@@ -8,6 +8,7 @@
 
 ### Added
 
+- Added native Android voice replay for assistant turns and text/markdown attachments, using the existing local voice queue with front-of-queue, non-interrupting playback. ([#106](https://github.com/kcosr/assistant/pull/106))
 - Added one-shot Pi SDK session wake-ups to the scheduled-sessions plugin, including durable wake-up storage, current-session set/cancel tools, cross-session listing, busy-session queue delivery, and panel visibility/cancel controls. ([#105](https://github.com/kcosr/assistant/pull/105))
 - Added a virtual Focus list view with focus toggles, source-list editing, searchable list move/copy pickers, and add/edit list target selection for list items. ([#103](https://github.com/kcosr/assistant/pull/103))
 - Added Pi SDK custom-model config support for `api`, `authHeader`, `compat`, synthesized model metadata, and compaction so Assistant agents can target OpenAI-compatible endpoints that need Pi compatibility flags. ([#102](https://github.com/kcosr/assistant/pull/102))
