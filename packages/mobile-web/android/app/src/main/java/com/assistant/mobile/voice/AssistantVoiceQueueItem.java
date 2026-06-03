@@ -119,6 +119,33 @@ final class AssistantVoiceQueueItem {
         );
     }
 
+    static AssistantVoiceQueueItem fromManualText(
+        String sourceEventId,
+        String sessionId,
+        String sessionTitle,
+        String displayTitle,
+        String spokenText
+    ) {
+        String normalizedSpeech = trim(spokenText);
+        if (normalizedSpeech.isEmpty()) {
+            return null;
+        }
+        return new AssistantVoiceQueueItem(
+            "",
+            "manual_text",
+            "app",
+            sourceEventId,
+            sessionId,
+            sessionTitle,
+            displayTitle,
+            normalizedSpeech,
+            "speak",
+            null,
+            true,
+            true
+        );
+    }
+
     private static String resolvePromptSpokenText(
         AssistantVoicePromptEvent prompt,
         boolean includeTitle,

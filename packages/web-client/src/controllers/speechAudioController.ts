@@ -58,6 +58,13 @@ export interface AssistantNativeVoiceStartListenArgs {
   sessionId?: string | null;
 }
 
+export interface AssistantNativeVoicePlayTextArgs {
+  sessionId?: string | null;
+  text: string;
+  title?: string | null;
+  sourceEventId?: string | null;
+}
+
 export type AssistantNativeVoiceRuntimeState =
   | 'disabled'
   | 'connecting'
@@ -97,6 +104,7 @@ export interface AssistantNativeVoiceBridgeTarget {
   setAssistantBaseUrl?: (args: AssistantNativeVoiceUrlArgs) => void | Promise<void>;
   stopCurrentInteraction?: () => void | Promise<void>;
   startManualListen?: (args?: AssistantNativeVoiceStartListenArgs) => void | Promise<void>;
+  playText?: (args: AssistantNativeVoicePlayTextArgs) => void | Promise<void>;
   listInputDevices?: () =>
     | AssistantNativeVoiceInputDevice[]
     | Promise<AssistantNativeVoiceInputDevice[]>;
@@ -198,6 +206,15 @@ export class AssistantNativeVoiceBridge {
 
   startManualListen(sessionId?: string | null): boolean {
     return this.invoke('startManualListen', { sessionId: sessionId ?? null });
+  }
+
+  playText(args: AssistantNativeVoicePlayTextArgs): boolean {
+    return this.invoke('playText', {
+      sessionId: args.sessionId ?? null,
+      text: args.text,
+      title: args.title ?? null,
+      sourceEventId: args.sourceEventId ?? null,
+    });
   }
 
   isAvailable(): boolean {

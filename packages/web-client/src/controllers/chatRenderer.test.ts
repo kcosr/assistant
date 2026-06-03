@@ -1367,6 +1367,154 @@ describe('ChatRenderer', () => {
     expect(writeText.mock.calls[1]?.[0]).not.toContain('#');
   });
 
+  it('plays markdown attachments as rendered plain text when native playback is available', async () => {
+    const container = document.createElement('div');
+    container.className = 'chat-log';
+    document.body.appendChild(container);
+
+    const playText = vi.fn(() => true);
+    const renderer = new ChatRenderer(container, {
+      getTextPlaybackAvailable: () => true,
+      playText,
+    });
+
+    replayLegacyEvents(renderer, [
+      createBaseEvent('turn_start', {
+        id: 'e-attachment-play-turn',
+        turnId: 't-attachment-play',
+        payload: { trigger: 'user' },
+      }),
+      createBaseEvent('tool_call', {
+        id: 'e-attachment-play-call',
+        turnId: 't-attachment-play',
+        responseId: 'r-attachment-play',
+        payload: {
+          toolCallId: 'tc-attachment-play',
+          toolName: 'attachment_send',
+          args: {
+            fileName: 'note.md',
+            text: '# Hello\n\nWorld',
+          },
+        },
+      }),
+      createBaseEvent('tool_result', {
+        id: 'e-attachment-play-result',
+        turnId: 't-attachment-play',
+        responseId: 'r-attachment-play',
+        payload: {
+          toolCallId: 'tc-attachment-play',
+          result: {
+            ok: true,
+            attachment: {
+              attachmentId: 'att-play',
+              fileName: 'note.md',
+              title: 'Note',
+              contentType: 'text/markdown',
+              size: 14,
+              downloadUrl: '/api/attachments/session-1/att-play?download=1',
+              previewType: 'markdown',
+              previewText: '# Hello\n\nWorld',
+            },
+          },
+        },
+      }),
+    ]);
+
+    const playButton = Array.from(
+      container.querySelectorAll<HTMLButtonElement>('.attachment-tool-actions button'),
+    ).find((button) => button.textContent === 'Play');
+    expect(playButton).toBeDefined();
+
+    playButton?.click();
+
+    await vi.waitFor(() => {
+      expect(playText).toHaveBeenCalled();
+    });
+    expect(playText).toHaveBeenCalledWith({
+      sessionId: null,
+      text: 'Hello\nWorld',
+      title: 'Note',
+      sourceEventId: 'attachment:att-play',
+    });
+  });
+
+  it('shows an attachment play error when native playback becomes unavailable', async () => {
+    const container = document.createElement('div');
+    container.className = 'chat-log';
+    document.body.appendChild(container);
+
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const playText = vi.fn(() => false);
+    const renderer = new ChatRenderer(container, {
+      getTextPlaybackAvailable: () => true,
+      playText,
+    });
+
+    replayLegacyEvents(renderer, [
+      createBaseEvent('turn_start', {
+        id: 'e-attachment-play-unavailable-turn',
+        turnId: 't-attachment-play-unavailable',
+        payload: { trigger: 'user' },
+      }),
+      createBaseEvent('tool_call', {
+        id: 'e-attachment-play-unavailable-call',
+        turnId: 't-attachment-play-unavailable',
+        responseId: 'r-attachment-play-unavailable',
+        payload: {
+          toolCallId: 'tc-attachment-play-unavailable',
+          toolName: 'attachment_send',
+          args: {
+            fileName: 'note.txt',
+            text: 'Read me',
+          },
+        },
+      }),
+      createBaseEvent('tool_result', {
+        id: 'e-attachment-play-unavailable-result',
+        turnId: 't-attachment-play-unavailable',
+        responseId: 'r-attachment-play-unavailable',
+        payload: {
+          toolCallId: 'tc-attachment-play-unavailable',
+          result: {
+            ok: true,
+            attachment: {
+              attachmentId: 'att-unavailable',
+              fileName: 'note.txt',
+              title: 'Note',
+              contentType: 'text/plain',
+              size: 7,
+              downloadUrl: '/api/attachments/session-1/att-unavailable?download=1',
+              previewType: 'text',
+              previewText: 'Read me',
+            },
+          },
+        },
+      }),
+    ]);
+
+    const bubble = container.querySelector<HTMLDivElement>('.attachment-tool-bubble');
+    const playButton = Array.from(
+      container.querySelectorAll<HTMLButtonElement>('.attachment-tool-actions button'),
+    ).find((button) => button.textContent === 'Play');
+    expect(playButton).toBeDefined();
+
+    playButton?.click();
+
+    await vi.waitFor(() => {
+      expect(bubble?.querySelector('.attachment-tool-action-error')?.textContent).toContain(
+        'Failed to play attachment.',
+      );
+    });
+    expect(playText).toHaveBeenCalledWith({
+      sessionId: null,
+      text: 'Read me',
+      title: 'Note',
+      sourceEventId: 'attachment:att-unavailable',
+    });
+    expect(playButton?.disabled).toBe(false);
+    expect(playButton?.textContent).toBe('Play');
+  });
+
   it('shows attachment expand failures inline and keeps the expand action available', async () => {
     const container = document.createElement('div');
     container.className = 'chat-log';
@@ -1624,7 +1772,7 @@ describe('ChatRenderer', () => {
 
     const renderer = new ChatRenderer(container);
 
-    renderLegacyEvent(renderer, 
+    renderLegacyEvent(renderer,
       createBaseEvent('turn_start', {
         id: 'e-audio-turn-start',
         turnId: 't-audio',
@@ -1632,7 +1780,7 @@ describe('ChatRenderer', () => {
       }),
     );
 
-    renderLegacyEvent(renderer, 
+    renderLegacyEvent(renderer,
       createBaseEvent('user_audio', {
         id: 'e-audio',
         turnId: 't-audio',
@@ -1660,7 +1808,7 @@ describe('ChatRenderer', () => {
 
     const renderer = new ChatRenderer(container);
 
-    renderLegacyEvent(renderer, 
+    renderLegacyEvent(renderer,
       createBaseEvent('user_audio', {
         id: 'e-audio-context',
         turnId: 't-audio-context',
@@ -1686,7 +1834,7 @@ describe('ChatRenderer', () => {
 
     const renderer = new ChatRenderer(container);
 
-    renderLegacyEvent(renderer, 
+    renderLegacyEvent(renderer,
       createBaseEvent('user_audio', {
         id: 'e-audio-context-visible',
         turnId: 't-audio-context-visible',
@@ -1746,7 +1894,7 @@ describe('ChatRenderer', () => {
     const renderer = new ChatRenderer(container);
     const timestamp = new Date('2026-03-29T15:26:00.000Z').getTime();
 
-    renderLegacyEvent(renderer, 
+    renderLegacyEvent(renderer,
       createBaseEvent('turn_start', {
         id: 'e-turn',
         turnId: 't-turn',
@@ -1755,7 +1903,7 @@ describe('ChatRenderer', () => {
       }),
     );
 
-    renderLegacyEvent(renderer, 
+    renderLegacyEvent(renderer,
       createBaseEvent('user_message', {
         id: 'e-user',
         turnId: 't-turn',
@@ -1787,7 +1935,7 @@ describe('ChatRenderer', () => {
     const renderer = new ChatRenderer(container);
     renderer.setRequestDividerActionHandler(onRequestDividerActivate);
 
-    renderLegacyEvent(renderer, 
+    renderLegacyEvent(renderer,
       createBaseEvent('turn_start', {
         id: 'e-turn-1',
         turnId: 't-turn-1',
@@ -1795,14 +1943,14 @@ describe('ChatRenderer', () => {
         payload: { trigger: 'user' },
       }),
     );
-    renderLegacyEvent(renderer, 
+    renderLegacyEvent(renderer,
       createBaseEvent('user_message', {
         id: 'e-user-1',
         turnId: 't-turn-1',
         payload: { text: 'First' },
       }),
     );
-    renderLegacyEvent(renderer, 
+    renderLegacyEvent(renderer,
       createBaseEvent('turn_start', {
         id: 'e-turn-2',
         turnId: 't-turn-2',
@@ -1810,7 +1958,7 @@ describe('ChatRenderer', () => {
         payload: { trigger: 'user' },
       }),
     );
-    renderLegacyEvent(renderer, 
+    renderLegacyEvent(renderer,
       createBaseEvent('user_message', {
         id: 'e-user-2',
         turnId: 't-turn-2',
@@ -1835,6 +1983,45 @@ describe('ChatRenderer', () => {
     );
   });
 
+  it('passes assistant text from the request to the request divider action handler', () => {
+    const container = document.createElement('div');
+    container.className = 'chat-log';
+    document.body.appendChild(container);
+
+    const onRequestDividerActivate = vi.fn();
+    const renderer = new ChatRenderer(container);
+    renderer.setRequestDividerActionHandler(onRequestDividerActivate);
+
+    renderLegacyEvent(renderer,
+      createBaseEvent('turn_start', {
+        id: 'e-turn-play',
+        turnId: 't-turn-play',
+        timestamp: new Date('2026-03-29T15:26:00.000Z').getTime(),
+        payload: { trigger: 'user' },
+      }),
+    );
+    renderLegacyEvent(renderer,
+      createBaseEvent('assistant_done', {
+        id: 'e-assistant-play',
+        turnId: 't-turn-play',
+        responseId: 'r-turn-play',
+        payload: { text: '## Summary\n\nRead this again.' },
+      }),
+    );
+
+    container
+      .querySelector<HTMLButtonElement>('.turn[data-turn-id="t-turn-play"] .turn-divider-button')
+      ?.click();
+
+    expect(onRequestDividerActivate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        requestId: 't-turn-play',
+        playableText: 'Summary\nRead this again.',
+        sourceEventId: 'turn:t-turn-play',
+      }),
+    );
+  });
+
   it('groups contiguous tool calls within the same segment', () => {
     const container = document.createElement('div');
     document.body.appendChild(container);
@@ -1843,7 +2030,7 @@ describe('ChatRenderer', () => {
       getExpandToolOutput: () => true,
     });
 
-    renderLegacyEvent(renderer, 
+    renderLegacyEvent(renderer,
       createBaseEvent('tool_call', {
         id: 'e1',
         payload: {
@@ -1854,7 +2041,7 @@ describe('ChatRenderer', () => {
       }),
     );
 
-    renderLegacyEvent(renderer, 
+    renderLegacyEvent(renderer,
       createBaseEvent('tool_call', {
         id: 'e2',
         payload: {
@@ -1930,7 +2117,7 @@ describe('ChatRenderer', () => {
       getExpandToolOutput: () => true,
     });
 
-    renderLegacyEvent(renderer, 
+    renderLegacyEvent(renderer,
       createBaseEvent('tool_call', {
         id: 'e1',
         payload: {
@@ -1941,7 +2128,7 @@ describe('ChatRenderer', () => {
       }),
     );
 
-    renderLegacyEvent(renderer, 
+    renderLegacyEvent(renderer,
       createBaseEvent('tool_result', {
         id: 'e2',
         payload: {
@@ -1974,7 +2161,7 @@ describe('ChatRenderer', () => {
       getExpandToolOutput: () => true,
     });
 
-    renderLegacyEvent(renderer, 
+    renderLegacyEvent(renderer,
       createBaseEvent('tool_call', {
         id: 'e1',
         payload: {
@@ -1988,7 +2175,7 @@ describe('ChatRenderer', () => {
       }),
     );
 
-    renderLegacyEvent(renderer, 
+    renderLegacyEvent(renderer,
       createBaseEvent('tool_call', {
         id: 'e2',
         payload: {
@@ -2324,13 +2511,13 @@ describe('ChatRenderer', () => {
 
     const renderer = new ChatRenderer(container);
 
-    renderLegacyEvent(renderer, 
+    renderLegacyEvent(renderer,
       createBaseEvent('assistant_chunk', {
         id: 'e1',
         payload: { text: 'Hello ' },
       }),
     );
-    renderLegacyEvent(renderer, 
+    renderLegacyEvent(renderer,
       createBaseEvent('assistant_chunk', {
         id: 'e2',
         payload: { text: 'world' },
@@ -2341,7 +2528,7 @@ describe('ChatRenderer', () => {
     expect(assistantText).not.toBeNull();
     expect(assistantText?.textContent).toContain('Hello world');
 
-    renderLegacyEvent(renderer, 
+    renderLegacyEvent(renderer,
       createBaseEvent('assistant_done', {
         id: 'e3',
         payload: { text: 'Hello world!' },
@@ -2360,7 +2547,7 @@ describe('ChatRenderer', () => {
 
     const renderer = new ChatRenderer(container);
 
-    renderLegacyEvent(renderer, 
+    renderLegacyEvent(renderer,
       createBaseEvent('assistant_chunk', {
         id: 'e1',
         payload: { text: 'Hello **wor' },
@@ -2369,7 +2556,7 @@ describe('ChatRenderer', () => {
     let assistantText = container.querySelector<HTMLDivElement>('.assistant-text');
     expect(assistantText?.querySelector('strong')?.textContent).toBe('wor');
 
-    renderLegacyEvent(renderer, 
+    renderLegacyEvent(renderer,
       createBaseEvent('assistant_chunk', {
         id: 'e2',
         payload: { text: 'ld**' },
@@ -2388,7 +2575,7 @@ describe('ChatRenderer', () => {
       getExpandToolOutput: () => true,
     });
 
-    renderLegacyEvent(renderer, 
+    renderLegacyEvent(renderer,
       createBaseEvent('assistant_chunk', {
         id: 'e1',
         responseId: 'r1',
@@ -2396,7 +2583,7 @@ describe('ChatRenderer', () => {
       }),
     );
 
-    renderLegacyEvent(renderer, 
+    renderLegacyEvent(renderer,
       createBaseEvent('tool_call', {
         id: 'e2',
         responseId: 'r1',
@@ -2421,7 +2608,7 @@ describe('ChatRenderer', () => {
       getExpandToolOutput: () => true,
     });
 
-    renderLegacyEvent(renderer, 
+    renderLegacyEvent(renderer,
       createBaseEvent('assistant_chunk', {
         id: 'e1',
         responseId: 'r1',
@@ -2429,7 +2616,7 @@ describe('ChatRenderer', () => {
       }),
     );
 
-    renderLegacyEvent(renderer, 
+    renderLegacyEvent(renderer,
       createBaseEvent('tool_call', {
         id: 'e2',
         responseId: 'r1',
@@ -2441,7 +2628,7 @@ describe('ChatRenderer', () => {
       }),
     );
 
-    renderLegacyEvent(renderer, 
+    renderLegacyEvent(renderer,
       createBaseEvent('assistant_done', {
         id: 'e3',
         responseId: 'r1',
@@ -2460,21 +2647,21 @@ describe('ChatRenderer', () => {
 
     const renderer = new ChatRenderer(container);
 
-    renderLegacyEvent(renderer, 
+    renderLegacyEvent(renderer,
       createBaseEvent('assistant_chunk', {
         id: 'e1',
         responseId: 'r1',
         payload: { text: 'Drink water', phase: 'final_answer' },
       }),
     );
-    renderLegacyEvent(renderer, 
+    renderLegacyEvent(renderer,
       createBaseEvent('assistant_chunk', {
         id: 'e2',
         responseId: 'r1',
         payload: { text: ' now', phase: 'final_answer' },
       }),
     );
-    renderLegacyEvent(renderer, 
+    renderLegacyEvent(renderer,
       createBaseEvent('assistant_done', {
         id: 'e3',
         responseId: 'r1',
@@ -2531,7 +2718,7 @@ describe('ChatRenderer', () => {
 
     const renderer = new ChatRenderer(container);
 
-    renderLegacyEvent(renderer, 
+    renderLegacyEvent(renderer,
       createBaseEvent('turn_start', {
         id: 'e0',
         turnId: 't-turn',
@@ -2539,7 +2726,7 @@ describe('ChatRenderer', () => {
       }),
     );
 
-    renderLegacyEvent(renderer, 
+    renderLegacyEvent(renderer,
       createBaseEvent('interrupt', {
         id: 'e1',
         turnId: 't-turn',
@@ -2563,7 +2750,7 @@ describe('ChatRenderer', () => {
 
     const renderer = new ChatRenderer(container);
 
-    renderLegacyEvent(renderer, 
+    renderLegacyEvent(renderer,
       createBaseEvent('user_message', {
         id: 'e1',
         turnId: 't1',
@@ -2580,7 +2767,7 @@ describe('ChatRenderer', () => {
     expect(container.querySelector('.message.user')).toBeNull();
 
     // Rendering after clear should work normally again.
-    renderLegacyEvent(renderer, 
+    renderLegacyEvent(renderer,
       createBaseEvent('user_message', {
         id: 'e2',
         turnId: 't2',
@@ -2600,7 +2787,7 @@ describe('ChatRenderer', () => {
     });
 
     // First, render the tool_call
-    renderLegacyEvent(renderer, 
+    renderLegacyEvent(renderer,
       createBaseEvent('tool_call', {
         id: 'e1',
         payload: {
@@ -2616,7 +2803,7 @@ describe('ChatRenderer', () => {
     expect(toolBlock?.classList.contains('pending')).toBe(true);
 
     // Stream some output chunks
-    renderLegacyEvent(renderer, 
+    renderLegacyEvent(renderer,
       createBaseEvent('tool_output_chunk', {
         id: 'e2',
         payload: {
@@ -2634,7 +2821,7 @@ describe('ChatRenderer', () => {
     expect(outputBody?.textContent).toContain('hello');
 
     // Stream more output
-    renderLegacyEvent(renderer, 
+    renderLegacyEvent(renderer,
       createBaseEvent('tool_output_chunk', {
         id: 'e3',
         payload: {
@@ -2651,7 +2838,7 @@ describe('ChatRenderer', () => {
     expect(outputBody?.textContent).toContain('hello world');
 
     // Complete the tool
-    renderLegacyEvent(renderer, 
+    renderLegacyEvent(renderer,
       createBaseEvent('tool_result', {
         id: 'e4',
         payload: {
@@ -2673,7 +2860,7 @@ describe('ChatRenderer', () => {
       getExpandToolOutput: () => true,
     });
 
-    renderLegacyEvent(renderer, 
+    renderLegacyEvent(renderer,
       createBaseEvent('tool_output_chunk', {
         id: 'e1',
         payload: {
@@ -2687,7 +2874,7 @@ describe('ChatRenderer', () => {
 
     expect(container.querySelector('.tool-output-block')).toBeNull();
 
-    renderLegacyEvent(renderer, 
+    renderLegacyEvent(renderer,
       createBaseEvent('tool_call', {
         id: 'e2',
         payload: {
@@ -2970,7 +3157,7 @@ describe('ChatRenderer', () => {
       sendQuestionnaireSubmit,
     });
 
-    renderLegacyEvent(renderer, 
+    renderLegacyEvent(renderer,
       createBaseEvent('questionnaire_request', {
         id: 'q1',
         payload: {
@@ -3154,7 +3341,7 @@ describe('ChatRenderer', () => {
 
     const renderer = new ChatRenderer(container);
 
-    renderLegacyEvent(renderer, 
+    renderLegacyEvent(renderer,
       createBaseEvent('tool_call', {
         id: 'e1',
         payload: {
@@ -3164,7 +3351,7 @@ describe('ChatRenderer', () => {
         },
       }),
     );
-    renderLegacyEvent(renderer, 
+    renderLegacyEvent(renderer,
       createBaseEvent('tool_call', {
         id: 'e2',
         payload: {
@@ -3178,7 +3365,7 @@ describe('ChatRenderer', () => {
     const grouped = container.querySelectorAll('.tool-call-group');
     expect(grouped.length).toBeGreaterThan(0);
 
-    renderLegacyEvent(renderer, 
+    renderLegacyEvent(renderer,
       createBaseEvent('interaction_request', {
         id: 'e3',
         payload: {
@@ -3302,7 +3489,7 @@ describe('ChatRenderer', () => {
     const group = container.querySelector<HTMLDivElement>('.tool-call-group');
     expect(group).toBeNull();
 
-    renderLegacyEvent(renderer, 
+    renderLegacyEvent(renderer,
       createBaseEvent('interaction_response', {
         id: 'e4',
         payload: {
@@ -3617,7 +3804,7 @@ describe('ChatRenderer', () => {
       getExpandToolOutput: () => true,
     });
 
-    renderLegacyEvent(renderer, 
+    renderLegacyEvent(renderer,
       createBaseEvent('tool_call', {
         id: 'e1',
         payload: {
@@ -3629,7 +3816,7 @@ describe('ChatRenderer', () => {
     );
 
     // First chunk
-    renderLegacyEvent(renderer, 
+    renderLegacyEvent(renderer,
       createBaseEvent('tool_output_chunk', {
         id: 'e2',
         payload: {
@@ -3646,7 +3833,7 @@ describe('ChatRenderer', () => {
     expect(outputBody?.textContent).toContain('first');
 
     // Duplicate chunk (same offset) - should be ignored
-    renderLegacyEvent(renderer, 
+    renderLegacyEvent(renderer,
       createBaseEvent('tool_output_chunk', {
         id: 'e3',
         payload: {
@@ -3664,7 +3851,7 @@ describe('ChatRenderer', () => {
     expect(outputBody?.textContent).toContain('first');
 
     // Stale chunk (lower offset) - should be ignored
-    renderLegacyEvent(renderer, 
+    renderLegacyEvent(renderer,
       createBaseEvent('tool_output_chunk', {
         id: 'e4',
         payload: {
@@ -3680,7 +3867,7 @@ describe('ChatRenderer', () => {
     expect(outputBody?.textContent).not.toContain('stale');
 
     // Valid next chunk (higher offset) - should be appended
-    renderLegacyEvent(renderer, 
+    renderLegacyEvent(renderer,
       createBaseEvent('tool_output_chunk', {
         id: 'e5',
         payload: {
@@ -3706,7 +3893,7 @@ describe('ChatRenderer', () => {
     });
 
     // First, create the response container via a turn_start
-    renderLegacyEvent(renderer, 
+    renderLegacyEvent(renderer,
       createBaseEvent('turn_start', {
         id: 't1',
         turnId: 'turn1',
@@ -3715,7 +3902,7 @@ describe('ChatRenderer', () => {
     );
 
     // Stream input chunks before tool_call arrives
-    renderLegacyEvent(renderer, 
+    renderLegacyEvent(renderer,
       createBaseEvent('tool_input_chunk', {
         id: 'e1',
         turnId: 'turn1',
@@ -3735,7 +3922,7 @@ describe('ChatRenderer', () => {
     expect(toolBlock?.classList.contains('streaming-input')).toBe(true);
 
     // Stream more input
-    renderLegacyEvent(renderer, 
+    renderLegacyEvent(renderer,
       createBaseEvent('tool_input_chunk', {
         id: 'e2',
         turnId: 'turn1',
@@ -3758,7 +3945,7 @@ describe('ChatRenderer', () => {
     expect(headerLabel?.textContent).toContain('echo hello');
 
     // Now the final tool_call event arrives with complete args
-    renderLegacyEvent(renderer, 
+    renderLegacyEvent(renderer,
       createBaseEvent('tool_call', {
         id: 'e3',
         turnId: 'turn1',
@@ -3782,7 +3969,7 @@ describe('ChatRenderer', () => {
 
     const renderer = new ChatRenderer(container);
 
-    renderLegacyEvent(renderer, 
+    renderLegacyEvent(renderer,
       createBaseEvent('tool_call', {
         id: 'e1',
         payload: {
@@ -3878,7 +4065,7 @@ describe('ChatRenderer', () => {
 
     const renderer = new ChatRenderer(container);
 
-    renderLegacyEvent(renderer, 
+    renderLegacyEvent(renderer,
       createBaseEvent('tool_call', {
         id: 'e1',
         payload: {
@@ -3926,7 +4113,7 @@ describe('ChatRenderer', () => {
 
     const renderer = new ChatRenderer(container);
 
-    renderLegacyEvent(renderer, 
+    renderLegacyEvent(renderer,
       createBaseEvent('tool_call', {
         id: 'e1',
         payload: {
@@ -3937,7 +4124,7 @@ describe('ChatRenderer', () => {
       }),
     );
 
-    renderLegacyEvent(renderer, 
+    renderLegacyEvent(renderer,
       createBaseEvent('tool_result', {
         id: 'e2',
         payload: {
@@ -4233,7 +4420,7 @@ describe('ChatRenderer', () => {
       getExpandToolOutput: () => true,
     });
 
-    renderLegacyEvent(renderer, 
+    renderLegacyEvent(renderer,
       createBaseEvent('tool_call', {
         id: 'e1',
         payload: {
@@ -4244,7 +4431,7 @@ describe('ChatRenderer', () => {
       }),
     );
 
-    renderLegacyEvent(renderer, 
+    renderLegacyEvent(renderer,
       createBaseEvent('interaction_request', {
         id: 'e2',
         payload: {
@@ -4261,7 +4448,7 @@ describe('ChatRenderer', () => {
       }),
     );
 
-    renderLegacyEvent(renderer, 
+    renderLegacyEvent(renderer,
       createBaseEvent('interaction_response', {
         id: 'e3',
         payload: {
@@ -4309,7 +4496,7 @@ describe('ChatRenderer', () => {
       getExpandToolOutput: () => true,
     });
 
-    renderLegacyEvent(renderer, 
+    renderLegacyEvent(renderer,
       createBaseEvent('tool_call', {
         id: 'e1',
         payload: {
@@ -4320,7 +4507,7 @@ describe('ChatRenderer', () => {
       }),
     );
 
-    renderLegacyEvent(renderer, 
+    renderLegacyEvent(renderer,
       createBaseEvent('tool_result', {
         id: 'e2',
         payload: {
@@ -4358,7 +4545,7 @@ describe('ChatRenderer', () => {
       getExpandToolOutput: () => true,
     });
 
-    renderLegacyEvent(renderer, 
+    renderLegacyEvent(renderer,
       createBaseEvent('tool_call', {
         id: 'e1',
         payload: {
@@ -4369,7 +4556,7 @@ describe('ChatRenderer', () => {
       }),
     );
 
-    renderLegacyEvent(renderer, 
+    renderLegacyEvent(renderer,
       createBaseEvent('tool_output_chunk', {
         id: 'e2',
         payload: {
@@ -4395,7 +4582,7 @@ describe('ChatRenderer', () => {
 
     const renderer = new ChatRenderer(container);
 
-    renderLegacyEvent(renderer, 
+    renderLegacyEvent(renderer,
       createBaseEvent('tool_input_chunk', {
         id: 'e1',
         payload: {
@@ -4407,7 +4594,7 @@ describe('ChatRenderer', () => {
       }),
     );
 
-    renderLegacyEvent(renderer, 
+    renderLegacyEvent(renderer,
       createBaseEvent('tool_input_chunk', {
         id: 'e2',
         payload: {
@@ -4531,7 +4718,7 @@ describe('ChatRenderer', () => {
     const focusInput = vi.fn();
     renderer.setFocusInputHandler(focusInput);
 
-    renderLegacyEvent(renderer, 
+    renderLegacyEvent(renderer,
       createBaseEvent('interaction_request', {
         id: 'e1',
         payload: {
@@ -4633,7 +4820,7 @@ it('renders multiple questionnaires via handleNewEvent without removing earlier 
   const renderer = new ChatRenderer(container);
 
   // First questionnaire
-  renderLegacyEvent(renderer, 
+  renderLegacyEvent(renderer,
     createBaseEvent('interaction_request', {
       id: 'e1',
       turnId: 'turn1',
@@ -4653,7 +4840,7 @@ it('renders multiple questionnaires via handleNewEvent without removing earlier 
   );
 
   // Response to first
-  renderLegacyEvent(renderer, 
+  renderLegacyEvent(renderer,
     createBaseEvent('interaction_response', {
       id: 'e2',
       payload: {
@@ -4666,7 +4853,7 @@ it('renders multiple questionnaires via handleNewEvent without removing earlier 
   );
 
   // Second questionnaire
-  renderLegacyEvent(renderer, 
+  renderLegacyEvent(renderer,
     createBaseEvent('interaction_request', {
       id: 'e3',
       turnId: 'turn1',

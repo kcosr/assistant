@@ -63,10 +63,15 @@ public final class AssistantVoiceRuntimeService extends Service {
         "com.assistant.mobile.voice.RETARGET_ACTIVE_RECOGNITION";
     static final String ACTION_TOGGLE_MEDIA_BUTTONS = "com.assistant.mobile.voice.TOGGLE_MEDIA_BUTTONS";
     static final String ACTION_CYCLE_AUDIO_MODE = "com.assistant.mobile.voice.CYCLE_AUDIO_MODE";
+    static final String ACTION_PLAY_TEXT = "com.assistant.mobile.voice.PLAY_TEXT";
     static final String ACTION_NOTIFICATION_SPEAKER = "com.assistant.mobile.voice.NOTIFICATION_SPEAKER";
     static final String ACTION_NOTIFICATION_MIC = "com.assistant.mobile.voice.NOTIFICATION_MIC";
     static final String ACTION_NOTIFICATION_DISMISS = "com.assistant.mobile.voice.NOTIFICATION_DISMISS";
     static final String EXTRA_MANUAL_LISTEN_SESSION_ID = "manualListenSessionId";
+    static final String EXTRA_PLAY_TEXT_SESSION_ID = "playTextSessionId";
+    static final String EXTRA_PLAY_TEXT_TEXT = "playTextText";
+    static final String EXTRA_PLAY_TEXT_TITLE = "playTextTitle";
+    static final String EXTRA_PLAY_TEXT_SOURCE_EVENT_ID = "playTextSourceEventId";
     static final String EXTRA_NOTIFICATION_ID = "notificationId";
     static final String EXTRA_NOTIFICATION_KIND = "notificationKind";
     static final String EXTRA_NOTIFICATION_SOURCE = "notificationSource";
@@ -234,6 +239,21 @@ public final class AssistantVoiceRuntimeService extends Service {
             .putExtra(AssistantVoiceConfig.EXTRA_AUDIO_MODE, trim(audioMode));
     }
 
+    public static Intent playTextIntent(
+        Context context,
+        String sessionId,
+        String text,
+        String title,
+        String sourceEventId
+    ) {
+        return new Intent(context, AssistantVoiceRuntimeService.class)
+            .setAction(ACTION_PLAY_TEXT)
+            .putExtra(EXTRA_PLAY_TEXT_SESSION_ID, trim(sessionId))
+            .putExtra(EXTRA_PLAY_TEXT_TEXT, trim(text))
+            .putExtra(EXTRA_PLAY_TEXT_TITLE, trim(title))
+            .putExtra(EXTRA_PLAY_TEXT_SOURCE_EVENT_ID, trim(sourceEventId));
+    }
+
     static Intent notificationSpeakerIntent(
         Context context,
         AssistantVoiceNotificationRecord notification
@@ -343,6 +363,11 @@ public final class AssistantVoiceRuntimeService extends Service {
                 ? intent.getStringExtra(AssistantVoiceConfig.EXTRA_AUDIO_MODE)
                 : config.audioMode;
             applyConfig(config.withAudioMode(nextNotificationAudioMode(currentMode)));
+            return START_STICKY;
+        }
+        if (ACTION_PLAY_TEXT.equals(action)) {
+            recordVoiceEvent("service_action_play_text", eventDetailsWithPlayText(intent));
+            handlePlayTextAction(intent);
             return START_STICKY;
         }
         if (ACTION_NOTIFICATION_SPEAKER.equals(action)) {
@@ -2842,19 +2867,21 @@ public final class AssistantVoiceRuntimeService extends Service {
             );
             return;
         }
-        if (!config.isEnabled()) {
-            Log.d(TAG, "handleManualNotificationAction skipped voice mode disabled " + describeNotification(notification));
-            emitRuntimeError("Voice mode is off");
+        String voiceModeBlock = explainVoiceModeBlock(config);
+        if (!voiceModeBlock.isEmpty()) {
+            Log.d(TAG, "handleManualNotificationAction skipped voice blocked=" + voiceModeBlock + " " + describeNotification(notification));
+            emitRuntimeError(voiceModeBlock);
             return;
         }
+        String playActionBlock = explainPlayActionBlock(config);
         if (microphoneAction && !config.allowsNotificationSpeak()) {
             Log.d(TAG, "handleManualNotificationAction skipped speak not allowed in " + config.audioMode + " " + describeNotification(notification));
             emitRuntimeError("Speak is not available in this audio mode");
             return;
         }
-        if (!microphoneAction && !config.allowsNotificationPlay()) {
-            Log.d(TAG, "handleManualNotificationAction skipped play not allowed in " + config.audioMode + " " + describeNotification(notification));
-            emitRuntimeError("Play is not available in this audio mode");
+        if (!microphoneAction && !playActionBlock.isEmpty()) {
+            Log.d(TAG, "handleManualNotificationAction skipped play blocked=" + playActionBlock + " " + describeNotification(notification));
+            emitRuntimeError(playActionBlock);
             return;
         }
         Log.d(
@@ -2899,6 +2926,42 @@ public final class AssistantVoiceRuntimeService extends Service {
         enqueueQueueItem(item, true);
     }
 
+    private void handlePlayTextAction(Intent intent) {
+        if (intent == null) {
+            return;
+        }
+        String playActionBlock = explainPlayActionBlock(config);
+        if (!playActionBlock.isEmpty()) {
+            Log.d(TAG, "handlePlayTextAction skipped play blocked=" + playActionBlock);
+            emitRuntimeError(playActionBlock);
+            return;
+        }
+        String sessionId = trim(intent.getStringExtra(EXTRA_PLAY_TEXT_SESSION_ID));
+        String text = trim(intent.getStringExtra(EXTRA_PLAY_TEXT_TEXT));
+        String title = trim(intent.getStringExtra(EXTRA_PLAY_TEXT_TITLE));
+        String sourceEventId = trim(intent.getStringExtra(EXTRA_PLAY_TEXT_SOURCE_EVENT_ID));
+        String sessionTitle = sessionId.isEmpty() ? "" : config.getSessionTitle(sessionId);
+        String displayTitle = title.isEmpty() ? sessionTitle : title;
+        AssistantVoiceQueueItem item = AssistantVoiceQueueItem.fromManualText(
+            sourceEventId,
+            sessionId,
+            sessionTitle,
+            displayTitle,
+            text
+        );
+        if (item == null) {
+            Log.d(TAG, "handlePlayTextAction skipped empty text");
+            emitRuntimeError("Nothing to play");
+            return;
+        }
+        Log.d(TAG, "handlePlayTextAction enqueueing " + describeQueueItem(item));
+        JSONObject details = AssistantVoiceEventLog.details();
+        AssistantVoiceEventLog.put(details, "queueItem", describeQueueItem(item));
+        AssistantVoiceEventLog.put(details, "textLength", text.length());
+        recordVoiceEvent("manual_text_action", details);
+        enqueueQueueItem(item, true);
+    }
+
     static boolean canHandleManualNotificationAction(
         AssistantVoiceNotificationRecord notification,
         boolean microphoneAction
@@ -2907,6 +2970,24 @@ public final class AssistantVoiceRuntimeService extends Service {
             return false;
         }
         return !microphoneAction || !notification.sessionId.isEmpty();
+    }
+
+    static String explainPlayActionBlock(AssistantVoiceConfig config) {
+        String voiceModeBlock = explainVoiceModeBlock(config);
+        if (!voiceModeBlock.isEmpty()) {
+            return voiceModeBlock;
+        }
+        if (!config.allowsNotificationPlay()) {
+            return "Play is not available in this audio mode";
+        }
+        return "";
+    }
+
+    static String explainVoiceModeBlock(AssistantVoiceConfig config) {
+        if (config == null || !config.isEnabled()) {
+            return "Voice mode is off";
+        }
+        return "";
     }
 
     private void dismissDurableNotification(Intent intent) {
@@ -3149,6 +3230,23 @@ public final class AssistantVoiceRuntimeService extends Service {
             "notificationId",
             safe(intent == null ? null : intent.getStringExtra(EXTRA_NOTIFICATION_ID))
         );
+        return details;
+    }
+
+    private JSONObject eventDetailsWithPlayText(Intent intent) {
+        JSONObject details = AssistantVoiceEventLog.details();
+        AssistantVoiceEventLog.put(
+            details,
+            "sessionId",
+            safe(intent == null ? null : intent.getStringExtra(EXTRA_PLAY_TEXT_SESSION_ID))
+        );
+        AssistantVoiceEventLog.put(
+            details,
+            "sourceEventId",
+            safe(intent == null ? null : intent.getStringExtra(EXTRA_PLAY_TEXT_SOURCE_EVENT_ID))
+        );
+        String text = intent == null ? "" : trim(intent.getStringExtra(EXTRA_PLAY_TEXT_TEXT));
+        AssistantVoiceEventLog.put(details, "textLength", text.length());
         return details;
     }
 
