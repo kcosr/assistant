@@ -133,7 +133,7 @@ export function getApiBaseUrl(): string {
  * Get the WebSocket URL for the backend.
  */
 export function getWebSocketUrl(): string {
-  // Check for separate WebSocket port (used by Tauri proxy)
+  // Check for separate WebSocket port used by the native desktop proxy.
   const wsPort = (window as { ASSISTANT_WS_PORT?: number }).ASSISTANT_WS_PORT;
   if (wsPort && wsPort > 0) {
     return `ws://localhost:${wsPort}`;

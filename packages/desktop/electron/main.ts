@@ -90,10 +90,6 @@ function buildBackendWsUrl(): string {
   return upstream.toString();
 }
 
-function normalizeHeaderValue(value: string | string[] | undefined): string | string[] | undefined {
-  return value;
-}
-
 async function closeServer(server: http.Server | null): Promise<void> {
   if (!server) {
     return;
@@ -159,9 +155,8 @@ function createHttpProxyServer(): http.Server {
       (proxyRes) => {
         res.statusCode = proxyRes.statusCode ?? 502;
         for (const [name, value] of Object.entries(proxyRes.headers)) {
-          const headerValue = normalizeHeaderValue(value);
-          if (headerValue !== undefined) {
-            res.setHeader(name, headerValue);
+          if (value !== undefined) {
+            res.setHeader(name, value);
           }
         }
         proxyRes.pipe(res);
