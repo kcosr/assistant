@@ -1,3 +1,5 @@
+import { isElectronDesktop } from '../utils/desktop';
+
 export interface SpeechInputController {
   readonly isActive: boolean;
   readonly isMobile: boolean;
@@ -43,6 +45,9 @@ type SpeechRecognitionConstructor = new () => BrowserSpeechRecognition;
 
 export function createSpeechInputController(): SpeechInputController | null {
   if (typeof window === 'undefined') {
+    return null;
+  }
+  if (isElectronDesktop()) {
     return null;
   }
 
