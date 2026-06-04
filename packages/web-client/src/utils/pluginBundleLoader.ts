@@ -137,11 +137,15 @@ const PROTOCOL_RE = /^[a-z][a-z0-9+.-]*:/i;
 function getPluginAssetBaseUrls(): string[] {
   const bases: string[] = [];
   if (isDesktopNative()) {
-    const origin = window.location.origin;
-    if (origin && origin !== 'null') {
-      bases.push(origin);
+    if (window.location.protocol === 'file:') {
+      bases.push(new URL('.', window.location.href).href.replace(/\/$/, ''));
     } else if (window.location.protocol && window.location.host) {
-      bases.push(`${window.location.protocol}//${window.location.host}`);
+      const origin = window.location.origin;
+      if (origin && origin !== 'null') {
+        bases.push(origin);
+      } else {
+        bases.push(`${window.location.protocol}//${window.location.host}`);
+      }
     }
   }
   bases.push(getApiBaseUrl());

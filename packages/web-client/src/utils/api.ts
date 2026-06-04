@@ -61,6 +61,9 @@ function getConfiguredApiUrl(): URL | null {
  * and trailing slashes to produce a clean path prefix.
  */
 function getLocationBasePath(): string {
+  if (window.location.protocol === 'file:') {
+    return '';
+  }
   let pathname = window.location.pathname;
   // Strip known page filenames
   if (pathname.endsWith('/index.html')) {

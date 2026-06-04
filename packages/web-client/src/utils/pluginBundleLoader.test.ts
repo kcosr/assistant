@@ -15,9 +15,29 @@ function clearHead(): void {
   document.head.innerHTML = '';
 }
 
+function setLocation(options: { protocol: string; host: string; origin: string; href: string }): void {
+  Object.defineProperty(window, 'location', {
+    value: {
+      ...window.location,
+      protocol: options.protocol,
+      host: options.host,
+      origin: options.origin,
+      href: options.href,
+    },
+    writable: true,
+    configurable: true,
+  });
+}
+
 describe('PluginBundleLoader asset base', () => {
   beforeEach(() => {
     clearHead();
+    setLocation({
+      protocol: 'http:',
+      host: 'localhost',
+      origin: 'http://localhost',
+      href: 'http://localhost/index.html',
+    });
     delete (window as { ASSISTANT_API_HOST?: string }).ASSISTANT_API_HOST;
     delete (window as { ASSISTANT_INSECURE?: boolean }).ASSISTANT_INSECURE;
     delete (window as { assistantDesktop?: unknown }).assistantDesktop;
@@ -91,5 +111,29 @@ describe('PluginBundleLoader asset base', () => {
 
     const script = document.head.querySelector('script') as HTMLScriptElement | null;
     expect(script?.src).toBe(`${window.location.origin}/plugins/lists/bundle.js`);
+  });
+
+  it('uses the packaged file directory in Electron desktop file mode', () => {
+    setLocation({
+      protocol: 'file:',
+      host: '',
+      origin: 'null',
+      href: 'file:///Applications/Assistant.app/Contents/Resources/web-client/public/index.html',
+    });
+    (window as { assistantDesktop?: unknown }).assistantDesktop = {};
+    (window as { ASSISTANT_API_HOST?: string }).ASSISTANT_API_HOST = 'localhost:59071';
+    (window as { ASSISTANT_INSECURE?: boolean }).ASSISTANT_INSECURE = true;
+    const loader = new PluginBundleLoader({ panelRegistry: panelRegistryStub });
+    loader.loadFromManifests([
+      {
+        id: 'lists',
+        web: { bundlePath: '/plugins/lists/bundle.js' },
+      } as CombinedPluginManifest,
+    ]);
+
+    const script = document.head.querySelector('script') as HTMLScriptElement | null;
+    expect(script?.src).toBe(
+      'file:///Applications/Assistant.app/Contents/Resources/web-client/public/plugins/lists/bundle.js',
+    );
   });
 });

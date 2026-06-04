@@ -9,12 +9,22 @@ function clearWindowConfig(): void {
   delete (window as { ASSISTANT_WS_PORT?: number }).ASSISTANT_WS_PORT;
 }
 
-function setLocationPathname(pathname: string): void {
+function setLocation(options: { pathname: string; host?: string; protocol?: string; href?: string }): void {
   Object.defineProperty(window, 'location', {
-    value: { ...window.location, pathname, host: 'localhost', protocol: 'http:' },
+    value: {
+      ...window.location,
+      pathname: options.pathname,
+      host: options.host ?? 'localhost',
+      protocol: options.protocol ?? 'http:',
+      href: options.href ?? `${options.protocol ?? 'http:'}//${options.host ?? 'localhost'}${options.pathname}`,
+    },
     writable: true,
     configurable: true,
   });
+}
+
+function setLocationPathname(pathname: string): void {
+  setLocation({ pathname });
 }
 
 describe('api url helpers', () => {
@@ -59,6 +69,20 @@ describe('api url helpers', () => {
     (window as { ASSISTANT_API_HOST?: string }).ASSISTANT_API_HOST = 'localhost:4100';
 
     expect(getApiBaseUrl()).toBe('http://localhost:4100');
+  });
+
+  it('does not use packaged file paths as API base paths in desktop builds', () => {
+    setLocation({
+      protocol: 'file:',
+      host: '',
+      pathname: '/Applications/Assistant.app/Contents/Resources/web-client/public/index.html',
+      href: 'file:///Applications/Assistant.app/Contents/Resources/web-client/public/index.html',
+    });
+    (window as { assistantDesktop?: unknown }).assistantDesktop = {};
+    (window as { ASSISTANT_API_HOST?: string }).ASSISTANT_API_HOST = 'localhost:63021';
+    (window as { ASSISTANT_INSECURE?: boolean }).ASSISTANT_INSECURE = true;
+
+    expect(getApiBaseUrl()).toBe('http://localhost:63021');
   });
 });
 
