@@ -237,8 +237,12 @@ import {
   setupAndroidAppLifecycleHandlers,
   setupBackButtonHandler,
 } from './utils/capacitor';
+import {
+  configureDesktop,
+  isDesktopNative,
+  waitForDesktopProxyReady,
+} from './utils/desktop';
 import { configureNativeLaunchBackend } from './utils/nativeLaunchBackend';
-import { configureTauri, isTauri, waitForTauriProxyReady } from './utils/tauri';
 import { initPushNotifications } from './utils/pushNotifications';
 import { readSessionOperationResult, sessionsOperationPath } from './utils/sessionsApi';
 
@@ -273,10 +277,10 @@ async function main(): Promise<void> {
     return;
   }
 
-  // Configure Tauri backend URL (no-op if not in Tauri) - must run before WebSocket setup
-  await configureTauri();
-  if (isTauri()) {
-    await waitForTauriProxyReady();
+  // Configure native desktop backend URL (no-op on web/mobile) before WebSocket setup.
+  await configureDesktop();
+  if (isDesktopNative()) {
+    await waitForDesktopProxyReady();
   }
 
   // Configure Capacitor status bar (no-op if not in Capacitor)
@@ -5570,8 +5574,8 @@ async function main(): Promise<void> {
     keyboardNavigationController?.setFocusedSessionItem(item);
   }
 
-  if (isTauri()) {
-    window.addEventListener('assistant:tauri-proxy-ready', () => {
+  if (isDesktopNative()) {
+    window.addEventListener('assistant:desktop-proxy-ready', () => {
       if (!pluginManifestsLoaded) {
         void fetchPlugins();
       }

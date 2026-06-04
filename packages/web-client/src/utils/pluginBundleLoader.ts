@@ -2,7 +2,7 @@ import type { CombinedPluginManifest } from '@assistant/shared';
 
 import type { PanelFactory, PanelRegistry } from '../controllers/panelRegistry';
 import { getApiBaseUrl } from './api';
-import { isTauri } from './tauri';
+import { isDesktopNative } from './desktop';
 
 export interface PluginPanelRegistryApi {
   registerPanel: (panelType: string, factory: PanelFactory) => void;
@@ -136,7 +136,7 @@ const PROTOCOL_RE = /^[a-z][a-z0-9+.-]*:/i;
 
 function getPluginAssetBaseUrls(): string[] {
   const bases: string[] = [];
-  if (isTauri()) {
+  if (isDesktopNative()) {
     const origin = window.location.origin;
     if (origin && origin !== 'null') {
       bases.push(origin);

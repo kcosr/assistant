@@ -20,6 +20,7 @@ describe('PluginBundleLoader asset base', () => {
     clearHead();
     delete (window as { ASSISTANT_API_HOST?: string }).ASSISTANT_API_HOST;
     delete (window as { ASSISTANT_INSECURE?: boolean }).ASSISTANT_INSECURE;
+    delete (window as { assistantDesktop?: unknown }).assistantDesktop;
     delete (window as { __TAURI__?: unknown }).__TAURI__;
   });
 
@@ -74,5 +75,21 @@ describe('PluginBundleLoader asset base', () => {
 
     const script = document.head.querySelector('script') as HTMLScriptElement | null;
     expect(script?.src).toBe('http://localhost:59071/plugins/lists/bundle.js');
+  });
+
+  it('uses the local origin in Electron desktop mode', () => {
+    (window as { assistantDesktop?: unknown }).assistantDesktop = {};
+    (window as { ASSISTANT_API_HOST?: string }).ASSISTANT_API_HOST = 'localhost:59071';
+    (window as { ASSISTANT_INSECURE?: boolean }).ASSISTANT_INSECURE = true;
+    const loader = new PluginBundleLoader({ panelRegistry: panelRegistryStub });
+    loader.loadFromManifests([
+      {
+        id: 'lists',
+        web: { bundlePath: '/plugins/lists/bundle.js' },
+      } as CombinedPluginManifest,
+    ]);
+
+    const script = document.head.querySelector('script') as HTMLScriptElement | null;
+    expect(script?.src).toBe(`${window.location.origin}/plugins/lists/bundle.js`);
   });
 });

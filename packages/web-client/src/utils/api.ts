@@ -90,7 +90,8 @@ function useInsecure(): boolean {
   if (typeof flag === 'boolean') {
     return flag;
   }
-  return !!(window as { __TAURI__?: unknown }).__TAURI__;
+  const win = window as { __TAURI__?: unknown; assistantDesktop?: unknown };
+  return !!win.__TAURI__ || !!win.assistantDesktop;
 }
 
 /**

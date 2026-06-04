@@ -59,7 +59,7 @@ async function pruneStalePlugins(validPluginIds) {
 
 async function main() {
   if (!(await pathExists(distPluginsRoot))) {
-    console.warn('[desktop] No dist/plugins output found; run npm run build:plugins first.');
+    console.warn('[tauri] No dist/plugins output found; run npm run build:plugins first.');
     return;
   }
 
@@ -88,6 +88,6 @@ async function main() {
 }
 
 main().catch((err) => {
-  console.error('[desktop] Failed to sync plugin assets:', err);
+  console.error('[tauri] Failed to sync plugin assets:', err);
   process.exitCode = 1;
 });

@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Assistant",
+  "productName": "Assistant Tauri",
   "version": "0.18.2",
-  "identifier": "com.assistant.desktop",
+  "identifier": "com.assistant.desktop.tauri",
   "build": {
     "frontendDist": "../../web-client/public"
   },
@@ -10,7 +10,7 @@
     "withGlobalTauri": true,
     "windows": [
       {
-        "title": "Assistant",
+        "title": "Assistant Tauri",
         "width": 1200,
         "height": 800,
         "minWidth": 800,

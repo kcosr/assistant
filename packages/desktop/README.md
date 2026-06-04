@@ -1,208 +1,63 @@
-# Desktop – Tauri Build
+# Desktop
 
-This package contains the Tauri scaffolding to build the AI Assistant web client (`packages/web-client/public`) as a native desktop application for macOS, Windows, and Linux.
+This package is the canonical desktop app for Assistant. It uses Electron and
+bundles Chromium so the desktop runtime does not depend on the platform WebView.
 
-## Table of Contents
-
-- [Layout](#layout)
-- [Prerequisites](#prerequisites)
-- [Initial Setup](#initial-setup)
-- [Development](#development)
-- [Production Build](#production-build)
-- [Default + Work Variant (macOS)](#default--work-variant-macos)
-- [Configuration](#configuration)
-- [Icons](#icons)
-
-## Layout
-
-- `desktop/` – Tauri project root
-- `desktop/src-tauri/` – Rust backend and Tauri configuration
-- `desktop/src-tauri/icons/` – App icons for all platforms
-
-## Prerequisites
-
-- Node.js 20+ and npm
-- Rust toolchain (stable) – install via [rustup](https://rustup.rs/)
-- Platform-specific dependencies:
-
-### macOS
-
-- Xcode Command Line Tools: `xcode-select --install`
-
-### Linux (Debian/Ubuntu)
-
-```bash
-sudo apt update
-sudo apt install libwebkit2gtk-4.1-dev build-essential curl wget file \
-  libssl-dev libayatana-appindicator3-dev librsvg2-dev
-```
-
-### Windows
-
-- Microsoft Visual Studio C++ Build Tools
-- WebView2 (usually pre-installed on Windows 10/11)
-
-## Initial Setup
-
-First, build the web client:
-
-```bash
-cd packages/web-client
-npm run build
-```
-
-Then install Tauri CLI dependencies:
-
-```bash
-cd packages/desktop
-npm install
-```
+During the migration, the previous Tauri implementation remains buildable from
+`packages/desktop-tauri`.
 
 ## Development
 
-Run in development mode with hot reload:
-
 ```bash
-npm run tauri:dev
+cd packages/desktop
+npm run electron:dev
 ```
 
-This will:
-
-1. Build the web client into `packages/web-client/public`
-2. Build plugin bundles into `dist/plugins` for the backend
-3. Copy plugin bundles into `packages/web-client/public/plugins` for local loading
-4. Start the Tauri development server
-5. Open the desktop app window
-6. Watch for changes in `web-client/public`
+This builds the web client, builds plugin bundles, copies plugin web assets into
+`packages/web-client/public/plugins`, builds the Electron main/preload scripts,
+and opens the desktop window.
 
 ## Production Build
 
-Build the production app bundle:
+```bash
+cd packages/desktop
+npm run electron:build
+```
+
+The default Electron build uses the canonical desktop identity:
+
+- Product name: `Assistant`
+- App ID: `com.assistant.desktop`
+- Default backend URL: `https://assistant`
+
+Packaged output is written to `packages/desktop/release/default`.
+
+## Work Variant
 
 ```bash
-npm run tauri:build
+cd packages/desktop
+npm run electron:dev:work
+npm run electron:build:work
 ```
 
-This runs the web client build first, then packages the desktop app.
-It also rebuilds plugin bundles into `dist/plugins` so panel bundles match the frontend API logic.
-Plugin bundles are copied into `packages/web-client/public/plugins` so Tauri loads them locally.
+The work variant uses:
 
-Output locations:
+- Product name: `Assistant Work`
+- App ID: `com.assistant.desktop.work`
+- Default backend URL: `https://assistant/assistant-work`
 
-- **macOS**: `src-tauri/target/release/bundle/macos/Assistant.app`
-- **Windows**: `src-tauri/target/release/bundle/msi/` or `nsis/`
-- **Linux**: `src-tauri/target/release/bundle/deb/` or `appimage/`
+Packaged output is written to `packages/desktop/release/work`.
 
-## Default + Work Variant (macOS)
+## Native Bridge
 
-The default desktop build and scripts stay unchanged:
+The preload script exposes a narrow `window.assistantDesktop` bridge. The web
+client uses it through `packages/web-client/src/utils/desktop.ts` for:
 
-```bash
-npm run tauri:dev
-npm run tauri:build
-```
+- Persisted backend settings
+- Local HTTP and WebSocket proxy ports
+- Native save dialogs and file writes
+- Opening temporary HTML attachments
+- Opening external URLs in the system browser
 
-The work variant uses a Tauri config override (`src-tauri/tauri.work.conf.json`) with a
-different app identifier and product name:
-
-```bash
-npm run tauri:dev:work
-npm run tauri:build:work
-```
-
-Those scripts also set `ASSISTANT_DESKTOP_DEFAULT_BACKEND_URL=https://assistant/assistant-work`
-at build time. The default scripts keep the built-in fallback `https://assistant`.
-
-You can override the default build URL explicitly if needed:
-
-```bash
-ASSISTANT_DESKTOP_DEFAULT_BACKEND_URL=https://assistant npm run tauri:build
-```
-
-This allows installing both apps side-by-side on macOS:
-
-- Default app bundle: `Assistant.app`
-- Work app bundle: `Assistant Work.app`
-
-Because the identifiers differ, each app gets its own persisted desktop settings file:
-
-- Default: `~/Library/Application Support/com.assistant.desktop/settings.json`
-- Work: `~/Library/Application Support/com.assistant.desktop.work/settings.json`
-
-To keep backend data isolated, run each backend with a different `PORT` and `DATA_DIR`.
-Example:
-
-```bash
-PORT=3001 DATA_DIR=~/assistant-default-data npm run start -w @assistant/agent-server
-PORT=3002 DATA_DIR=~/assistant-work-data npm run start -w @assistant/agent-server
-```
-
-## Configuration
-
-### Backend URL
-
-The desktop app can connect to any Assistant backend. Configure via:
-
-1. **Build-time default**: Desktop fallback URL is `https://assistant`, or `ASSISTANT_DESKTOP_DEFAULT_BACKEND_URL` when set during `tauri dev/build`
-2. **Runtime**: The app persists settings to `~/.local/share/com.assistant.desktop/settings.json` (Linux) or equivalent platform paths
-
-`window.ASSISTANT_API_HOST` can be either a host (`assistant`) or a full URL (`https://assistant/api`).
-To force HTTP/WebSocket (no TLS) for local development, set:
-
-```javascript
-window.ASSISTANT_API_HOST = 'localhost:3000';
-window.ASSISTANT_INSECURE = true;
-```
-
-The Rust backend exposes these Tauri commands:
-
-- `get_backend_url()` – Get current backend URL
-- `set_backend_url(url)` – Set and persist backend URL
-- `get_settings()` – Get all app settings
-
-In desktop builds, the Rust proxy overrides the frontend config at runtime and
-sets `window.ASSISTANT_API_HOST`, `window.ASSISTANT_INSECURE`, and `window.ASSISTANT_WS_PORT`
-to the local proxy values. Use the settings UI or the Tauri commands above to
-change the upstream backend the proxy connects to.
-
-### Integrating with Web Client
-
-To use the Tauri-persisted backend URL, add this to your web client initialization:
-
-```javascript
-// Check if running in Tauri
-if (window.__TAURI__) {
-  const { invoke } = window.__TAURI__.core;
-  const backendUrl = await invoke('get_backend_url');
-  if (backendUrl) {
-    window.ASSISTANT_API_HOST = backendUrl;
-  }
-}
-```
-
-## Icons
-
-App icons are generated from `icon.svg`. To regenerate after modifying the SVG:
-
-```bash
-npm run icons:generate
-```
-
-This creates all required formats in `src-tauri/icons/`:
-
-- PNG sizes: 32x32, 128x128, 256x256, 512x512
-- Windows: icon.ico + Square\*Logo.png variants
-- macOS: icon.icns
-
-Alternatively, generate from any source image using Tauri CLI:
-
-```bash
-npm run tauri:icon path/to/source-icon.png
-```
-
-## Notes
-
-- Web assets are loaded directly from `../web-client/public` as configured in `tauri.conf.json`
-- The `src-tauri/target/` and `src-tauri/gen/` directories are gitignored
-- For local development with a local backend, run `agent-server` separately and configure the URL
-- On macOS, the app requests Microphone and Speech Recognition permissions when you use voice input
+The Electron main process keeps the same local proxy behavior as the former
+desktop wrapper, including skipped backend certificate validation by default.

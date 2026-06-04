@@ -1,25 +1,20 @@
 import { apiFetch, getApiBaseUrl } from './api';
 import { isCapacitorAndroid } from './capacitor';
-import { isTauri } from './tauri';
+import {
+  isDesktopNative,
+  openDesktopTempHtmlAttachmentFile,
+  saveDesktopArtifactFile,
+  showDesktopSaveDialog,
+} from './desktop';
 
-type TauriInvoke = <T>(cmd: string, args?: Record<string, unknown>) => Promise<T>;
 type AssistantAttachmentOpenArgs = {
   fileName: string;
   contentType: string;
   contentBase64: string;
 };
-type AssistantAttachmentTempFileArgs = {
-  fileName: string;
-  contentBase64: string;
-};
 type AssistantAttachmentOpenTarget = {
   openHtmlAttachment?: (args: AssistantAttachmentOpenArgs) => Promise<unknown> | unknown;
 };
-
-function getTauriInvoke(): TauriInvoke | null {
-  const win = window as { __TAURI__?: { core?: { invoke?: TauriInvoke } } };
-  return win.__TAURI__?.core?.invoke ?? null;
-}
 
 function getAssistantAttachmentOpenTarget(): AssistantAttachmentOpenTarget | null {
   const win = window as {
@@ -132,33 +127,20 @@ export async function downloadAttachment(url: string, fileName: string): Promise
   if (!resolvedUrl) {
     return;
   }
-  if (isTauri()) {
-    const invoke = getTauriInvoke();
-    if (invoke) {
-      const savePath = await invoke<string | string[] | null>('plugin:dialog|save', {
-        options: {
-          defaultPath: fileName,
-        },
-      });
-      const resolvedPath = Array.isArray(savePath) ? savePath[0] : savePath;
-      if (!resolvedPath) {
-        return;
-      }
-
-      const response = await fetch(resolvedUrl);
-      if (!response.ok) {
-        throw new Error(`Failed to fetch attachment: ${response.status}`);
-      }
-      const buffer = await response.arrayBuffer();
-      const base64 = arrayBufferToBase64(buffer);
-
-      await invoke('save_artifact_file', {
-        path: resolvedPath,
-        content_base64: base64,
-      });
+  if (isDesktopNative()) {
+    const resolvedPath = await showDesktopSaveDialog(fileName);
+    if (!resolvedPath) {
       return;
     }
 
+    const response = await fetch(resolvedUrl);
+    if (!response.ok) {
+      throw new Error(`Failed to fetch attachment: ${response.status}`);
+    }
+    const buffer = await response.arrayBuffer();
+    const base64 = arrayBufferToBase64(buffer);
+
+    await saveDesktopArtifactFile(resolvedPath, base64);
     return;
   }
 
@@ -205,20 +187,14 @@ export async function openHtmlAttachmentInBrowser(
     return;
   }
 
-  if (isTauri()) {
-    const invoke = getTauriInvoke();
-    if (invoke) {
-      const response = await apiFetch(url, { method: 'GET' });
-      if (!response.ok) {
-        throw new Error(`Failed to open attachment (${response.status})`);
-      }
-      const buffer = await response.arrayBuffer();
-      await invoke('open_temp_html_attachment_file', {
-        fileName,
-        contentBase64: arrayBufferToBase64(buffer),
-      } satisfies AssistantAttachmentTempFileArgs);
-      return;
+  if (isDesktopNative()) {
+    const response = await apiFetch(url, { method: 'GET' });
+    if (!response.ok) {
+      throw new Error(`Failed to open attachment (${response.status})`);
     }
+    const buffer = await response.arrayBuffer();
+    await openDesktopTempHtmlAttachmentFile(fileName, arrayBufferToBase64(buffer));
+    return;
   }
 
   const response = await apiFetch(url, { method: 'GET' });
