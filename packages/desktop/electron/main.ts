@@ -1,24 +1,17 @@
-import {
-  BrowserWindow,
-  app,
-  dialog,
-  ipcMain,
-  shell,
-} from 'electron';
+import { BrowserWindow, app, dialog, ipcMain, shell } from 'electron';
 import { Buffer } from 'node:buffer';
 import fs from 'node:fs/promises';
 import http from 'node:http';
 import https from 'node:https';
 import os from 'node:os';
 import path from 'node:path';
-import { URL } from 'node:url';
+import { URL, pathToFileURL } from 'node:url';
 import WebSocket, { WebSocketServer } from 'ws';
 
-import {
-  flushPendingWsMessages,
-  relayOrQueueWsMessage,
-  type PendingWsMessage,
-} from './wsRelay.js';
+import { appConfig } from './appConfig.js';
+import { isAllowedExternalUrl, isSameFileUrl, openAllowedExternalUrl } from './externalUrls.js';
+import { SavePathRegistry } from './savePathRegistry.js';
+import { flushPendingWsMessages, relayOrQueueWsMessage, type PendingWsMessage } from './wsRelay.js';
 
 type AppSettings = {
   backendUrl: string;
@@ -39,21 +32,13 @@ type ProxyReadyPayload = {
 
 const HTTP_PROXY_CONNECT_TIMEOUT_MS = 10_000;
 const HTTP_PROXY_REQUEST_TIMEOUT_MS = 30_000;
-const DEFAULT_BACKEND_URL = 'https://assistant';
-const isWorkVariant = process.env['ASSISTANT_DESKTOP_VARIANT'] === 'work';
-const appConfig = {
-  productName: isWorkVariant ? 'Assistant Work' : 'Assistant',
-  appId: isWorkVariant ? 'com.assistant.desktop.work' : 'com.assistant.desktop',
-  defaultBackendUrl:
-    process.env['ASSISTANT_DESKTOP_DEFAULT_BACKEND_URL']?.trim() ||
-    (isWorkVariant ? 'https://assistant/assistant-work' : DEFAULT_BACKEND_URL),
-};
 
 let mainWindow: BrowserWindow | null = null;
 let settings: AppSettings = defaultSettings();
 let settingsPath = '';
 let httpProxyServer: http.Server | null = null;
 let wsProxyServer: http.Server | null = null;
+const savePathRegistry = new SavePathRegistry();
 
 function defaultSettings(): AppSettings {
   return {
@@ -76,6 +61,14 @@ function getIconPath(): string {
     return path.join(process.resourcesPath, 'icons', 'icon.png');
   }
   return path.resolve(__dirname, '..', 'icons', 'icon.png');
+}
+
+function getAppIndexPath(): string {
+  return path.join(getWebPublicDir(), 'index.html');
+}
+
+function getAppIndexUrl(): string {
+  return pathToFileURL(getAppIndexPath()).href;
 }
 
 function buildBackendUrl(requestUrl: string): string {
@@ -289,12 +282,40 @@ function createWindow(): BrowserWindow {
     },
   });
 
-  window.loadFile(path.join(getWebPublicDir(), 'index.html'));
+  installNavigationGuards(window);
+  window.loadFile(getAppIndexPath());
   window.webContents.on('did-finish-load', () => emitProxyReady());
   if (!app.isPackaged) {
     window.webContents.openDevTools({ mode: 'detach' });
   }
   return window;
+}
+
+function openExternalFromNavigation(url: string): void {
+  if (!isAllowedExternalUrl(url)) {
+    return;
+  }
+  void shell.openExternal(url).catch((err) => {
+    console.warn('[desktop] Failed to open external URL:', err);
+  });
+}
+
+function installNavigationGuards(window: BrowserWindow): void {
+  const appIndexUrl = getAppIndexUrl();
+  const handleNavigation = (event: Electron.Event, url: string): void => {
+    if (isSameFileUrl(url, appIndexUrl)) {
+      return;
+    }
+    event.preventDefault();
+    openExternalFromNavigation(url);
+  };
+
+  window.webContents.setWindowOpenHandler(({ url }) => {
+    openExternalFromNavigation(url);
+    return { action: 'deny' };
+  });
+  window.webContents.on('will-navigate', handleNavigation);
+  window.webContents.on('will-redirect', handleNavigation);
 }
 
 function sanitizeFileName(fileName: string): string {
@@ -345,14 +366,15 @@ function registerIpcHandlers(): void {
     const result = await dialog.showSaveDialog({
       defaultPath,
     });
-    return result.canceled ? null : result.filePath;
+    return result.canceled || !result.filePath ? null : savePathRegistry.approve(result.filePath);
   });
   ipcMain.handle(
     'assistant-desktop:save-artifact-file',
     async (_event, args: { path: string; contentBase64: string }) => {
+      const targetPath = savePathRegistry.consume(args.path);
       const decoded = Buffer.from(args.contentBase64, 'base64');
-      await fs.mkdir(path.dirname(args.path), { recursive: true });
-      await fs.writeFile(args.path, decoded);
+      await fs.mkdir(path.dirname(targetPath), { recursive: true });
+      await fs.writeFile(targetPath, decoded);
     },
   );
   ipcMain.handle(
@@ -369,7 +391,7 @@ function registerIpcHandlers(): void {
     },
   );
   ipcMain.handle('assistant-desktop:open-external', async (_event, url: string) => {
-    await shell.openExternal(url);
+    await openAllowedExternalUrl(url, (allowedUrl) => shell.openExternal(allowedUrl));
   });
 }
 
