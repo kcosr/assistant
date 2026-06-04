@@ -39,6 +39,7 @@
 
 ### Fixed
 
+- Fixed the time tracker entry list refresh so relative Today/Week/Month presets resolve to the current date before listing newly added entries. ([#107](https://github.com/kcosr/assistant/pull/107))
 - Fixed Pi session sync so unreconcilable persisted/live message divergence repairs the canonical JSONL from current messages instead of skipping the write, with diagnostics and failed-rewrite safeguards. ([#104](https://github.com/kcosr/assistant/pull/104))
 - Fixed the Focus list to rank first in list dropdown/browser ordering and to honor add-to-top when creating items from the Focus list. ([#104](https://github.com/kcosr/assistant/pull/104))
 - Fixed chat session picker search so existing sessions match only the displayed label and session id prefix, not hidden agent metadata. ([#101](https://github.com/kcosr/assistant/pull/101))
