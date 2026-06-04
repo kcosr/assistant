@@ -14,6 +14,12 @@ import path from 'node:path';
 import { URL } from 'node:url';
 import WebSocket, { WebSocketServer } from 'ws';
 
+import {
+  flushPendingWsMessages,
+  relayOrQueueWsMessage,
+  type PendingWsMessage,
+} from './wsRelay.js';
+
 type AppSettings = {
   backendUrl: string;
   skipCertValidation: boolean;
@@ -191,28 +197,19 @@ function createWsProxyServer(): http.Server {
     const upstream = new WebSocket(buildBackendWsUrl(), {
       rejectUnauthorized: !settings.skipCertValidation,
     });
-    const pendingMessages: WebSocket.RawData[] = [];
+    const pendingMessages: PendingWsMessage[] = [];
 
     upstream.on('open', () => {
-      while (pendingMessages.length > 0) {
-        const message = pendingMessages.shift();
-        if (message !== undefined) {
-          upstream.send(message);
-        }
-      }
+      flushPendingWsMessages(upstream, pendingMessages);
     });
 
-    client.on('message', (message) => {
-      if (upstream.readyState === WebSocket.OPEN) {
-        upstream.send(message);
-        return;
-      }
-      pendingMessages.push(message);
+    client.on('message', (message, isBinary) => {
+      relayOrQueueWsMessage(upstream, WebSocket.OPEN, pendingMessages, message, isBinary);
     });
 
-    upstream.on('message', (message) => {
+    upstream.on('message', (message, isBinary) => {
       if (client.readyState === WebSocket.OPEN) {
-        client.send(message);
+        client.send(message, { binary: isBinary });
       }
     });
 

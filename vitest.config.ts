@@ -16,6 +16,7 @@ export default defineConfig({
       'packages/plugins/**/server/**/*.test.ts',
       'packages/plugins/**/web/**/*.test.ts',
       'packages/notify-proxy/src/**/*.test.ts',
+      'packages/desktop/electron/**/*.test.ts',
       'packages/web-client/src/**/*.test.ts',
       'packages/mobile-web/scripts/**/*.test.mjs',
       'packages/assistant-cli/src/**/*.test.ts',
