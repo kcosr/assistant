@@ -417,10 +417,7 @@ async function resolveArtifactsInstanceId(targetId: string): Promise<string> {
   return DEFAULT_INSTANCE_ID;
 }
 
-function buildArtifactsDownloadUrl(options: {
-  instanceId: string;
-  artifactId: string;
-}): string {
+function buildArtifactsDownloadUrl(options: { instanceId: string; artifactId: string }): string {
   const base = getApiBaseUrl().replace(/\/+$/, '');
   return `${base}/api/plugins/artifacts/files/${encodeURIComponent(
     options.instanceId,
@@ -464,6 +461,32 @@ function startOfMonth(date: Date): Date {
 
 function endOfMonth(date: Date): Date {
   return new Date(date.getFullYear(), date.getMonth() + 1, 0);
+}
+
+function resolveCurrentDateRange(range: DateRange, now = new Date()): DateRange {
+  if (range.preset === 'today') {
+    const today = toDateString(now);
+    return { start: today, end: today, preset: 'today' };
+  }
+  if (range.preset === 'week') {
+    return {
+      start: toDateString(startOfWeek(now)),
+      end: toDateString(endOfWeek(now)),
+      preset: 'week',
+    };
+  }
+  if (range.preset === 'month') {
+    return {
+      start: toDateString(startOfMonth(now)),
+      end: toDateString(endOfMonth(now)),
+      preset: 'month',
+    };
+  }
+  return range;
+}
+
+function isSameDateRange(a: DateRange, b: DateRange): boolean {
+  return a.start === b.start && a.end === b.end && a.preset === b.preset;
 }
 
 function formatDateLabel(dateString: string, options?: { includeYear?: boolean }): string {
@@ -692,7 +715,10 @@ function setVisible(el: HTMLElement | null, visible: boolean): void {
 }
 
 function normalizeExportNote(note: string): string {
-  return note.trim().replace(/^[-*•–—](?:\s+|$)/, '').trim();
+  return note
+    .trim()
+    .replace(/^[-*•–—](?:\s+|$)/, '')
+    .trim();
 }
 
 function composeExportRowDescription(taskDescription: string, notes: string[]): string {
@@ -877,6 +903,7 @@ if (!registry || typeof registry.registerPanel !== 'function') {
           includeReported = data['includeReported'] as boolean;
         }
       }
+      dateRange = resolveCurrentDateRange(dateRange);
 
       const panelId = host.panelId();
       const contextKey = getPanelContextKey(panelId);
@@ -1123,21 +1150,20 @@ if (!registry || typeof registry.registerPanel !== 'function') {
                 : 'This month';
       }
 
-      function applyPreset(preset: RangePreset): void {
-        const now = new Date();
-        let start = dateRange.start;
-        let end = dateRange.end;
-        if (preset === 'today') {
-          start = toDateString(now);
-          end = start;
-        } else if (preset === 'week') {
-          start = toDateString(startOfWeek(now));
-          end = toDateString(endOfWeek(now));
-        } else if (preset === 'month') {
-          start = toDateString(startOfMonth(now));
-          end = toDateString(endOfMonth(now));
+      function syncRelativeDateRange(): void {
+        const next = resolveCurrentDateRange(dateRange);
+        if (isSameDateRange(dateRange, next)) {
+          return;
         }
-        dateRange = { start, end, preset };
+        dateRange = next;
+        rangeDraftStart = dateRange.start;
+        rangeDraftEnd = dateRange.end;
+        refreshRangeLabel();
+        persistState();
+      }
+
+      function applyPreset(preset: RangePreset): void {
+        dateRange = resolveCurrentDateRange({ ...dateRange, preset });
         refreshRangeLabel();
         persistState();
         void refreshEntries();
@@ -1179,7 +1205,9 @@ if (!registry || typeof registry.registerPanel !== 'function') {
         if (sorted.length === 0) {
           const empty = document.createElement('div');
           empty.className = 'time-tracker-empty';
-          empty.textContent = query ? 'No entries match this filter.' : 'No entries for this period.';
+          empty.textContent = query
+            ? 'No entries match this filter.'
+            : 'No entries for this period.';
           entryList.appendChild(empty);
           rangeTotalValue.textContent = 'Total: 0m';
           return;
@@ -1415,8 +1443,7 @@ if (!registry || typeof registry.registerPanel !== 'function') {
           throw new Error('Failed to export XLSX');
         }
         const mimeType =
-          payload.mimeType ??
-          'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+          payload.mimeType ?? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
         const artifactsInstanceId = await resolveArtifactsInstanceId(selectedInstanceId);
         const artifact = await callArtifactsOperation<ArtifactMetadata>('upload', {
           instance_id: artifactsInstanceId,
@@ -1791,6 +1818,7 @@ if (!registry || typeof registry.registerPanel !== 'function') {
       }
 
       async function refreshEntries(options?: { silent?: boolean }): Promise<void> {
+        syncRelativeDateRange();
         const token = ++entryRefreshToken;
         try {
           const raw = await callInstanceOperation<unknown>('entry_list', {

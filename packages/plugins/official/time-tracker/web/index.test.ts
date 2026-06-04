@@ -62,6 +62,7 @@ describe('time tracker range picker', () => {
   let operationCalls: OperationCall[] = [];
   let mockTasks: MockTask[] = [];
   let mockEntries: MockEntry[] = [];
+  let filterEntryListByRequest = false;
 
   beforeEach(() => {
     panelFactory = null;
@@ -76,6 +77,7 @@ describe('time tracker range picker', () => {
       },
     ];
     mockEntries = [];
+    filterEntryListByRequest = false;
 
     apiFetch.mockReset();
     apiFetch.mockImplementation(async (url: string, options?: RequestInit) => {
@@ -110,7 +112,42 @@ describe('time tracker range picker', () => {
         return json(mockTasks);
       }
       if (operation === 'entry_list') {
-        return json(mockEntries);
+        if (!filterEntryListByRequest) {
+          return json(mockEntries);
+        }
+        const startDate = typeof body['start_date'] === 'string' ? body['start_date'] : null;
+        const endDate = typeof body['end_date'] === 'string' ? body['end_date'] : null;
+        const taskId = typeof body['task_id'] === 'string' ? body['task_id'] : null;
+        const includeReported = body['include_reported'] === true;
+        return json(
+          mockEntries.filter((entry) => {
+            const entryDate = entry.entry_date ?? '';
+            if (startDate && entryDate < startDate) {
+              return false;
+            }
+            if (endDate && entryDate > endDate) {
+              return false;
+            }
+            if (taskId && entry.task_id !== taskId) {
+              return false;
+            }
+            if (!includeReported && entry.reported) {
+              return false;
+            }
+            return true;
+          }),
+        );
+      }
+      if (operation === 'entry_create') {
+        const entry = makeEntry({
+          id: `entry-${mockEntries.length + 1}`,
+          task_id: String(body['task_id']),
+          duration_minutes: Number(body['duration_minutes']),
+          entry_date: String(body['entry_date']),
+          note: typeof body['note'] === 'string' ? body['note'] : '',
+        });
+        mockEntries = [entry, ...mockEntries];
+        return json(entry);
       }
       if (operation === 'timer_status') {
         return json(null);
@@ -363,6 +400,47 @@ describe('time tracker range picker', () => {
     }
   });
 
+  it('refreshes stale today preset dates before listing a newly added entry', async () => {
+    filterEntryListByRequest = true;
+    const today = toDateString(new Date());
+    const yesterdayDate = new Date();
+    yesterdayDate.setDate(yesterdayDate.getDate() - 1);
+    const yesterday = toDateString(yesterdayDate);
+
+    const { container, handle } = await mountPanel({
+      panelState: {
+        selectedTaskId: 'task-1',
+        rangePreset: 'today',
+        rangeStart: yesterday,
+        rangeEnd: yesterday,
+      },
+    });
+
+    try {
+      const addButton = container.querySelector<HTMLButtonElement>('[data-role="entry-add"]');
+      expect(addButton).not.toBeNull();
+      expect(addButton?.disabled).toBe(false);
+
+      addButton?.click();
+      await flushPromises();
+      await flushPromises();
+
+      const entryCreateCall = operationCalls.find((call) => call.operation === 'entry_create');
+      expect(entryCreateCall?.body['entry_date']).toBe(today);
+
+      const latestEntryList = [...operationCalls]
+        .reverse()
+        .find((call) => call.operation === 'entry_list');
+      expect(latestEntryList?.body['start_date']).toBe(today);
+      expect(latestEntryList?.body['end_date']).toBe(today);
+
+      const entryList = container.querySelector<HTMLElement>('[data-role="entry-list"]');
+      expect(entryList?.textContent).toContain('30m');
+    } finally {
+      handle.unmount();
+    }
+  });
+
   it('exports task description before unique note bullets', async () => {
     const rows = await buildExportRows(
       [
@@ -477,7 +555,8 @@ describe('time tracker range picker', () => {
       {
         item: 'QA',
         total_minutes: 60,
-        description: 'Verification pass\n\nNotes:\n• Smoke tested export\n• Checked workbook formatting',
+        description:
+          'Verification pass\n\nNotes:\n• Smoke tested export\n• Checked workbook formatting',
       },
     ]);
   });
