@@ -10,7 +10,7 @@
 
 - Added an Electron desktop package with native backend proxying, WebSocket forwarding, variant-aware backend defaults, and packaged-app asset routing. ([#108](https://github.com/kcosr/assistant/pull/108))
 - Added native Android voice replay for assistant turns and text/markdown attachments, using the existing local voice queue with front-of-queue, non-interrupting playback. ([#106](https://github.com/kcosr/assistant/pull/106))
-- Added one-shot Pi SDK session wake-ups to the scheduled-sessions plugin, including durable wake-up storage, current-session set/cancel tools, cross-session listing, busy-session queue delivery, and panel visibility/cancel controls. ([#105](https://github.com/kcosr/assistant/pull/105))
+- Added one-shot Pi SDK session wake-ups to the scheduled-sessions plugin, including durable wake-up storage, current-session create/update/cancel-by-id tools, current-session tool listing, multiple wake-ups per session with an active wake-up cap, busy-session queue delivery, and panel visibility/cancel controls. ([#105](https://github.com/kcosr/assistant/pull/105))
 - Added a virtual Focus list view with focus toggles, source-list editing, searchable list move/copy pickers, and add/edit list target selection for list items. ([#103](https://github.com/kcosr/assistant/pull/103))
 - Added Pi SDK custom-model config support for `api`, `authHeader`, `compat`, synthesized model metadata, and compaction so Assistant agents can target OpenAI-compatible endpoints that need Pi compatibility flags. ([#102](https://github.com/kcosr/assistant/pull/102))
 - Added Pi SDK session context compaction with Pi-compatible JSONL `compaction` entries, manual chat menu/API compaction, effective replay context, and threshold auto-compaction. ([#98](https://github.com/kcosr/assistant/pull/98))
@@ -25,6 +25,7 @@
 
 ### Changed
 
+- Changed scheduled-sessions wake-up tools to support multiple current-session wake-ups with create/update/cancel-by-id operations, capped active wake-ups, and redacted admin-panel visibility for other sessions. ([#110](https://github.com/kcosr/assistant/pull/110))
 - Changed Android native voice Manual mode so Auto Listen can start speech recognition after final assistant messages without playing assistant TTS. ([#109](https://github.com/kcosr/assistant/pull/109))
 - Changed the Voice notification session control to use the shared searchable session picker, replacing the prior native select. ([#100](https://github.com/kcosr/assistant/pull/100))
 - Changed time-tracker XLSX exports to include each task description before unique entry-note bullets in the Description column. ([#99](https://github.com/kcosr/assistant/pull/99))

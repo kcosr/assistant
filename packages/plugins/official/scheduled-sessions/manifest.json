@@ -148,29 +148,64 @@
     },
     {
       "id": "wakeup-list",
-      "summary": "List pending one-shot session wake-ups across sessions.",
+      "summary": "List pending one-shot wake-ups. In a session context, current-session wake-ups include IDs and message details for management, while other-session wake-ups are read-only and redacted.",
       "inputSchema": { "type": "object", "properties": {} },
       "capabilities": ["scheduled-sessions.read"]
     },
     {
-      "id": "wakeup-set",
-      "summary": "Schedule one wake-up message for the current session. Provide exactly one of runAt or delaySeconds. runAt must be an absolute ISO timestamp with a timezone offset or Z.",
+      "id": "wakeup-create",
+      "summary": "Schedule a wake-up message for the current session. Provide exactly one of runAt or delaySeconds. runAt must be an absolute ISO timestamp with a timezone offset or Z. Each session can have up to 25 active wake-ups.",
       "inputSchema": {
         "type": "object",
         "properties": {
-          "message": { "type": "string", "description": "Wake-up message to send to the current session." },
-          "runAt": { "type": "string", "description": "Absolute ISO timestamp for the wake-up with timezone offset or Z, for example 2026-06-03T08:56:00-05:00 or 2026-06-03T13:56:00Z." },
-          "delaySeconds": { "type": "number", "description": "Offset from now in seconds." },
-          "replace": { "type": "boolean", "description": "Replace the current session's existing pending wake-up." }
+          "message": {
+            "type": "string",
+            "description": "Wake-up message to send to the current session."
+          },
+          "runAt": {
+            "type": "string",
+            "description": "Absolute ISO timestamp for the wake-up with timezone offset or Z, for example 2026-06-03T08:56:00-05:00 or 2026-06-03T13:56:00Z."
+          },
+          "delaySeconds": { "type": "number", "description": "Offset from now in seconds." }
         },
         "required": ["message"]
       },
       "capabilities": ["scheduled-sessions.write"]
     },
     {
+      "id": "wakeup-update",
+      "summary": "Update a pending wake-up for the current session. Provide wakeupId and at least one of message, runAt, or delaySeconds.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "wakeupId": {
+            "type": "string",
+            "description": "Wake-up id returned by wakeup-create or wakeup-list."
+          },
+          "message": { "type": "string", "description": "Updated wake-up message." },
+          "runAt": {
+            "type": "string",
+            "description": "Updated absolute ISO timestamp with timezone offset or Z."
+          },
+          "delaySeconds": { "type": "number", "description": "Updated offset from now in seconds." }
+        },
+        "required": ["wakeupId"]
+      },
+      "capabilities": ["scheduled-sessions.write"]
+    },
+    {
       "id": "wakeup-cancel",
-      "summary": "Cancel the current session's pending one-shot wake-up.",
-      "inputSchema": { "type": "object", "properties": {} },
+      "summary": "Cancel a wake-up for the current session by wakeupId.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "wakeupId": {
+            "type": "string",
+            "description": "Wake-up id returned by wakeup-create or wakeup-list."
+          }
+        },
+        "required": ["wakeupId"]
+      },
       "capabilities": ["scheduled-sessions.write"]
     }
   ],

@@ -343,7 +343,7 @@ describe('scheduled sessions panel', () => {
     }
   });
 
-  it('renders pending wake-ups and cancels them by session context', async () => {
+  it('renders pending wake-ups and cancels them by wake-up id', async () => {
     wakeups = [
       {
         wakeupId: 'wakeup-1',
@@ -369,7 +369,7 @@ describe('scheduled sessions panel', () => {
       );
 
       const cancel = container.querySelector<HTMLButtonElement>(
-        '[data-action="cancel-wakeup"][data-session-id="session-1"]',
+        '[data-action="cancel-wakeup"][data-wakeup-id="wakeup-1"]',
       );
       expect(cancel).not.toBeNull();
       cancel?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
@@ -381,6 +381,7 @@ describe('scheduled sessions panel', () => {
           headers: expect.objectContaining({
             'x-session-id': 'session-1',
           }),
+          body: JSON.stringify({ wakeupId: 'wakeup-1' }),
         }),
       );
     } finally {

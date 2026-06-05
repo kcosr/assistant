@@ -588,9 +588,10 @@ create and manage them dynamically. They are stored in the plugin data directory
 
 The same plugin also stores pending one-shot session wake-ups under
 `data/plugins/scheduled-sessions/default/wakeups.json`. Wake-ups are limited to native Pi SDK
-sessions (`chat.provider: "pi"`), target the current tool session for set/cancel operations, and
-send the configured message back to that session at the requested time. If the session is busy when
-the wake-up fires, the message is added to the existing per-session message queue.
+sessions (`chat.provider: "pi"`), target the current tool session for create/list/update/cancel
+operations, and send the configured message back to that session at the requested time. If the
+session is busy when the wake-up fires, the message is added to the existing per-session message
+queue. A session can have up to 25 active wake-ups.
 
 Each persisted schedule record includes:
 
@@ -622,21 +623,30 @@ Notes:
 - When `reuseSession` is `false`, each run creates a fresh backing session.
 - `maxConcurrent` only matters when `reuseSession` is `false`.
 - Enable the `scheduled-sessions` plugin to create, edit, delete, run, and toggle schedules, and to
-  list/set/cancel pending session wake-ups.
+  list/create/update/cancel pending session wake-ups.
 
 Wake-up tools:
 
-- `scheduled_sessions_wakeup_set`
+- `scheduled_sessions_wakeup_create`
   - `message`
   - exactly one of `runAt` or `delaySeconds`
   - `runAt` must be an absolute ISO timestamp with an explicit timezone offset or `Z`, for example
     `2026-06-03T08:56:00-05:00` or `2026-06-03T13:56:00Z`
-  - optional `replace` to replace the current session's existing pending wake-up
+- `scheduled_sessions_wakeup_update`
+  - `wakeupId`
+  - at least one of `message`, `runAt`, or `delaySeconds`
+  - if a time is provided, provide exactly one of `runAt` or `delaySeconds`
 - `scheduled_sessions_wakeup_cancel`
+  - `wakeupId`
 - `scheduled_sessions_wakeup_list`
 
-`set` and `cancel` intentionally do not accept a `sessionId`; they use the current tool context.
-`list` returns pending wake-ups across sessions for user visibility.
+Wake-up tools intentionally do not accept a `sessionId`; they use the current tool context.
+`update` and `cancel` only operate on wake-ups belonging to the current session. In a session
+context, `list` returns manageable current-session wake-ups with IDs and message details plus
+read-only other-session wake-ups with only safe summary fields: `kind`, `scope`, `manageable`,
+`runAt`, `status`, `summary`, false capabilities, and an `omitted` list for redacted fields. The
+scheduled-sessions panel uses the same plugin operation without a session context to show all
+wake-ups for administration.
 
 #### `pi` Provider
 

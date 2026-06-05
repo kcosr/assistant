@@ -13,7 +13,6 @@ import { startSessionMessage } from '../sessionMessages';
 import { getDefaultModelForNewSession, getDefaultThinkingForNewSession } from '../sessionModel';
 import {
   buildSessionAttributesPatchFromConfig,
-  getSelectedSessionSkillIds,
   resolveSessionConfigForAgent,
   type ResolvedSessionConfig,
 } from '../sessionConfig';
@@ -39,7 +38,9 @@ import type {
   SessionWakeupCreateInput,
   SessionWakeupDeletedEvent,
   SessionWakeupInfo,
+  SessionWakeupListItem,
   SessionWakeupSetEvent,
+  SessionWakeupUpdateInput,
 } from './types';
 
 type ScheduledRunProvider = NonNullable<NonNullable<AgentDefinition['chat']>['provider']>;
@@ -101,6 +102,7 @@ export class ScheduleValidationError extends Error {
 
 export class ScheduledSessionService {
   private static readonly MAX_TIMEOUT_MS = 2_147_483_647;
+  private static readonly MAX_WAKEUPS_PER_SESSION = 25;
   private readonly schedules = new Map<string, ScheduleState>();
   private readonly wakeups = new Map<string, SessionWakeupConfig>();
   private readonly wakeupTimers = new Map<string, NodeJS.Timeout>();
@@ -346,21 +348,34 @@ export class ScheduledSessionService {
       .sort((left, right) => left.runAt.localeCompare(right.runAt));
   }
 
-  async setWakeupForSession(input: SessionWakeupCreateInput): Promise<SessionWakeupInfo> {
+  async listWakeupsForSession(sessionIdInput: string): Promise<SessionWakeupInfo[]> {
+    const sessionId = this.normalizeRequiredString(sessionIdInput, 'sessionId');
+    const sessions = await this.buildSingleSessionSummaryMap(sessionId);
+    return Array.from(this.wakeups.values())
+      .filter((wakeup) => wakeup.sessionId === sessionId)
+      .map((wakeup) => this.buildWakeupInfo(wakeup, sessions))
+      .sort((left, right) => left.runAt.localeCompare(right.runAt));
+  }
+
+  async listWakeupsVisibleToSession(sessionIdInput: string): Promise<SessionWakeupListItem[]> {
+    const sessionId = this.normalizeRequiredString(sessionIdInput, 'sessionId');
+    const sessions = await this.buildSingleSessionSummaryMap(sessionId);
+    return Array.from(this.wakeups.values())
+      .map((wakeup) =>
+        wakeup.sessionId === sessionId
+          ? this.buildManageableWakeupInfo(wakeup, sessions)
+          : this.buildReadOnlyWakeupInfo(wakeup),
+      )
+      .sort((left, right) => left.runAt.localeCompare(right.runAt));
+  }
+
+  async createWakeupForSession(input: SessionWakeupCreateInput): Promise<SessionWakeupInfo> {
     const sessionId = this.normalizeRequiredString(input.sessionId, 'sessionId');
     const message = this.normalizeRequiredString(input.message, 'message');
     const runAt = this.normalizeWakeupRunAt(input.runAt);
     return this.withWakeupSessionLock(sessionId, async () => {
       const session = await this.requireWakeupSession(sessionId);
-      const existing = this.findWakeupForSession(sessionId);
-      if (existing && input.replace !== true) {
-        throw new ScheduleValidationError('session already has a pending wake-up');
-      }
-
-      if (existing) {
-        this.removeWakeupInMemory(existing.wakeupId);
-      }
-
+      this.requireWakeupCapacity(sessionId);
       const wakeup: SessionWakeupConfig = {
         wakeupId: `wakeup-${randomUUID().slice(0, 8)}`,
         sessionId,
@@ -376,17 +391,52 @@ export class ScheduledSessionService {
         await this.persistWakeups();
       } catch (error) {
         this.removeWakeupInMemory(wakeup.wakeupId);
-        if (existing) {
-          this.wakeups.set(existing.wakeupId, existing);
-          this.scheduleWakeup(existing);
-        }
         throw error;
       }
 
       this.scheduleWakeup(wakeup);
-      if (existing) {
-        this.broadcastWakeupDeleted(existing);
+      const info = this.buildWakeupInfo(wakeup, new Map([[sessionId, session]]));
+      this.broadcastWakeupSet(info);
+      return info;
+    });
+  }
+
+  async updateWakeupForSession(input: SessionWakeupUpdateInput): Promise<SessionWakeupInfo> {
+    const sessionId = this.normalizeRequiredString(input.sessionId, 'sessionId');
+    const wakeupId = this.normalizeRequiredString(input.wakeupId, 'wakeupId');
+    const message =
+      input.message !== undefined
+        ? this.normalizeRequiredString(input.message, 'message')
+        : undefined;
+    const runAt = input.runAt !== undefined ? this.normalizeWakeupRunAt(input.runAt) : undefined;
+    if (message === undefined && runAt === undefined) {
+      throw new ScheduleValidationError('Provide message, runAt, or delaySeconds to update');
+    }
+
+    return this.withWakeupSessionLock(sessionId, async () => {
+      const session = await this.requireWakeupSession(sessionId);
+      const wakeup = this.requireWakeupForSession(sessionId, wakeupId);
+      if (wakeup.status !== 'pending') {
+        throw new ScheduleValidationError('only pending wake-ups can be updated');
       }
+
+      const previous = { message: wakeup.message, runAt: wakeup.runAt };
+      if (message !== undefined) {
+        wakeup.message = message;
+      }
+      if (runAt !== undefined) {
+        wakeup.runAt = runAt;
+      }
+
+      try {
+        await this.persistWakeups();
+      } catch (error) {
+        wakeup.message = previous.message;
+        wakeup.runAt = previous.runAt;
+        throw error;
+      }
+
+      this.scheduleWakeup(wakeup);
       const info = this.buildWakeupInfo(wakeup, new Map([[sessionId, session]]));
       this.broadcastWakeupSet(info);
       return info;
@@ -395,15 +445,17 @@ export class ScheduledSessionService {
 
   async cancelWakeupForSession(
     sessionIdInput: string,
-  ): Promise<{ cancelled: boolean; sessionId: string; wakeupId: string | null }> {
+    wakeupIdInput: string,
+  ): Promise<{ cancelled: true; sessionId: string; wakeupId: string }> {
     const sessionId = this.normalizeRequiredString(sessionIdInput, 'sessionId');
+    const wakeupId = this.normalizeRequiredString(wakeupIdInput, 'wakeupId');
     return this.withWakeupSessionLock(sessionId, async () => {
-      const existing = this.findWakeupForSession(sessionId);
-      if (!existing) {
-        return { cancelled: false, sessionId, wakeupId: null };
+      const existing = this.wakeups.get(wakeupId);
+      if (!existing || existing.sessionId !== sessionId) {
+        throw new ScheduleNotFoundError(`Wake-up not found: ${wakeupId}`);
       }
-      await this.deleteWakeup(existing.wakeupId);
-      return { cancelled: true, sessionId, wakeupId: existing.wakeupId };
+      await this.deleteWakeup(wakeupId);
+      return { cancelled: true, sessionId, wakeupId };
     });
   }
 
@@ -799,9 +851,9 @@ export class ScheduledSessionService {
         pruned = true;
         continue;
       }
-      if (this.findWakeupForSession(wakeup.sessionId)) {
+      if (this.wakeups.has(wakeup.wakeupId)) {
         this.options.logger.warn(
-          `[scheduled-sessions] Dropping duplicate wake-up for session "${wakeup.sessionId}"`,
+          `[scheduled-sessions] Dropping duplicate wake-up id "${wakeup.wakeupId}"`,
         );
         pruned = true;
         continue;
@@ -897,6 +949,7 @@ export class ScheduledSessionService {
     }
 
     try {
+      await this.updateWakeupStatus(wakeup, 'delivering');
       const state = await sessionHub.ensureSessionState(wakeup.sessionId);
       if (state.activeChatRun) {
         await this.queueWakeupDelivery(wakeup);
@@ -906,7 +959,6 @@ export class ScheduledSessionService {
         return;
       }
 
-      await this.updateWakeupStatus(wakeup, 'delivering');
       const result = await this.startWakeupMessage(wakeup);
       if (result === 'busy') {
         await this.queueWakeupDelivery(wakeup);
@@ -1063,13 +1115,23 @@ export class ScheduledSessionService {
     return value;
   }
 
-  private findWakeupForSession(sessionId: string): SessionWakeupConfig | null {
-    for (const wakeup of this.wakeups.values()) {
-      if (wakeup.sessionId === sessionId) {
-        return wakeup;
-      }
+  private requireWakeupForSession(sessionId: string, wakeupId: string): SessionWakeupConfig {
+    const wakeup = this.wakeups.get(wakeupId);
+    if (!wakeup || wakeup.sessionId !== sessionId) {
+      throw new ScheduleNotFoundError(`Wake-up not found: ${wakeupId}`);
     }
-    return null;
+    return wakeup;
+  }
+
+  private requireWakeupCapacity(sessionId: string): void {
+    const count = Array.from(this.wakeups.values()).filter(
+      (wakeup) => wakeup.sessionId === sessionId,
+    ).length;
+    if (count >= ScheduledSessionService.MAX_WAKEUPS_PER_SESSION) {
+      throw new ScheduleValidationError(
+        `A session can have at most ${ScheduledSessionService.MAX_WAKEUPS_PER_SESSION} active wake-ups`,
+      );
+    }
   }
 
   private removeWakeupInMemory(wakeupId: string): SessionWakeupConfig | null {
@@ -1118,6 +1180,17 @@ export class ScheduledSessionService {
     return new Map(sessions.map((session) => [session.sessionId, session]));
   }
 
+  private async buildSingleSessionSummaryMap(
+    sessionId: string,
+  ): Promise<Map<string, SessionSummary>> {
+    const sessionIndex = this.options.sessionIndex;
+    if (!sessionIndex) {
+      return new Map();
+    }
+    const session = await sessionIndex.getSession(sessionId);
+    return session && !session.deleted ? new Map([[session.sessionId, session]]) : new Map();
+  }
+
   private buildWakeupInfo(
     wakeup: SessionWakeupConfig,
     sessions?: Map<string, SessionSummary>,
@@ -1132,6 +1205,54 @@ export class ScheduledSessionService {
       runAt: wakeup.runAt.toISOString(),
       createdAt: wakeup.createdAt.toISOString(),
       status: wakeup.status,
+    };
+  }
+
+  private buildManageableWakeupInfo(
+    wakeup: SessionWakeupConfig,
+    sessions?: Map<string, SessionSummary>,
+  ): SessionWakeupListItem {
+    const info = this.buildWakeupInfo(wakeup, sessions);
+    return {
+      kind: 'one_time_wakeup',
+      scope: 'current_session',
+      manageable: true,
+      wakeupId: info.wakeupId,
+      sessionId: info.sessionId,
+      sessionName: info.sessionName,
+      agentId: info.agentId,
+      message: info.message,
+      runAt: info.runAt,
+      createdAt: info.createdAt,
+      status: info.status,
+      capabilities: {
+        canUpdate: wakeup.status === 'pending',
+        canCancel: true,
+      },
+    };
+  }
+
+  private buildReadOnlyWakeupInfo(wakeup: SessionWakeupConfig): SessionWakeupListItem {
+    return {
+      kind: 'one_time_wakeup',
+      scope: 'other_session',
+      manageable: false,
+      runAt: wakeup.runAt.toISOString(),
+      status: wakeup.status,
+      summary: 'One-time wake-up from another session',
+      capabilities: {
+        canUpdate: false,
+        canCancel: false,
+      },
+      omitted: [
+        'wakeupId',
+        'sessionId',
+        'sessionName',
+        'agentId',
+        'message',
+        'createdAt',
+        'managementTarget',
+      ],
     };
   }
 

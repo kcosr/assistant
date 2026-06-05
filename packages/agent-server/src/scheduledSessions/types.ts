@@ -137,7 +137,13 @@ export interface SessionWakeupCreateInput {
   sessionId: string;
   message: string;
   runAt: Date;
-  replace?: boolean;
+}
+
+export interface SessionWakeupUpdateInput {
+  sessionId: string;
+  wakeupId: string;
+  message?: string;
+  runAt?: Date;
 }
 
 export interface SessionWakeupInfo {
@@ -150,6 +156,44 @@ export interface SessionWakeupInfo {
   createdAt: string;
   status: 'pending' | 'queued' | 'delivering';
 }
+
+interface SessionWakeupListBase {
+  kind: 'one_time_wakeup';
+  runAt: string;
+  status: 'pending' | 'queued' | 'delivering';
+  capabilities: {
+    canUpdate: boolean;
+    canCancel: boolean;
+  };
+}
+
+export interface ManageableSessionWakeupInfo extends SessionWakeupListBase {
+  scope: 'current_session';
+  manageable: true;
+  wakeupId: string;
+  sessionId: string;
+  sessionName: string | null;
+  agentId: string;
+  message: string;
+  createdAt: string;
+}
+
+export interface ReadOnlySessionWakeupInfo extends SessionWakeupListBase {
+  scope: 'other_session';
+  manageable: false;
+  summary: string;
+  omitted: [
+    'wakeupId',
+    'sessionId',
+    'sessionName',
+    'agentId',
+    'message',
+    'createdAt',
+    'managementTarget',
+  ];
+}
+
+export type SessionWakeupListItem = ManageableSessionWakeupInfo | ReadOnlySessionWakeupInfo;
 
 export interface SessionWakeupSetEvent {
   type: 'session_wakeup:set';

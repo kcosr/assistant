@@ -349,14 +349,14 @@ async function setScheduleEnabled(agentId: string, scheduleId: string, enabled: 
   }
 }
 
-async function cancelWakeup(sessionId: string): Promise<void> {
+async function cancelWakeup(sessionId: string, wakeupId: string): Promise<void> {
   const response = await apiFetch('/api/plugins/scheduled-sessions/operations/wakeup-cancel', {
     method: 'POST',
     headers: {
       'content-type': 'application/json',
       'x-session-id': sessionId,
     },
-    body: JSON.stringify({}),
+    body: JSON.stringify({ wakeupId }),
   });
   if (!response.ok) {
     throw new Error(`Request failed (${response.status})`);
@@ -583,7 +583,7 @@ if (!registry || typeof registry.registerPanel !== 'function') {
                     <div class="scheduled-sessions-row-status">${escapeHtml(wakeupStatus)}</div>
                   </div>
                   <div class="scheduled-sessions-row-actions">
-                    <button type="button" class="scheduled-sessions-button" data-action="cancel-wakeup" data-session-id="${escapeHtml(wakeup.sessionId)}">Cancel</button>
+                    <button type="button" class="scheduled-sessions-button" data-action="cancel-wakeup" data-session-id="${escapeHtml(wakeup.sessionId)}" data-wakeup-id="${escapeHtml(wakeup.wakeupId)}">Cancel</button>
                   </div>
                 </div>
                 <div class="scheduled-sessions-details">
@@ -765,11 +765,12 @@ if (!registry || typeof registry.registerPanel !== 'function') {
         if (action === 'cancel-wakeup') {
           event.preventDefault();
           event.stopPropagation();
-          if (!sessionId) {
+          const wakeupId = actionEl.dataset['wakeupId'] ?? '';
+          if (!sessionId || !wakeupId) {
             return;
           }
           try {
-            await cancelWakeup(sessionId);
+            await cancelWakeup(sessionId, wakeupId);
             setMessage('Wake-up cancelled');
           } catch (err) {
             setMessage((err as Error).message || 'Failed to cancel wake-up');

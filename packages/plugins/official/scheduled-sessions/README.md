@@ -41,10 +41,12 @@ These values are validated against the selected agent when the schedule is creat
 then revalidated again when the schedule runs. When `reuseSession` is enabled, the backing
 session is created up front and reconciled from the schedule on later runs after edits.
 
-Wake-ups target native Pi SDK sessions only. `wakeup-set` and `wakeup-cancel` operate on the
-current session context; `wakeup-list` returns pending wake-ups across sessions so users can see
-what is armed. When a wake-up fires while its target session is busy, the wake-up message is added
-to the session message queue.
+Wake-ups target native Pi SDK sessions only. `wakeup-create`, `wakeup-update`, and
+`wakeup-cancel` operate on the current session context. A session can have up to 25 active
+wake-ups. `wakeup-list` uses the current session context to return manageable current-session
+wake-ups plus read-only, redacted other-session wake-ups. When a wake-up fires while its target
+session is busy, the wake-up message is added to the session message queue. The panel lists all
+wake-ups through the same operation when no session context is present.
 
 ## Source files
 
@@ -70,9 +72,14 @@ Tools are exposed when plugin tools are enabled:
 - `scheduled_sessions_run`: trigger a run by agentId + scheduleId.
 - `scheduled_sessions_enable`: enable a schedule at runtime.
 - `scheduled_sessions_disable`: disable a schedule at runtime.
-- `scheduled_sessions_wakeup_list`: list pending session wake-ups across sessions.
-- `scheduled_sessions_wakeup_set`: schedule a wake-up for the current session using `delaySeconds` or an absolute `runAt` ISO timestamp with a timezone offset or `Z` (for example `2026-06-03T08:56:00-05:00` or `2026-06-03T13:56:00Z`).
-- `scheduled_sessions_wakeup_cancel`: cancel the current session's pending wake-up.
+- `scheduled_sessions_wakeup_list`: list pending session wake-ups. Current-session wake-ups are
+  manageable and include `wakeupId`, `sessionId`, `sessionName`, `agentId`, `message`,
+  `createdAt`, `runAt`, `status`, and capabilities. Other-session wake-ups are read-only and
+  include only `kind`, `scope`, `manageable`, `runAt`, `status`, `summary`, false capabilities,
+  and an `omitted` list for redacted fields.
+- `scheduled_sessions_wakeup_create`: schedule a wake-up for the current session using `delaySeconds` or an absolute `runAt` ISO timestamp with a timezone offset or `Z` (for example `2026-06-03T08:56:00-05:00` or `2026-06-03T13:56:00Z`).
+- `scheduled_sessions_wakeup_update`: update a pending wake-up for the current session by `wakeupId`.
+- `scheduled_sessions_wakeup_cancel`: cancel a wake-up for the current session by `wakeupId`.
 
 ## HTTP
 
@@ -86,7 +93,8 @@ Endpoints:
 - `POST /api/plugins/scheduled-sessions/operations/enable`
 - `POST /api/plugins/scheduled-sessions/operations/disable`
 - `POST /api/plugins/scheduled-sessions/operations/wakeup-list`
-- `POST /api/plugins/scheduled-sessions/operations/wakeup-set`
+- `POST /api/plugins/scheduled-sessions/operations/wakeup-create`
+- `POST /api/plugins/scheduled-sessions/operations/wakeup-update`
 - `POST /api/plugins/scheduled-sessions/operations/wakeup-cancel`
 
 Responses use the standard generated plugin operations envelope:
