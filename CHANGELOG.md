@@ -8,6 +8,7 @@
 
 ### Added
 
+- Added an Electron desktop package with native backend proxying, WebSocket forwarding, variant-aware backend defaults, and packaged-app asset routing. ([#108](https://github.com/kcosr/assistant/pull/108))
 - Added native Android voice replay for assistant turns and text/markdown attachments, using the existing local voice queue with front-of-queue, non-interrupting playback. ([#106](https://github.com/kcosr/assistant/pull/106))
 - Added one-shot Pi SDK session wake-ups to the scheduled-sessions plugin, including durable wake-up storage, current-session set/cancel tools, cross-session listing, busy-session queue delivery, and panel visibility/cancel controls. ([#105](https://github.com/kcosr/assistant/pull/105))
 - Added a virtual Focus list view with focus toggles, source-list editing, searchable list move/copy pickers, and add/edit list target selection for list items. ([#103](https://github.com/kcosr/assistant/pull/103))
@@ -39,6 +40,7 @@
 
 ### Fixed
 
+- Fixed Electron desktop HTML links and time-tracker XLSX export clicks so they open in the system browser/download path instead of being captured inside the Electron webview. ([#108](https://github.com/kcosr/assistant/pull/108))
 - Fixed the time tracker entry list refresh so relative Today/Week/Month presets resolve to the current date before listing newly added entries. ([#107](https://github.com/kcosr/assistant/pull/107))
 - Fixed Pi session sync so unreconcilable persisted/live message divergence repairs the canonical JSONL from current messages instead of skipping the write, with diagnostics and failed-rewrite safeguards. ([#104](https://github.com/kcosr/assistant/pull/104))
 - Fixed the Focus list to rank first in list dropdown/browser ordering and to honor add-to-top when creating items from the Focus list. ([#104](https://github.com/kcosr/assistant/pull/104))
