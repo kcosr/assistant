@@ -1,7 +1,11 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { configureDesktop, waitForDesktopProxyReady } from './desktop';
+import {
+  configureDesktop,
+  installDesktopExternalLinkHandler,
+  waitForDesktopProxyReady,
+} from './desktop';
 
 afterEach(() => {
   vi.useRealTimers();
@@ -59,5 +63,53 @@ describe('waitForDesktopProxyReady', () => {
     window.dispatchEvent(new CustomEvent('assistant:desktop-proxy-ready'));
 
     await expect(waitPromise).resolves.toBe(true);
+  });
+});
+
+describe('installDesktopExternalLinkHandler', () => {
+  it('opens normal external links through the desktop bridge', async () => {
+    const openExternal = vi.fn().mockResolvedValue(undefined);
+    (window as typeof window & { assistantDesktop?: unknown }).assistantDesktop = {
+      openExternal,
+    };
+    const cleanup = installDesktopExternalLinkHandler();
+    const link = document.createElement('a');
+    link.href = 'https://example.test/report.html';
+    link.textContent = 'Report';
+    document.body.append(link);
+
+    const click = new MouseEvent('click', { bubbles: true, cancelable: true, button: 0 });
+    const dispatched = link.dispatchEvent(click);
+    await Promise.resolve();
+
+    expect(dispatched).toBe(false);
+    expect(openExternal).toHaveBeenCalledWith('https://example.test/report.html');
+    cleanup();
+  });
+
+  it('leaves download links for download-specific handlers', async () => {
+    const openExternal = vi.fn().mockResolvedValue(undefined);
+    (window as typeof window & { assistantDesktop?: unknown }).assistantDesktop = {
+      openExternal,
+    };
+    const root = document.createElement('div');
+    const cleanup = installDesktopExternalLinkHandler(root);
+    let preventedByDesktopHandler = false;
+    root.addEventListener('click', (event) => {
+      preventedByDesktopHandler = event.defaultPrevented;
+      event.preventDefault();
+    });
+    const link = document.createElement('a');
+    link.href = 'https://example.test/report.xlsx';
+    link.download = 'report.xlsx';
+    root.append(link);
+
+    const click = new MouseEvent('click', { bubbles: true, cancelable: true, button: 0 });
+    link.dispatchEvent(click);
+    await Promise.resolve();
+
+    expect(preventedByDesktopHandler).toBe(false);
+    expect(openExternal).not.toHaveBeenCalled();
+    cleanup();
   });
 });

@@ -59,5 +59,11 @@ client uses it through `packages/web-client/src/utils/desktop.ts` for:
 - Opening temporary HTML attachments
 - Opening external URLs in the system browser
 
+The web client installs a desktop-only link handler that routes ordinary
+`http`, `https`, and `mailto` anchors through the native shell so clicked links
+do not navigate the Electron app window. Download-specific links should keep a
+`download` attribute and use the save-dialog bridge when the renderer needs to
+write bytes itself.
+
 The Electron main process keeps the same local proxy behavior as the former
 desktop wrapper, including skipped backend certificate validation by default.

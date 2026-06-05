@@ -187,6 +187,7 @@ describe('time tracker range picker', () => {
     } else {
       process.env.TZ = originalTz;
     }
+    delete (window as { assistantDesktop?: unknown }).assistantDesktop;
     document.body.innerHTML = '';
   });
 
@@ -474,6 +475,64 @@ describe('time tracker range picker', () => {
           'Summarize client rollout blockers.\n\nNotes:\n• Drafted status update\n• Confirmed owners',
       },
     ]);
+  });
+
+  it('downloads exported XLSX through the desktop save bridge', async () => {
+    const showSaveDialog = vi.fn().mockResolvedValue('/tmp/time-report.xlsx');
+    const saveArtifactFile = vi.fn().mockResolvedValue(undefined);
+    (window as typeof window & { assistantDesktop?: unknown }).assistantDesktop = {
+      showSaveDialog,
+      saveArtifactFile,
+    };
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(new Response(new Uint8Array([1, 2, 3]), { status: 200 }));
+    mockEntries = [
+      makeEntry({
+        id: 'entry-1',
+        task_id: 'task-1',
+        duration_minutes: 30,
+        note: 'Desktop export',
+      }),
+    ];
+
+    const { container, handle } = await mountPanel();
+    try {
+      const openButton = container.querySelector<HTMLButtonElement>('[data-role="export-xlsx"]');
+      expect(openButton).not.toBeNull();
+      openButton?.click();
+      await flushPromises();
+
+      const submitButton = document.body.querySelector<HTMLButtonElement>(
+        '.time-tracker-export-dialog .confirm-dialog-button.primary',
+      );
+      expect(submitButton).not.toBeNull();
+      submitButton?.click();
+      await flushPromises();
+      await flushPromises();
+
+      const link = document.body.querySelector<HTMLAnchorElement>(
+        '.time-tracker-export-summary a[download]',
+      );
+      expect(link).not.toBeNull();
+      expect(link?.download).toBe('time-report.xlsx');
+      expect(link?.target).toBe('');
+
+      const dispatched = link?.dispatchEvent(
+        new MouseEvent('click', { bubbles: true, cancelable: true, button: 0 }),
+      );
+      await flushPromises();
+      await flushPromises();
+
+      expect(dispatched).toBe(false);
+      expect(showSaveDialog).toHaveBeenCalledWith('time-report.xlsx');
+      expect(fetchSpy).toHaveBeenCalledWith(
+        'http://localhost/api/plugins/artifacts/files/default/artifact-1?download=1',
+      );
+      expect(saveArtifactFile).toHaveBeenCalledWith('/tmp/time-report.xlsx', 'AQID');
+    } finally {
+      handle.unmount();
+    }
   });
 
   it('exports task description only when entries have no notes', async () => {

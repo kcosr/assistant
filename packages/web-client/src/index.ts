@@ -239,6 +239,7 @@ import {
 } from './utils/capacitor';
 import {
   configureDesktop,
+  installDesktopExternalLinkHandler,
   isDesktopNative,
   waitForDesktopProxyReady,
 } from './utils/desktop';
@@ -279,6 +280,7 @@ async function main(): Promise<void> {
 
   // Configure native desktop backend URL (no-op on web/mobile) before WebSocket setup.
   await configureDesktop();
+  installDesktopExternalLinkHandler();
   if (isDesktopNative()) {
     await waitForDesktopProxyReady();
   }

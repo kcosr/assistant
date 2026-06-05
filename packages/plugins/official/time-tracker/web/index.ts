@@ -7,6 +7,11 @@ import { PanelChromeController } from '../../../../web-client/src/controllers/pa
 import { ListColumnPreferencesClient } from '../../../../web-client/src/utils/listColumnPreferences';
 import { apiFetch, getApiBaseUrl } from '../../../../web-client/src/utils/api';
 import {
+  isDesktopNative,
+  saveDesktopArtifactFile,
+  showDesktopSaveDialog,
+} from '../../../../web-client/src/utils/desktop';
+import {
   CORE_PANEL_SERVICES_CONTEXT_KEY,
   type PanelCoreServices,
 } from '../../../../web-client/src/utils/panelServices';
@@ -422,6 +427,32 @@ function buildArtifactsDownloadUrl(options: { instanceId: string; artifactId: st
   return `${base}/api/plugins/artifacts/files/${encodeURIComponent(
     options.instanceId,
   )}/${encodeURIComponent(options.artifactId)}?download=1`;
+}
+
+function arrayBufferToBase64(buffer: ArrayBuffer): string {
+  const bytes = new Uint8Array(buffer);
+  const chunkSize = 0x8000;
+  let binary = '';
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
+  }
+  return btoa(binary);
+}
+
+async function saveDownloadWithDesktop(url: string, suggestedName: string): Promise<boolean> {
+  const targetPath = await showDesktopSaveDialog(suggestedName);
+  if (!targetPath) {
+    return false;
+  }
+
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error(`Failed to download XLSX: ${response.status}`);
+  }
+
+  const buffer = await response.arrayBuffer();
+  await saveDesktopArtifactFile(targetPath, arrayBufferToBase64(buffer));
+  return true;
 }
 
 function parseDateString(value: string): Date | null {
@@ -1583,9 +1614,24 @@ if (!registry || typeof registry.registerPanel !== 'function') {
             downloadRow.textContent = 'Download: ';
             const link = document.createElement('a');
             link.href = downloadUrl;
-            link.target = '_blank';
             link.rel = 'noopener';
+            link.download = result.artifact.filename;
             link.textContent = result.artifact.filename;
+            if (isDesktopNative()) {
+              link.addEventListener('click', (clickEvent) => {
+                clickEvent.preventDefault();
+                void saveDownloadWithDesktop(downloadUrl, result.artifact.filename)
+                  .then((saved) => {
+                    if (saved) {
+                      setStatus('Downloaded XLSX.');
+                    }
+                  })
+                  .catch((downloadError) => {
+                    setStatus('Failed to download XLSX.');
+                    console.warn('[time-tracker] Failed to save XLSX via desktop dialog:', downloadError);
+                  });
+              });
+            }
             downloadRow.appendChild(link);
             success.appendChild(downloadRow);
 

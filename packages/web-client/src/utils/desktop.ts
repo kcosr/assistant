@@ -51,6 +51,7 @@ type ProxyReadyDetail = {
 
 const PROTOCOL_RE = /^[a-z][a-z0-9+.-]*:\/\//i;
 const DESKTOP_PROXY_TIMEOUT_MS = 1500;
+const EXTERNAL_LINK_PROTOCOLS = new Set(['http:', 'https:', 'mailto:']);
 
 function withTimeout<T>(
   promise: Promise<T>,
@@ -269,6 +270,59 @@ export async function openDesktopExternal(url: string): Promise<void> {
     return;
   }
   await invoke('plugin:shell|open', { path: url });
+}
+
+function resolveExternalDesktopHref(href: string): string | null {
+  const trimmed = href.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  try {
+    const url = new URL(trimmed, window.location.href);
+    if (!EXTERNAL_LINK_PROTOCOLS.has(url.protocol)) {
+      return null;
+    }
+    return url.toString();
+  } catch {
+    return null;
+  }
+}
+
+export function installDesktopExternalLinkHandler(root: Document | HTMLElement = document): () => void {
+  if (!isDesktopNative()) {
+    return () => undefined;
+  }
+
+  const handleClick = (event: Event): void => {
+    if (!(event instanceof MouseEvent)) {
+      return;
+    }
+    if (event.defaultPrevented || event.button !== 0) {
+      return;
+    }
+    if (!(event.target instanceof Element)) {
+      return;
+    }
+
+    const anchor = event.target.closest<HTMLAnchorElement>('a[href]');
+    if (!anchor || anchor.hasAttribute('download')) {
+      return;
+    }
+
+    const externalUrl = resolveExternalDesktopHref(anchor.href);
+    if (!externalUrl) {
+      return;
+    }
+
+    event.preventDefault();
+    void openDesktopExternal(externalUrl).catch((err) => {
+      console.error('[desktop] Failed to open external link:', err);
+    });
+  };
+
+  root.addEventListener('click', handleClick, true);
+  return () => root.removeEventListener('click', handleClick, true);
 }
 
 export async function configureDesktop(): Promise<void> {
