@@ -1578,6 +1578,16 @@ public final class AssistantVoiceRuntimeService extends Service {
             Log.d(TAG, "enqueueQueueItem dropped invalid item=" + describeQueueItem(item));
             return;
         }
+        if (shouldDedupManualAutoListenQueueItem(item, activeQueueItem)) {
+            Log.d(TAG, "enqueueQueueItem deduped active manual auto-listen item=" + describeQueueItem(item));
+            return;
+        }
+        for (AssistantVoiceQueueItem queued : queuedVoiceItems) {
+            if (shouldDedupManualAutoListenQueueItem(item, queued)) {
+                Log.d(TAG, "enqueueQueueItem deduped queued manual auto-listen item=" + describeQueueItem(item));
+                return;
+            }
+        }
         String dedupKey = item.dedupKey();
         if (!dedupKey.isEmpty()) {
             if (activeQueueItem != null && dedupKey.equals(activeQueueItem.dedupKey())) {
@@ -2798,14 +2808,31 @@ public final class AssistantVoiceRuntimeService extends Service {
         }
     }
 
-    private static String resolveQueueRecognitionReason(AssistantVoiceQueueItem item) {
+    static String resolveQueueRecognitionReason(AssistantVoiceQueueItem item) {
         if (item != null && item.manual) {
             return "manual_notification_mic";
         }
-        if (item != null && "manual_auto_listen".equals(item.notificationKind)) {
+        if (isManualAutoListenQueueItem(item)) {
             return "manual_auto_listen";
         }
         return "playback_completion";
+    }
+
+    static boolean isManualAutoListenQueueItem(AssistantVoiceQueueItem item) {
+        return item != null
+            && item.isListenOnly()
+            && !item.manual
+            && ("manual_auto_listen".equals(item.notificationKind) || item.isSessionAttention());
+    }
+
+    static boolean shouldDedupManualAutoListenQueueItem(
+        AssistantVoiceQueueItem incoming,
+        AssistantVoiceQueueItem existing
+    ) {
+        return isManualAutoListenQueueItem(incoming)
+            && isManualAutoListenQueueItem(existing)
+            && !incoming.sessionId.isEmpty()
+            && incoming.sessionId.equals(existing.sessionId);
     }
 
     private void validateQueuedRecognitionAndMaybeStart(String requestId) {
