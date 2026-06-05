@@ -104,9 +104,7 @@ function createService(
   spawnFn?: typeof import('node:child_process').spawn,
 ) {
   const resolvedPrompt =
-    scheduleOverrides.prompt === null
-      ? undefined
-      : scheduleOverrides.prompt ?? 'Review open PRs';
+    scheduleOverrides.prompt === null ? undefined : (scheduleOverrides.prompt ?? 'Review open PRs');
   const resolvedPreCheck =
     scheduleOverrides.preCheck === null ? undefined : scheduleOverrides.preCheck;
 
@@ -305,9 +303,7 @@ function createServiceWithSessions(
   }> = {},
 ) {
   const resolvedPrompt =
-    scheduleOverrides.prompt === null
-      ? undefined
-      : scheduleOverrides.prompt ?? 'Review open PRs';
+    scheduleOverrides.prompt === null ? undefined : (scheduleOverrides.prompt ?? 'Review open PRs');
   const resolvedPreCheck =
     scheduleOverrides.preCheck === null ? undefined : scheduleOverrides.preCheck;
 
@@ -435,52 +431,50 @@ function createWakeupService(options?: {
     updatedAt: timestamp,
   });
 
-  const startSessionMessageFn = vi.fn(
-    async (): Promise<SessionMessageStartResult> => {
-      if (options?.startStatus === 'busy') {
-        return {
-          response: {
-            sessionId: 'session-1',
-            sessionName: 'Issue Watch',
-            agentId: 'agent',
-            created: false,
-            status: 'busy',
-            code: 'session_busy',
-            message: 'busy',
-          },
-        };
-      }
-      if (options?.startStatus === 'error') {
-        return {
-          response: {
-            sessionId: 'session-1',
-            sessionName: 'Issue Watch',
-            agentId: 'agent',
-            created: false,
-            status: 'error',
-            responseId: 'resp-error',
-            error: 'delivery failed',
-            durationMs: 0,
-          },
-        };
-      }
+  const startSessionMessageFn = vi.fn(async (): Promise<SessionMessageStartResult> => {
+    if (options?.startStatus === 'busy') {
       return {
         response: {
           sessionId: 'session-1',
           sessionName: 'Issue Watch',
           agentId: 'agent',
           created: false,
-          status: 'complete',
-          responseId: 'resp-1',
-          response: 'ok',
-          truncated: false,
-          durationMs: 0,
-          toolCallCount: 0,
-          toolCalls: [],
+          status: 'busy',
+          code: 'session_busy',
+          message: 'busy',
         },
       };
-    },
-  );
+    }
+    if (options?.startStatus === 'error') {
+      return {
+        response: {
+          sessionId: 'session-1',
+          sessionName: 'Issue Watch',
+          agentId: 'agent',
+          created: false,
+          status: 'error',
+          responseId: 'resp-error',
+          error: 'delivery failed',
+          durationMs: 0,
+        },
+      };
+    }
+    return {
+      response: {
+        sessionId: 'session-1',
+        sessionName: 'Issue Watch',
+        agentId: 'agent',
+        created: false,
+        status: 'complete',
+        responseId: 'resp-1',
+        response: 'ok',
+        truncated: false,
+        durationMs: 0,
+        toolCallCount: 0,
+        toolCalls: [],
+      },
+    };
+  });
 
   const queuedTasks: Array<() => Promise<void>> = [];
   const sessionHub = {
@@ -644,10 +638,7 @@ describe('ScheduledSessionService', () => {
   });
 
   it('composes prompt with pre-check output', async () => {
-    const spawn = createSpawnStub([
-      { exitCode: 0, stdout: 'deps: updated' },
-      { exitCode: 0 },
-    ]);
+    const spawn = createSpawnStub([{ exitCode: 0, stdout: 'deps: updated' }, { exitCode: 0 }]);
     const { service } = createService(
       { prompt: 'Review deps', preCheck: 'check-deps.sh' },
       spawn.spawnFn,
@@ -685,7 +676,10 @@ describe('ScheduledSessionService', () => {
   });
 
   it('allows maxConcurrent greater than one only to matter when reuseSession is false', async () => {
-    const spawn = createSpawnStub([{ exitCode: 0, defer: true }, { exitCode: 0, defer: true }]);
+    const spawn = createSpawnStub([
+      { exitCode: 0, defer: true },
+      { exitCode: 0, defer: true },
+    ]);
     const { service } = createService(
       { enabled: false, reuseSession: false, maxConcurrent: 2 },
       spawn.spawnFn,
@@ -899,14 +893,32 @@ describe('ScheduledSessionService', () => {
     service.shutdown();
   });
 
-  it('sets, lists, and cancels one current-session wake-up', async () => {
-    const { service } = createWakeupService();
+  it('creates, lists, and cancels current-session wake-ups by id', async () => {
+    const { service, sessionIndex } = createWakeupService();
     await service.initialize();
+    const timestamp = new Date().toISOString();
+    sessionIndex.sessions.push({
+      sessionId: 'session-2',
+      agentId: 'agent',
+      name: 'Other Session',
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    });
 
     const runAt = new Date(Date.now() + 60_000);
-    const created = await service.setWakeupForSession({
+    const created = await service.createWakeupForSession({
       sessionId: 'session-1',
       message: 'Check the status of the issue',
+      runAt,
+    });
+    await service.createWakeupForSession({
+      sessionId: 'session-1',
+      message: 'Check the follow-up',
+      runAt: new Date(runAt.getTime() + 60_000),
+    });
+    await service.createWakeupForSession({
+      sessionId: 'session-2',
+      message: 'Other session wake-up',
       runAt,
     });
 
@@ -917,71 +929,96 @@ describe('ScheduledSessionService', () => {
       message: 'Check the status of the issue',
       runAt: runAt.toISOString(),
     });
-    await expect(service.listWakeups()).resolves.toHaveLength(1);
+    await expect(service.listWakeupsForSession('session-1')).resolves.toHaveLength(2);
 
-    const cancel = await service.cancelWakeupForSession('session-1');
+    const cancel = await service.cancelWakeupForSession('session-1', created.wakeupId);
     expect(cancel).toEqual({
       cancelled: true,
       sessionId: 'session-1',
       wakeupId: created.wakeupId,
     });
-    await expect(service.listWakeups()).resolves.toEqual([]);
+    await expect(service.listWakeupsForSession('session-1')).resolves.toEqual([
+      expect.objectContaining({ message: 'Check the follow-up' }),
+    ]);
+    await expect(service.listWakeupsForSession('session-2')).resolves.toEqual([
+      expect.objectContaining({ message: 'Other session wake-up' }),
+    ]);
 
     service.shutdown();
   });
 
-  it('rejects a second wake-up for the same session unless replace is true', async () => {
+  it('updates pending wake-ups by id', async () => {
     const { service } = createWakeupService();
     await service.initialize();
 
     const runAt = new Date(Date.now() + 60_000);
-    await service.setWakeupForSession({
+    const created = await service.createWakeupForSession({
       sessionId: 'session-1',
       message: 'First',
       runAt,
     });
+    const updatedRunAt = new Date(runAt.getTime() + 60_000);
 
-    await expect(
-      service.setWakeupForSession({
-        sessionId: 'session-1',
-        message: 'Second',
-        runAt,
-      }),
-    ).rejects.toThrow(/already has a pending wake-up/i);
-
-    const replacement = await service.setWakeupForSession({
+    const updated = await service.updateWakeupForSession({
       sessionId: 'session-1',
+      wakeupId: created.wakeupId,
       message: 'Second',
-      runAt,
-      replace: true,
+      runAt: updatedRunAt,
     });
-    expect(replacement.message).toBe('Second');
-    await expect(service.listWakeups()).resolves.toHaveLength(1);
+
+    expect(updated).toMatchObject({
+      wakeupId: created.wakeupId,
+      message: 'Second',
+      runAt: updatedRunAt.toISOString(),
+    });
+    await expect(service.listWakeupsForSession('session-1')).resolves.toHaveLength(1);
 
     service.shutdown();
   });
 
-  it('preserves one wake-up per session under concurrent set calls', async () => {
+  it('rejects updates for non-pending wake-ups', async () => {
+    const { service, sessionHub } = createWakeupService({ active: true });
+    await service.initialize();
+
+    const created = await service.createWakeupForSession({
+      sessionId: 'session-1',
+      message: 'Check the issue',
+      runAt: new Date(Date.now() + 5),
+    });
+    await wait(40);
+
+    expect(sessionHub.queueMessage).toHaveBeenCalled();
+    await expect(
+      service.updateWakeupForSession({
+        sessionId: 'session-1',
+        wakeupId: created.wakeupId,
+        message: 'Updated',
+      }),
+    ).rejects.toThrow(/only pending wake-ups can be updated/i);
+
+    service.shutdown();
+  });
+
+  it('allows concurrent wake-up creates for the same session', async () => {
     const { service } = createWakeupService();
     await service.initialize();
 
     const runAt = new Date(Date.now() + 60_000);
     const results = await Promise.allSettled([
-      service.setWakeupForSession({
+      service.createWakeupForSession({
         sessionId: 'session-1',
         message: 'First',
         runAt,
       }),
-      service.setWakeupForSession({
+      service.createWakeupForSession({
         sessionId: 'session-1',
         message: 'Second',
         runAt,
       }),
     ]);
 
-    expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
-    expect(results.filter((result) => result.status === 'rejected')).toHaveLength(1);
-    await expect(service.listWakeups()).resolves.toHaveLength(1);
+    expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(2);
+    await expect(service.listWakeupsForSession('session-1')).resolves.toHaveLength(2);
 
     service.shutdown();
   });
@@ -991,7 +1028,7 @@ describe('ScheduledSessionService', () => {
     await service.initialize();
 
     await expect(
-      service.setWakeupForSession({
+      service.createWakeupForSession({
         sessionId: 'session-1',
         message: 'Check the issue',
         runAt: new Date(Date.now() + 60_000),
@@ -1042,7 +1079,7 @@ describe('ScheduledSessionService', () => {
 
     await service.initialize();
 
-    await expect(service.listWakeups()).resolves.toEqual([
+    await expect(service.listWakeupsForSession('session-1')).resolves.toEqual([
       expect.objectContaining({
         wakeupId: 'wakeup-queued',
         status: 'pending',
@@ -1066,7 +1103,7 @@ describe('ScheduledSessionService', () => {
     writeFileSync(path.join(storeDir, 'wakeups.json'), '{bad json\n', 'utf8');
 
     await expect(service.initialize()).resolves.toBeUndefined();
-    await expect(service.listWakeups()).resolves.toEqual([]);
+    await expect(service.listWakeupsForSession('session-1')).resolves.toEqual([]);
 
     service.shutdown();
   });
@@ -1075,7 +1112,7 @@ describe('ScheduledSessionService', () => {
     const { service, startSessionMessageFn } = createWakeupService();
     await service.initialize();
 
-    await service.setWakeupForSession({
+    await service.createWakeupForSession({
       sessionId: 'session-1',
       message: 'Check the issue',
       runAt: new Date(Date.now() + 5),
@@ -1091,7 +1128,7 @@ describe('ScheduledSessionService', () => {
         }),
       }),
     );
-    await expect(service.listWakeups()).resolves.toEqual([]);
+    await expect(service.listWakeupsForSession('session-1')).resolves.toEqual([]);
 
     service.shutdown();
   });
@@ -1105,7 +1142,7 @@ describe('ScheduledSessionService', () => {
     startSessionMessageFn.mockImplementationOnce(async () => delivery);
     await service.initialize();
 
-    await service.setWakeupForSession({
+    await service.createWakeupForSession({
       sessionId: 'session-1',
       message: 'Check the issue',
       runAt: new Date(Date.now() + 5),
@@ -1113,7 +1150,7 @@ describe('ScheduledSessionService', () => {
     await wait(40);
 
     expect(startSessionMessageFn).toHaveBeenCalled();
-    await expect(service.listWakeups()).resolves.toEqual([
+    await expect(service.listWakeupsForSession('session-1')).resolves.toEqual([
       expect.objectContaining({
         sessionId: 'session-1',
         status: 'delivering',
@@ -1136,7 +1173,7 @@ describe('ScheduledSessionService', () => {
       },
     });
     await tick();
-    await expect(service.listWakeups()).resolves.toEqual([]);
+    await expect(service.listWakeupsForSession('session-1')).resolves.toEqual([]);
 
     service.shutdown();
   });
@@ -1147,7 +1184,7 @@ describe('ScheduledSessionService', () => {
     });
     await service.initialize();
 
-    await service.setWakeupForSession({
+    await service.createWakeupForSession({
       sessionId: 'session-1',
       message: 'Check the issue',
       runAt: new Date(Date.now() + 5),
@@ -1155,7 +1192,7 @@ describe('ScheduledSessionService', () => {
     await wait(40);
 
     expect(startSessionMessageFn).toHaveBeenCalled();
-    await expect(service.listWakeups()).resolves.toEqual([
+    await expect(service.listWakeupsForSession('session-1')).resolves.toEqual([
       expect.objectContaining({
         sessionId: 'session-1',
         status: 'pending',
@@ -1171,7 +1208,7 @@ describe('ScheduledSessionService', () => {
     });
     await service.initialize();
 
-    await service.setWakeupForSession({
+    await service.createWakeupForSession({
       sessionId: 'session-1',
       message: 'Check the issue',
       runAt: new Date(Date.now() + 5),
@@ -1186,7 +1223,7 @@ describe('ScheduledSessionService', () => {
       }),
     );
     expect(startSessionMessageFn).not.toHaveBeenCalled();
-    await expect(service.listWakeups()).resolves.toEqual([
+    await expect(service.listWakeupsForSession('session-1')).resolves.toEqual([
       expect.objectContaining({
         sessionId: 'session-1',
         message: 'Check the issue',
@@ -1203,7 +1240,7 @@ describe('ScheduledSessionService', () => {
         }),
       }),
     );
-    await expect(service.listWakeups()).resolves.toEqual([]);
+    await expect(service.listWakeupsForSession('session-1')).resolves.toEqual([]);
 
     service.shutdown();
   });

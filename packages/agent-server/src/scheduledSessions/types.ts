@@ -137,7 +137,13 @@ export interface SessionWakeupCreateInput {
   sessionId: string;
   message: string;
   runAt: Date;
-  replace?: boolean;
+}
+
+export interface SessionWakeupUpdateInput {
+  sessionId: string;
+  wakeupId: string;
+  message?: string;
+  runAt?: Date;
 }
 
 export interface SessionWakeupInfo {

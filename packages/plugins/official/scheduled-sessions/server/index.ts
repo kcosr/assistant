@@ -110,6 +110,15 @@ function parseWakeupRunAt(parsed: Record<string, unknown>): Date {
   return runAt;
 }
 
+function parseOptionalWakeupRunAt(parsed: Record<string, unknown>): Date | undefined {
+  const hasRunAt = parsed['runAt'] !== undefined;
+  const hasDelay = parsed['delaySeconds'] !== undefined;
+  if (!hasRunAt && !hasDelay) {
+    return undefined;
+  }
+  return parseWakeupRunAt(parsed);
+}
+
 function parseOptionalNullableString(
   value: unknown,
   field: string,
@@ -164,7 +173,9 @@ function wrapServiceError(err: unknown): never {
       ? 'agent_not_found'
       : err.message.startsWith('Session not found:')
         ? 'session_not_found'
-        : 'schedule_not_found';
+        : err.message.startsWith('Wake-up not found:')
+          ? 'wakeup_not_found'
+          : 'schedule_not_found';
     throw new ToolError(code, err.message);
   }
   throw err;
@@ -275,27 +286,59 @@ export function createPlugin(_options: PluginFactoryArgs): PluginModule {
         }
       },
       'wakeup-list': async (_args, ctx) => {
-        return { wakeups: await requireService(ctx).listWakeups() };
+        const sessionId = ctx.sessionId?.trim();
+        const wakeups = sessionId
+          ? await requireService(ctx).listWakeupsForSession(sessionId)
+          : await requireService(ctx).listWakeups();
+        return { wakeups };
       },
-      'wakeup-set': async (args, ctx) => {
+      'wakeup-create': async (args, ctx) => {
         const parsed = asObject(args);
         const message = requireNonEmptyString(parsed['message'], 'message');
         const runAt = parseWakeupRunAt(parsed);
-        const replace = parseOptionalBoolean(parsed['replace'], 'replace');
         try {
-          return await requireService(ctx).setWakeupForSession({
+          return await requireService(ctx).createWakeupForSession({
             sessionId: parseRequiredSessionId(ctx),
             message,
             runAt,
-            ...(replace !== undefined ? { replace } : {}),
+          });
+        } catch (err) {
+          wrapServiceError(err);
+        }
+      },
+      'wakeup-update': async (args, ctx) => {
+        const parsed = asObject(args);
+        const wakeupId = requireNonEmptyString(parsed['wakeupId'], 'wakeupId');
+        const message =
+          parsed['message'] !== undefined
+            ? requireNonEmptyString(parsed['message'], 'message')
+            : undefined;
+        const runAt = parseOptionalWakeupRunAt(parsed);
+        if (message === undefined && runAt === undefined) {
+          throw new ToolError(
+            'invalid_arguments',
+            'Provide message, runAt, or delaySeconds to update',
+          );
+        }
+        try {
+          return await requireService(ctx).updateWakeupForSession({
+            sessionId: parseRequiredSessionId(ctx),
+            wakeupId,
+            ...(message !== undefined ? { message } : {}),
+            ...(runAt !== undefined ? { runAt } : {}),
           });
         } catch (err) {
           wrapServiceError(err);
         }
       },
       'wakeup-cancel': async (_args, ctx) => {
+        const parsed = asObject(_args);
+        const wakeupId = requireNonEmptyString(parsed['wakeupId'], 'wakeupId');
         try {
-          return await requireService(ctx).cancelWakeupForSession(parseRequiredSessionId(ctx));
+          return await requireService(ctx).cancelWakeupForSession(
+            parseRequiredSessionId(ctx),
+            wakeupId,
+          );
         } catch (err) {
           wrapServiceError(err);
         }
