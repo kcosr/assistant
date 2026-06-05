@@ -7,6 +7,12 @@ import { PanelChromeController } from '../../../../web-client/src/controllers/pa
 import type { CoreServices } from '../../../../web-client/src/utils/panelServices';
 import { getPanelContextKey } from '../../../../web-client/src/utils/panelContext';
 import { apiFetch, getApiBaseUrl } from '../../../../web-client/src/utils/api';
+import {
+  isDesktopNative,
+  openDesktopExternal,
+  saveDesktopArtifactFile,
+  showDesktopSaveDialog,
+} from '../../../../web-client/src/utils/desktop';
 
 interface ArtifactMetadata {
   id: string;
@@ -77,20 +83,6 @@ const ICONS = {
   externalLink: 'M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6 M15 3h6v6 M10 14L21 3',
 };
 
-function isMobileViewport(): boolean {
-  if (typeof window === 'undefined') {
-    return false;
-  }
-  try {
-    if (typeof window.matchMedia === 'function') {
-      return window.matchMedia('(max-width: 600px)').matches;
-    }
-  } catch {
-    // Ignore matchMedia errors
-  }
-  return window.innerWidth <= 600;
-}
-
 function isCapacitorNative(): boolean {
   if (typeof window === 'undefined') {
     return false;
@@ -102,20 +94,6 @@ function isCapacitorNative(): boolean {
     return win.Capacitor.isNativePlatform();
   }
   return typeof win.Capacitor?.getPlatform === 'function';
-}
-
-function isTauri(): boolean {
-  if (typeof window === 'undefined') {
-    return false;
-  }
-  return !!(window as { __TAURI__?: unknown }).__TAURI__;
-}
-
-type TauriInvoke = <T>(cmd: string, args?: Record<string, unknown>) => Promise<T>;
-
-function getTauriInvoke(): TauriInvoke | null {
-  const win = window as { __TAURI__?: { core?: { invoke?: TauriInvoke } } };
-  return win.__TAURI__?.core?.invoke ?? null;
 }
 
 async function callOperation<T>(operation: string, body: Record<string, unknown>): Promise<T> {
@@ -144,16 +122,13 @@ async function callOperation<T>(operation: string, body: Record<string, unknown>
 }
 
 async function openInBrowser(url: string): Promise<void> {
-  // On Tauri desktop, use the shell plugin to open in system browser
-  if (isTauri()) {
+  // On native desktop, use the host shell to open in the system browser.
+  if (isDesktopNative()) {
     try {
-      const invoke = getTauriInvoke();
-      if (invoke) {
-        await invoke('plugin:shell|open', { path: url });
-        return;
-      }
+      await openDesktopExternal(url);
+      return;
     } catch (err) {
-      console.warn('[artifacts] Failed to open URL via Tauri shell:', err);
+      console.warn('[artifacts] Failed to open URL via desktop shell:', err);
       // Fall through to window.open
     }
   }
@@ -187,22 +162,15 @@ function arrayBufferToBase64(buffer: ArrayBuffer): string {
   return btoa(binary);
 }
 
-async function saveWithTauri(options: {
+async function saveWithDesktop(options: {
   url: string;
   suggestedName: string;
 }): Promise<string | null> {
-  const invoke = getTauriInvoke();
-  if (!invoke) {
+  if (!isDesktopNative()) {
     return null;
   }
 
-  const savePath = await invoke<string | string[] | null>('plugin:dialog|save', {
-    options: {
-      defaultPath: options.suggestedName,
-    },
-  });
-
-  const resolvedPath = Array.isArray(savePath) ? savePath[0] : savePath;
+  const resolvedPath = await showDesktopSaveDialog(options.suggestedName);
   if (!resolvedPath) {
     return null;
   }
@@ -214,10 +182,7 @@ async function saveWithTauri(options: {
   const buffer = await response.arrayBuffer();
   const base64 = arrayBufferToBase64(buffer);
 
-  await invoke('save_artifact_file', {
-    path: resolvedPath,
-    content_base64: base64,
-  });
+  await saveDesktopArtifactFile(resolvedPath, base64);
 
   return resolvedPath;
 }
@@ -891,9 +856,9 @@ function buildArtifactUrl(options: {
           download: true,
         });
 
-        if (isTauri()) {
-          void saveWithTauri({ url, suggestedName: artifact.filename }).catch((err) => {
-            console.warn('[artifacts] Failed to save artifact via Tauri dialog:', err);
+        if (isDesktopNative()) {
+          void saveWithDesktop({ url, suggestedName: artifact.filename }).catch((err) => {
+            console.warn('[artifacts] Failed to save artifact via desktop dialog:', err);
           });
           return;
         }

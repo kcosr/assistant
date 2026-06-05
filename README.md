@@ -304,7 +304,8 @@ Monorepo managed with npm workspaces:
 | `packages/plugins/`        | Plugin packages (core, official, examples)                             |
 | `packages/coding-executor/`| Code execution tools (bash, read, write, edit, grep, find)             |
 | `packages/coding-sidecar/` | Container sidecar for sandboxed code execution                         |
-| `packages/desktop/`        | Tauri desktop app wrapper                                              |
+| `packages/desktop/`        | Canonical Electron desktop app wrapper                                 |
+| `packages/desktop-tauri/`  | Transitional Tauri desktop app wrapper                                 |
 | `packages/mobile-web/`     | Capacitor mobile app wrapper                                           |
 | `packages/notify-proxy/`   | Push notification proxy server                                         |
 | `packages/push-cli/`       | CLI for sending push notifications                                     |
@@ -340,7 +341,8 @@ For the full documentation map, see [docs/index.md](docs/index.md).
 | [Web Client](packages/web-client/README.md)            | Browser client architecture and development.                 |
 | [Plugin CLI Runtime](packages/assistant-cli/README.md) | Internal CLI runtime used by plugin build output.            |
 | [Shared](packages/shared/README.md)                    | Shared types, protocol definitions, and audio frame helpers. |
-| [Desktop](packages/desktop/README.md)                  | Tauri desktop app wrapper and build steps.                   |
+| [Desktop](packages/desktop/README.md)                  | Canonical Electron desktop app wrapper and build steps.      |
+| [Desktop Tauri](packages/desktop-tauri/README.md)      | Transitional Tauri desktop app wrapper and build steps.      |
 | [Mobile Web](packages/mobile-web/README.md)            | Capacitor mobile app wrapper for Android/iOS.                |
 | [Notify Proxy](packages/notify-proxy/README.md)        | Push notification proxy server.                              |
 | [Push CLI](packages/push-cli/README.md)                | CLI for sending push notifications.                          |

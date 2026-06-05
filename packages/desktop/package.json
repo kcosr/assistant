@@ -1,24 +1,29 @@
 {
   "name": "@assistant/desktop",
   "version": "0.18.2",
+  "author": "kcosr",
   "private": true,
-  "description": "Tauri desktop build for AI Assistant",
+  "description": "Electron desktop app for AI Assistant",
+  "main": "dist/main.js",
   "scripts": {
-    "icons:generate": "node scripts/generate-icons.mjs && node scripts/generate-icns.mjs",
+    "build": "npm run build:main",
+    "build:main": "node scripts/build-main.mjs",
     "build:plugins": "node scripts/build-plugins.mjs",
-    "pretauri:dev": "npm run bundle -w @assistant/web-client && npm run build:plugins && node scripts/sync-plugin-assets.mjs",
-    "pretauri:dev:work": "npm run pretauri:dev",
-    "pretauri:build": "npm run build -w @assistant/web-client && npm run build:plugins && node scripts/sync-plugin-assets.mjs",
-    "pretauri:build:work": "npm run pretauri:build",
-    "tauri": "tauri",
-    "tauri:dev": "tauri dev",
-    "tauri:dev:work": "ASSISTANT_DESKTOP_DEFAULT_BACKEND_URL=https://assistant/assistant-work tauri dev -c src-tauri/tauri.work.conf.json",
-    "tauri:build": "tauri build",
-    "tauri:build:work": "ASSISTANT_DESKTOP_DEFAULT_BACKEND_URL=https://assistant/assistant-work tauri build -c src-tauri/tauri.work.conf.json",
-    "tauri:icon": "tauri icon"
+    "preelectron:dev": "npm run bundle -w @assistant/web-client && npm run build:plugins && node scripts/sync-plugin-assets.mjs",
+    "preelectron:dev:work": "npm run preelectron:dev",
+    "preelectron:build": "npm run build -w @assistant/web-client && npm run build:plugins && node scripts/sync-plugin-assets.mjs",
+    "preelectron:build:work": "npm run preelectron:build",
+    "electron:dev": "npm run build:main && electron .",
+    "electron:dev:work": "ASSISTANT_DESKTOP_VARIANT=work ASSISTANT_DESKTOP_DEFAULT_BACKEND_URL=https://assistant/assistant-work npm run build:main && ASSISTANT_DESKTOP_VARIANT=work ASSISTANT_DESKTOP_DEFAULT_BACKEND_URL=https://assistant/assistant-work electron .",
+    "electron:build": "npm run build:main && electron-builder --config electron-builder.config.cjs",
+    "electron:build:work": "ASSISTANT_DESKTOP_VARIANT=work ASSISTANT_DESKTOP_DEFAULT_BACKEND_URL=https://assistant/assistant-work npm run build:main && ASSISTANT_DESKTOP_VARIANT=work ASSISTANT_DESKTOP_DEFAULT_BACKEND_URL=https://assistant/assistant-work electron-builder --config electron-builder.config.cjs"
+  },
+  "dependencies": {
+    "ws": "^8.18.3"
   },
   "devDependencies": {
-    "@tauri-apps/cli": "^2",
-    "sharp": "^0.33.0"
+    "@types/ws": "^8.18.1",
+    "electron": "37.10.3",
+    "electron-builder": "^26.0.12"
   }
 }

@@ -1,0 +1,115 @@
+// @vitest-environment jsdom
+import { afterEach, describe, expect, it, vi } from 'vitest';
+
+import {
+  configureDesktop,
+  installDesktopExternalLinkHandler,
+  waitForDesktopProxyReady,
+} from './desktop';
+
+afterEach(() => {
+  vi.useRealTimers();
+  delete (window as { assistantDesktop?: unknown }).assistantDesktop;
+  delete (window as { ASSISTANT_API_HOST?: string }).ASSISTANT_API_HOST;
+  delete (window as { ASSISTANT_INSECURE?: boolean }).ASSISTANT_INSECURE;
+  delete (window as { ASSISTANT_WS_PORT?: number }).ASSISTANT_WS_PORT;
+});
+
+describe('configureDesktop', () => {
+  it('configures Electron proxy globals from the preload bridge', async () => {
+    const onProxyReady = vi.fn();
+    (window as typeof window & { assistantDesktop?: unknown }).assistantDesktop = {
+      getProxyUrl: vi.fn().mockResolvedValue('localhost:49152'),
+      getWsProxyPort: vi.fn().mockResolvedValue(49153),
+      onProxyReady,
+    };
+
+    await configureDesktop();
+
+    expect(onProxyReady).toHaveBeenCalledTimes(1);
+    expect(window.ASSISTANT_API_HOST).toBe('localhost:49152');
+    expect(window.ASSISTANT_INSECURE).toBe(true);
+    expect(window.ASSISTANT_WS_PORT).toBe(49153);
+  });
+
+  it('applies Electron proxy-ready events after startup', async () => {
+    let handler: (payload: { http_port?: number; ws_port?: number }) => void = () => undefined;
+    (window as typeof window & { assistantDesktop?: unknown }).assistantDesktop = {
+      getProxyUrl: vi.fn().mockResolvedValue(''),
+      getWsProxyPort: vi.fn().mockResolvedValue(0),
+      onProxyReady: vi.fn((callback) => {
+        handler = callback;
+        return () => undefined;
+      }),
+    };
+
+    await configureDesktop();
+    handler({
+      http_port: 49154,
+      ws_port: 49155,
+    });
+
+    expect(window.ASSISTANT_API_HOST).toBe('localhost:49154');
+    expect(window.ASSISTANT_INSECURE).toBe(true);
+    expect(window.ASSISTANT_WS_PORT).toBe(49155);
+  });
+});
+
+describe('waitForDesktopProxyReady', () => {
+  it('resolves when the desktop proxy-ready event fires', async () => {
+    (window as typeof window & { assistantDesktop?: unknown }).assistantDesktop = {};
+
+    const waitPromise = waitForDesktopProxyReady(1000);
+    window.dispatchEvent(new CustomEvent('assistant:desktop-proxy-ready'));
+
+    await expect(waitPromise).resolves.toBe(true);
+  });
+});
+
+describe('installDesktopExternalLinkHandler', () => {
+  it('opens normal external links through the desktop bridge', async () => {
+    const openExternal = vi.fn().mockResolvedValue(undefined);
+    (window as typeof window & { assistantDesktop?: unknown }).assistantDesktop = {
+      openExternal,
+    };
+    const cleanup = installDesktopExternalLinkHandler();
+    const link = document.createElement('a');
+    link.href = 'https://example.test/report.html';
+    link.textContent = 'Report';
+    document.body.append(link);
+
+    const click = new MouseEvent('click', { bubbles: true, cancelable: true, button: 0 });
+    const dispatched = link.dispatchEvent(click);
+    await Promise.resolve();
+
+    expect(dispatched).toBe(false);
+    expect(openExternal).toHaveBeenCalledWith('https://example.test/report.html');
+    cleanup();
+  });
+
+  it('leaves download links for download-specific handlers', async () => {
+    const openExternal = vi.fn().mockResolvedValue(undefined);
+    (window as typeof window & { assistantDesktop?: unknown }).assistantDesktop = {
+      openExternal,
+    };
+    const root = document.createElement('div');
+    const cleanup = installDesktopExternalLinkHandler(root);
+    let preventedByDesktopHandler = false;
+    root.addEventListener('click', (event) => {
+      preventedByDesktopHandler = event.defaultPrevented;
+      event.preventDefault();
+    });
+    const link = document.createElement('a');
+    link.href = 'https://example.test/report.xlsx';
+    link.download = 'report.xlsx';
+    root.append(link);
+
+    const click = new MouseEvent('click', { bubbles: true, cancelable: true, button: 0 });
+    link.dispatchEvent(click);
+    await Promise.resolve();
+
+    expect(preventedByDesktopHandler).toBe(false);
+    expect(openExternal).not.toHaveBeenCalled();
+    cleanup();
+  });
+});

@@ -117,7 +117,7 @@ function updatePackageLock(packageJsonPaths, version) {
 }
 
 function updateTauriConfig(version) {
-  const tauriConfigPath = join(root, 'packages', 'desktop', 'src-tauri', 'tauri.conf.json');
+  const tauriConfigPath = join(root, 'packages', 'desktop-tauri', 'src-tauri', 'tauri.conf.json');
   if (!existsSync(tauriConfigPath)) {
     return false;
   }
@@ -138,7 +138,7 @@ function updateTauriConfig(version) {
 }
 
 function updateCargoToml(version) {
-  const cargoPath = join(root, 'packages', 'desktop', 'src-tauri', 'Cargo.toml');
+  const cargoPath = join(root, 'packages', 'desktop-tauri', 'src-tauri', 'Cargo.toml');
   if (!existsSync(cargoPath)) {
     return false;
   }

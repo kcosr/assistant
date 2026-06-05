@@ -15,10 +15,11 @@
     "packages/web-client",
     "packages/mobile-web",
     "packages/desktop",
+    "packages/desktop-tauri",
     "packages/shared"
   ],
   "scripts": {
-    "clean": "rimraf node_modules \"packages/**/node_modules\" \"packages/**/dist\" \"packages/**/build\" \"packages/desktop/src-tauri/target\" \"packages/mobile-web/android/.gradle\" \"packages/mobile-web/android/.kotlin\" \"packages/mobile-web/android/.cxx\" \"packages/mobile-web/android/app/.cxx\" \"packages/desktop/src-tauri/gen/android\"",
+    "clean": "rimraf node_modules \"packages/**/node_modules\" \"packages/**/dist\" \"packages/**/build\" \"packages/desktop/release\" \"packages/desktop-tauri/src-tauri/target\" \"packages/mobile-web/android/.gradle\" \"packages/mobile-web/android/.kotlin\" \"packages/mobile-web/android/.cxx\" \"packages/mobile-web/android/app/.cxx\" \"packages/desktop-tauri/src-tauri/gen/android\"",
     "build": "npm run build -w @assistant/shared && npm run build -w @assistant/coding-executor && npm run build -w @assistant/agent-server && npm run build -w @assistant/web-client && npm run build:plugins && npm run build -w @assistant/assistant-cli && npm run build -w @assistant/coding-sidecar && npm run build -w @assistant/notify-proxy",
     "build:clean": "npm run clean && npm ci && npm run build",
     "build:parallel": "node scripts/build-parallel.mjs",

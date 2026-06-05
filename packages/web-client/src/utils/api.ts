@@ -61,6 +61,9 @@ function getConfiguredApiUrl(): URL | null {
  * and trailing slashes to produce a clean path prefix.
  */
 function getLocationBasePath(): string {
+  if (window.location.protocol === 'file:') {
+    return '';
+  }
   let pathname = window.location.pathname;
   // Strip known page filenames
   if (pathname.endsWith('/index.html')) {
@@ -90,7 +93,8 @@ function useInsecure(): boolean {
   if (typeof flag === 'boolean') {
     return flag;
   }
-  return !!(window as { __TAURI__?: unknown }).__TAURI__;
+  const win = window as { __TAURI__?: unknown; assistantDesktop?: unknown };
+  return !!win.__TAURI__ || !!win.assistantDesktop;
 }
 
 /**
@@ -129,7 +133,7 @@ export function getApiBaseUrl(): string {
  * Get the WebSocket URL for the backend.
  */
 export function getWebSocketUrl(): string {
-  // Check for separate WebSocket port (used by Tauri proxy)
+  // Check for separate WebSocket port used by the native desktop proxy.
   const wsPort = (window as { ASSISTANT_WS_PORT?: number }).ASSISTANT_WS_PORT;
   if (wsPort && wsPort > 0) {
     return `ws://localhost:${wsPort}`;

@@ -12,6 +12,7 @@ beforeEach(() => {
     delete (window as { ASSISTANT_API_HOST?: string }).ASSISTANT_API_HOST;
     delete (window as { ASSISTANT_INSECURE?: boolean }).ASSISTANT_INSECURE;
     delete (window as { ASSISTANT_WS_PORT?: number }).ASSISTANT_WS_PORT;
+    delete (window as { assistantDesktop?: unknown }).assistantDesktop;
     delete (window as { __TAURI__?: unknown }).__TAURI__;
   }
 });
