@@ -211,8 +211,9 @@ adb -s <device> exec-out run-as com.assistant.work cat files/voice-runtime.log
   notifications.
 - In `Manual` mode, the microphone can still be started explicitly from the app or notification
   actions, and enabling `Play standalone notifications aloud` still allows standard durable
-  notifications to autoplay through native playback. Session-attention replies still wait for
-  `Response` mode, and automatic notification playback does not re-arm the microphone afterward.
+  notifications to autoplay through native playback. Session-attention replies are not read aloud
+  in `Manual`, but when `Auto Listen` is enabled the native runtime can start recognition
+  automatically after a final assistant reply arrives.
 - Durable session-linked notifications expose `Play` and `Speak` actions both from the Android
   system notification shade and from the in-app Notifications panel cards. Manual actions
   reconstruct fresh local queue items from the stored notification, jump ahead of automatic work,

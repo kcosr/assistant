@@ -50,6 +50,32 @@ final class AssistantVoiceInteractionRules {
         return autoListenEnabled && !AssistantVoiceConfig.AUDIO_MODE_MANUAL.equals(audioMode);
     }
 
+    static boolean shouldAutoListenAfterManualAssistantMessage(
+        String audioMode,
+        boolean autoListenEnabled,
+        AssistantVoicePromptEvent prompt,
+        boolean idle
+    ) {
+        return AssistantVoiceConfig.AUDIO_MODE_MANUAL.equals(audioMode)
+            && autoListenEnabled
+            && prompt != null
+            && prompt.isAssistantResponse()
+            && idle;
+    }
+
+    static boolean shouldAutoListenAfterManualAssistantNotification(
+        String audioMode,
+        boolean autoListenEnabled,
+        AssistantVoiceNotificationRecord notification
+    ) {
+        return AssistantVoiceConfig.AUDIO_MODE_MANUAL.equals(audioMode)
+            && autoListenEnabled
+            && notification != null
+            && notification.isUnread()
+            && notification.isSessionAttention()
+            && notification.isSessionLinked();
+    }
+
     static boolean shouldAutoplayNotification(
         String audioMode,
         boolean standaloneNotificationPlaybackEnabled,

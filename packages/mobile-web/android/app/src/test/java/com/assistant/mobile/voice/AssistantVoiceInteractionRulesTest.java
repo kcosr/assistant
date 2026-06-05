@@ -186,6 +186,127 @@ public final class AssistantVoiceInteractionRulesTest {
     }
 
     @Test
+    public void manualModeAutoListensOnlyAfterAssistantResponsesWhenEnabledAndIdle() {
+        AssistantVoicePromptEvent assistantResponse = new AssistantVoicePromptEvent(
+            "event-1",
+            "session-1",
+            "response-1",
+            "assistant_response",
+            "Answer"
+        );
+        AssistantVoicePromptEvent toolPrompt = new AssistantVoicePromptEvent(
+            "event-2",
+            "session-1",
+            "call-1",
+            "voice_ask",
+            "Question?"
+        );
+
+        assertTrue(AssistantVoiceInteractionRules.shouldAutoListenAfterManualAssistantMessage(
+            AssistantVoiceConfig.AUDIO_MODE_MANUAL,
+            true,
+            assistantResponse,
+            true
+        ));
+        assertFalse(AssistantVoiceInteractionRules.shouldAutoListenAfterManualAssistantMessage(
+            AssistantVoiceConfig.AUDIO_MODE_MANUAL,
+            false,
+            assistantResponse,
+            true
+        ));
+        assertFalse(AssistantVoiceInteractionRules.shouldAutoListenAfterManualAssistantMessage(
+            AssistantVoiceConfig.AUDIO_MODE_MANUAL,
+            true,
+            assistantResponse,
+            false
+        ));
+        assertFalse(AssistantVoiceInteractionRules.shouldAutoListenAfterManualAssistantMessage(
+            AssistantVoiceConfig.AUDIO_MODE_TOOL,
+            true,
+            assistantResponse,
+            true
+        ));
+        assertFalse(AssistantVoiceInteractionRules.shouldAutoListenAfterManualAssistantMessage(
+            AssistantVoiceConfig.AUDIO_MODE_MANUAL,
+            true,
+            toolPrompt,
+            true
+        ));
+    }
+
+    @Test
+    public void manualModeAutoListensForUnreadSessionAttentionNotificationsWhenEnabled() {
+        AssistantVoiceNotificationRecord responseNotification = new AssistantVoiceNotificationRecord(
+            "notif-response",
+            "session_attention",
+            "system",
+            "Latest reply",
+            "Answer",
+            "",
+            "session-1",
+            "Session 1",
+            "speak_then_listen",
+            "",
+            "event-1",
+            4
+        );
+        AssistantVoiceNotificationRecord readResponseNotification = new AssistantVoiceNotificationRecord(
+            "notif-read",
+            "session_attention",
+            "system",
+            "Latest reply",
+            "Answer",
+            "2026-04-06T12:00:00.000Z",
+            "session-1",
+            "Session 1",
+            "speak_then_listen",
+            "",
+            "event-2",
+            5
+        );
+        AssistantVoiceNotificationRecord sessionlessNotification = new AssistantVoiceNotificationRecord(
+            "notif-sessionless",
+            "session_attention",
+            "system",
+            "Latest reply",
+            "Answer",
+            "",
+            "",
+            "",
+            "speak_then_listen",
+            "",
+            "event-3",
+            null
+        );
+
+        assertTrue(AssistantVoiceInteractionRules.shouldAutoListenAfterManualAssistantNotification(
+            AssistantVoiceConfig.AUDIO_MODE_MANUAL,
+            true,
+            responseNotification
+        ));
+        assertFalse(AssistantVoiceInteractionRules.shouldAutoListenAfterManualAssistantNotification(
+            AssistantVoiceConfig.AUDIO_MODE_MANUAL,
+            false,
+            responseNotification
+        ));
+        assertFalse(AssistantVoiceInteractionRules.shouldAutoListenAfterManualAssistantNotification(
+            AssistantVoiceConfig.AUDIO_MODE_TOOL,
+            true,
+            responseNotification
+        ));
+        assertFalse(AssistantVoiceInteractionRules.shouldAutoListenAfterManualAssistantNotification(
+            AssistantVoiceConfig.AUDIO_MODE_MANUAL,
+            true,
+            readResponseNotification
+        ));
+        assertFalse(AssistantVoiceInteractionRules.shouldAutoListenAfterManualAssistantNotification(
+            AssistantVoiceConfig.AUDIO_MODE_MANUAL,
+            true,
+            sessionlessNotification
+        ));
+    }
+
+    @Test
     public void autoplaysOnlyUnreadNotificationsThatMatchTheCurrentAudioMode() {
         AssistantVoiceNotificationRecord responseNotification = new AssistantVoiceNotificationRecord(
             "notif-response",

@@ -1328,19 +1328,41 @@ public final class AssistantVoiceRuntimeService extends Service {
             );
             return;
         }
+        boolean idle = !hasActiveInteraction() && !isManualPreemptStopInFlight();
+        boolean shouldAutoListenAfterManualAssistantMessage =
+            AssistantVoiceInteractionRules.shouldAutoListenAfterManualAssistantMessage(
+                config.audioMode,
+                config.autoListenEnabled,
+                prompt,
+                idle
+            );
         boolean shouldAutoplay = AssistantVoiceInteractionRules.shouldAutoplayEvent(
             config.audioMode,
             prompt,
-            !hasActiveInteraction() && !isManualPreemptStopInFlight()
+            idle
         );
         Log.d(
             TAG,
             "handlePromptEvent decision shouldAutoplay=" + shouldAutoplay
+                + " shouldAutoListenAfterManualAssistantMessage=" + shouldAutoListenAfterManualAssistantMessage
                 + " audioMode=" + safe(config.audioMode)
                 + " autoListenEnabled=" + config.autoListenEnabled
                 + " hasActiveInteraction=" + hasActiveInteraction()
                 + " pendingPreemptStop=" + isManualPreemptStopInFlight()
         );
+        if (shouldAutoListenAfterManualAssistantMessage) {
+            AssistantVoiceQueueItem item =
+                AssistantVoiceQueueItem.fromManualAutoListenPrompt(
+                    prompt,
+                    config.getSessionTitle(prompt.sessionId)
+                );
+            if (item == null) {
+                Log.d(TAG, "handlePromptEvent skipped manual auto-listen prompt with no queue item");
+                return;
+            }
+            enqueueQueueItem(item, false);
+            return;
+        }
         if (!shouldAutoplay) {
             return;
         }
@@ -1511,14 +1533,22 @@ public final class AssistantVoiceRuntimeService extends Service {
     }
 
     private void enqueueAutomaticNotification(AssistantVoiceNotificationRecord notification) {
-        if (!config.isEnabled()
-            || !isRuntimeConnected()
-            || notification == null
-            || !AssistantVoiceInteractionRules.shouldAutoplayNotification(
+        boolean shouldAutoplayNotification =
+            AssistantVoiceInteractionRules.shouldAutoplayNotification(
                 config.audioMode,
                 config.standaloneNotificationPlaybackEnabled,
                 notification
-            )) {
+            );
+        boolean shouldAutoListenAfterManualAssistantNotification =
+            AssistantVoiceInteractionRules.shouldAutoListenAfterManualAssistantNotification(
+                config.audioMode,
+                config.autoListenEnabled,
+                notification
+            );
+        if (!config.isEnabled()
+            || !isRuntimeConnected()
+            || notification == null
+            || (!shouldAutoplayNotification && !shouldAutoListenAfterManualAssistantNotification)) {
             return;
         }
         if (config.ttsPreferredSessionOnly
@@ -1526,14 +1556,17 @@ public final class AssistantVoiceRuntimeService extends Service {
             && !config.preferredVoiceSessionId.equals(notification.sessionId)) {
             return;
         }
-        AssistantVoiceQueueItem item = notification.toAutomaticQueueItem(
-            AssistantVoiceInteractionRules.shouldAutoListenAfterAutomaticNotification(
-                config.audioMode,
-                config.autoListenEnabled
-            ),
-            config.notificationTitlePlaybackEnabled,
-            resolveNotificationSpokenTitle(notification)
-        );
+        String spokenTitle = resolveNotificationSpokenTitle(notification);
+        AssistantVoiceQueueItem item = shouldAutoListenAfterManualAssistantNotification
+            ? notification.toManualAutoListenQueueItem(spokenTitle)
+            : notification.toAutomaticQueueItem(
+                AssistantVoiceInteractionRules.shouldAutoListenAfterAutomaticNotification(
+                    config.audioMode,
+                    config.autoListenEnabled
+                ),
+                config.notificationTitlePlaybackEnabled,
+                spokenTitle
+            );
         if (item == null) {
             return;
         }
@@ -1611,7 +1644,11 @@ public final class AssistantVoiceRuntimeService extends Service {
         Log.d(TAG, "drainVoiceQueueIfPossible starting " + describeQueueItem(next));
         if (next.isListenOnly()) {
             activeQueueItem = next;
-            startRecognition(next.sessionId, "manual_notification_mic");
+            if (next.requiresListenValidation()) {
+                validateQueuedRecognitionAndMaybeStart(next.dedupKey());
+                return;
+            }
+            startRecognition(next.sessionId, resolveQueueRecognitionReason(next));
             return;
         }
         beginQueuedPlayback(next);
@@ -2761,6 +2798,16 @@ public final class AssistantVoiceRuntimeService extends Service {
         }
     }
 
+    private static String resolveQueueRecognitionReason(AssistantVoiceQueueItem item) {
+        if (item != null && item.manual) {
+            return "manual_notification_mic";
+        }
+        if (item != null && "manual_auto_listen".equals(item.notificationKind)) {
+            return "manual_auto_listen";
+        }
+        return "playback_completion";
+    }
+
     private void validateQueuedRecognitionAndMaybeStart(String requestId) {
         AssistantVoiceQueueItem queueItem = activeQueueItem;
         if (queueItem == null) {
@@ -2779,7 +2826,7 @@ public final class AssistantVoiceRuntimeService extends Service {
             AssistantVoiceEventLog.put(details, "requestId", safe(requestId));
             AssistantVoiceEventLog.put(details, "queueItem", describeQueueItem(queueItem));
             recordVoiceEvent("queued_recognition_validation_bypassed", details);
-            startRecognition(queueItem.sessionId, queueItem.manual ? "manual_notification_mic" : "playback_completion");
+            startRecognition(queueItem.sessionId, resolveQueueRecognitionReason(queueItem));
             return;
         }
         Integer expectedSeq = queueItem.sessionActivitySeq;
@@ -2792,7 +2839,9 @@ public final class AssistantVoiceRuntimeService extends Service {
         networkExecutor.execute(() -> {
             Integer currentSeq = fetchSessionActivityRevision(queueItem.sessionId);
             mainHandler.post(() -> {
-                if (!requestId.equals(pendingPlaybackDrainRequestId) && activeQueueItem != queueItem) {
+                boolean playbackDrainStillPending =
+                    !trim(requestId).isEmpty() && requestId.equals(pendingPlaybackDrainRequestId);
+                if (!playbackDrainStillPending && activeQueueItem != queueItem) {
                     Log.d(TAG, "validateQueuedRecognitionAndMaybeStart stale requestId=" + requestId);
                     return;
                 }
@@ -2816,10 +2865,7 @@ public final class AssistantVoiceRuntimeService extends Service {
                     return;
                 }
                 recordVoiceEvent("queued_recognition_validation_passed", resultDetails);
-                startRecognition(
-                    queueItem.sessionId,
-                    queueItem.manual ? "manual_notification_mic" : "playback_completion"
-                );
+                startRecognition(queueItem.sessionId, resolveQueueRecognitionReason(queueItem));
             });
         });
     }

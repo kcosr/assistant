@@ -59,7 +59,9 @@ final class AssistantVoiceQueueItem {
     }
 
     boolean requiresListenValidation() {
-        return startsListeningAfterPlayback() && !allowListenWithoutValidation && sessionActivitySeq != null;
+        return (startsListeningAfterPlayback() || isListenOnly())
+            && !allowListenWithoutValidation
+            && sessionActivitySeq != null;
     }
 
     boolean isSessionAttention() {
@@ -142,6 +144,37 @@ final class AssistantVoiceQueueItem {
             "speak",
             null,
             true,
+            true
+        );
+    }
+
+    static AssistantVoiceQueueItem fromManualAutoListenPrompt(
+        AssistantVoicePromptEvent prompt,
+        String sessionTitle
+    ) {
+        if (prompt == null || !prompt.isAssistantResponse()) {
+            return null;
+        }
+        String sessionId = trim(prompt.sessionId);
+        if (sessionId.isEmpty()) {
+            return null;
+        }
+        String dedupId = trim(prompt.toolCallId).isEmpty()
+            ? trim(prompt.eventId)
+            : trim(prompt.toolCallId);
+        String normalizedSessionTitle = trim(sessionTitle);
+        return new AssistantVoiceQueueItem(
+            "",
+            "manual_auto_listen",
+            "system",
+            dedupId,
+            sessionId,
+            normalizedSessionTitle,
+            normalizedSessionTitle,
+            "",
+            "listen_only",
+            null,
+            false,
             true
         );
     }
