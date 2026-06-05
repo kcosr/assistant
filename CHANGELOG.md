@@ -25,6 +25,7 @@
 
 ### Changed
 
+- Changed Android native voice Manual mode so Auto Listen can start speech recognition after final assistant messages without playing assistant TTS. ([#109](https://github.com/kcosr/assistant/pull/109))
 - Changed the Voice notification session control to use the shared searchable session picker, replacing the prior native select. ([#100](https://github.com/kcosr/assistant/pull/100))
 - Changed time-tracker XLSX exports to include each task description before unique entry-note bullets in the Description column. ([#99](https://github.com/kcosr/assistant/pull/99))
 - Migrated Pi SDK dependencies from `@mariozechner/*` packages to the `@earendil-works/*` scope at `0.74.0`. ([#98](https://github.com/kcosr/assistant/pull/98))
