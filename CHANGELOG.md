@@ -25,6 +25,7 @@
 
 ### Changed
 
+- Changed scheduled-sessions wake-up tools to support multiple current-session wake-ups with create/update/cancel-by-id operations, capped active wake-ups, and redacted admin-panel visibility for other sessions. ([#110](https://github.com/kcosr/assistant/pull/110))
 - Changed Android native voice Manual mode so Auto Listen can start speech recognition after final assistant messages without playing assistant TTS. ([#109](https://github.com/kcosr/assistant/pull/109))
 - Changed the Voice notification session control to use the shared searchable session picker, replacing the prior native select. ([#100](https://github.com/kcosr/assistant/pull/100))
 - Changed time-tracker XLSX exports to include each task description before unique entry-note bullets in the Description column. ([#99](https://github.com/kcosr/assistant/pull/99))
