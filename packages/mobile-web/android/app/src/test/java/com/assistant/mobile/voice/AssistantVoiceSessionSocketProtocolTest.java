@@ -37,6 +37,21 @@ public final class AssistantVoiceSessionSocketProtocolTest {
     }
 
     @Test
+    public void buildManualSubscribeMessageIncludesVoiceToolsAndFinalResponses() {
+        String payload = AssistantVoiceSessionSocketProtocol.buildSubscribeMessage(
+            "session-123",
+            AssistantVoiceConfig.AUDIO_MODE_MANUAL
+        );
+
+        assertTrue(payload.contains("\"type\":\"subscribe\""));
+        assertTrue(payload.contains("\"sessionId\":\"session-123\""));
+        assertTrue(payload.contains("\"serverMessageTypes\":[\"transcript_event\"]"));
+        assertTrue(payload.contains("\"chatEventTypes\":[\"tool_call\",\"assistant_done\"]"));
+        assertTrue(payload.contains("\"toolNames\":[\"voice_speak\",\"voice_ask\"]"));
+        assertTrue(payload.contains("\"messagePhases\":[\"final_answer\"]"));
+    }
+
+    @Test
     public void buildUnsubscribeMessageIncludesSessionId() {
         String payload = AssistantVoiceSessionSocketProtocol.buildUnsubscribeMessage("session-123");
 

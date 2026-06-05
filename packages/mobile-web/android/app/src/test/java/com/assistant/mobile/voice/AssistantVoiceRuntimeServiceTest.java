@@ -35,6 +35,100 @@ import static org.junit.Assert.assertFalse;
 public final class AssistantVoiceRuntimeServiceTest {
     @Test
     @Config(sdk = Build.VERSION_CODES.N)
+    public void manualAutoListenQueueItemsDedupAcrossPromptAndNotificationSources() {
+        AssistantVoiceQueueItem promptItem = AssistantVoiceQueueItem.fromManualAutoListenPrompt(
+            new AssistantVoicePromptEvent(
+                "event-prompt",
+                "session-1",
+                "response-prompt",
+                "assistant_response",
+                "Answer"
+            ),
+            "Session 1"
+        );
+        AssistantVoiceQueueItem notificationItem = new AssistantVoiceNotificationRecord(
+            "notif-1",
+            "session_attention",
+            "system",
+            "Latest assistant reply",
+            "Answer",
+            "",
+            "session-1",
+            "Session 1",
+            "speak_then_listen",
+            "Answer",
+            "different-source-event",
+            Integer.valueOf(7)
+        ).toManualAutoListenQueueItem("Session 1");
+        AssistantVoiceQueueItem otherSessionItem = AssistantVoiceQueueItem.fromManualAutoListenPrompt(
+            new AssistantVoicePromptEvent(
+                "event-other",
+                "session-2",
+                "response-other",
+                "assistant_response",
+                "Answer"
+            ),
+            "Session 2"
+        );
+        AssistantVoiceQueueItem manualMicItem = new AssistantVoiceNotificationRecord(
+            "notif-2",
+            "session_attention",
+            "system",
+            "Latest assistant reply",
+            "Answer",
+            "",
+            "session-1",
+            "Session 1",
+            "speak_then_listen",
+            "Answer",
+            "response-2",
+            Integer.valueOf(8)
+        ).toManualMicQueueItem();
+
+        assertTrue(AssistantVoiceRuntimeService.shouldDedupManualAutoListenQueueItem(
+            notificationItem,
+            promptItem
+        ));
+        assertTrue(AssistantVoiceRuntimeService.shouldDedupManualAutoListenQueueItem(
+            promptItem,
+            notificationItem
+        ));
+        assertFalse(AssistantVoiceRuntimeService.shouldDedupManualAutoListenQueueItem(
+            notificationItem,
+            otherSessionItem
+        ));
+        assertFalse(AssistantVoiceRuntimeService.shouldDedupManualAutoListenQueueItem(
+            notificationItem,
+            manualMicItem
+        ));
+    }
+
+    @Test
+    @Config(sdk = Build.VERSION_CODES.N)
+    public void notificationManualAutoListenUsesManualAutoListenRecognitionReason() {
+        AssistantVoiceQueueItem notificationItem = new AssistantVoiceNotificationRecord(
+            "notif-1",
+            "session_attention",
+            "system",
+            "Latest assistant reply",
+            "Answer",
+            "",
+            "session-1",
+            "Session 1",
+            "speak_then_listen",
+            "Answer",
+            "response-1",
+            Integer.valueOf(7)
+        ).toManualAutoListenQueueItem("Session 1");
+
+        assertEquals(
+            "manual_auto_listen",
+            AssistantVoiceRuntimeService.resolveQueueRecognitionReason(notificationItem)
+        );
+    }
+
+    @Test
+    @Config(sdk = Build.VERSION_CODES.N)
     public void playTextIntentCarriesManualPlaybackPayload() {
         Context context = RuntimeEnvironment.getApplication();
 

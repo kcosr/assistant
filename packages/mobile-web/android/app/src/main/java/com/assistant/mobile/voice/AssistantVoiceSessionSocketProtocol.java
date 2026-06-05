@@ -96,6 +96,14 @@ final class AssistantVoiceSessionSocketProtocol {
                 + "\"messagePhases\":[\"final_answer\"]"
                 + "}";
         }
+        if (AssistantVoiceConfig.AUDIO_MODE_MANUAL.equals(normalizedAudioMode)) {
+            return "{"
+                + "\"serverMessageTypes\":[\"transcript_event\"],"
+                + "\"chatEventTypes\":[\"tool_call\",\"assistant_done\"],"
+                + "\"toolNames\":[\"voice_speak\",\"voice_ask\"],"
+                + "\"messagePhases\":[\"final_answer\"]"
+                + "}";
+        }
         return "{"
             + "\"serverMessageTypes\":[\"transcript_event\"],"
             + "\"chatEventTypes\":[\"tool_call\"],"

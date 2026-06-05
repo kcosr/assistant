@@ -95,8 +95,9 @@ Queue rules:
 - one item may execute at a time
 - automatic items queue behind current local work when the runtime is already alive
 - manual `Play` and `Speak` actions jump ahead and may interrupt current speech
-- `Manual` mode permits explicit mic starts and manual notification `Speak` actions, but automatic
-  notification playback does not transition into recognition afterward
+- `Manual` mode permits explicit mic starts and manual notification `Speak` actions. When
+  `autoListenEnabled` is on, final assistant replies do not play TTS but may enqueue a listen-only
+  automatic follow-up that starts recognition after the final message arrives.
 - interrupted automatic audio work is discarded rather than requeued
 - `Stop` cancels the current item and flushes the local backlog
 - same-session `session_attention` items coalesce before execution

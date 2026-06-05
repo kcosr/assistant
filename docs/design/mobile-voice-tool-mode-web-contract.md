@@ -130,17 +130,18 @@ Existing touchpoints:
 
 ### Auto-listen
 
-`autoListenEnabled` is the source of truth for whether playback automatically transitions
-into recognition.
+`autoListenEnabled` is the source of truth for whether Android-native voice automatically
+transitions into recognition after voice-capable assistant output.
 
 Rules:
 
-- applies only when `Audio Mode` is `Tool` or `Response`
+- applies to `Tool`, `Response`, and Android-native `Manual`
 - when disabled, `voice_ask` and `Response` playback stop after speaking instead of auto-starting
   STT
 - when enabled, `voice_ask` and `Response` playback may transition directly into STT
-- explicit mic starts remain available in `Manual`, `Tool`, and `Response`; `Manual` mode never
-  auto-rearms recognition after notification playback
+- when enabled in Android-native `Manual`, final assistant replies do not play TTS but may start
+  STT automatically after the final message arrives
+- explicit mic starts remain available in `Manual`, `Tool`, and `Response`
 
 ### Adapter URL
 

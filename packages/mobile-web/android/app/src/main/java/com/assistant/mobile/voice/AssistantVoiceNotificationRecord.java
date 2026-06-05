@@ -141,6 +141,26 @@ final class AssistantVoiceNotificationRecord {
         );
     }
 
+    AssistantVoiceQueueItem toManualAutoListenQueueItem(String titleOverride) {
+        if (!isSessionAttention() || !isSessionLinked()) {
+            return null;
+        }
+        return new AssistantVoiceQueueItem(
+            id,
+            kind,
+            source,
+            sourceEventId,
+            sessionId,
+            sessionTitle,
+            resolveSpokenTitle(titleOverride),
+            "",
+            "listen_only",
+            sessionActivitySeq,
+            false,
+            false
+        );
+    }
+
     private static String trim(String value) {
         return value == null ? "" : value.trim();
     }

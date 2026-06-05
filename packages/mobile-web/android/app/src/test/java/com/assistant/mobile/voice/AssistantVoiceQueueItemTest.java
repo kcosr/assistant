@@ -118,6 +118,41 @@ public final class AssistantVoiceQueueItemTest {
     }
 
     @Test
+    public void fromManualAutoListenPromptBuildsListenOnlyQueueItemWithoutSpeech() {
+        AssistantVoicePromptEvent prompt = new AssistantVoicePromptEvent(
+            "event-7",
+            "session-7",
+            "response-7",
+            "assistant_response",
+            "Answer"
+        );
+
+        AssistantVoiceQueueItem item = AssistantVoiceQueueItem.fromManualAutoListenPrompt(
+            prompt,
+            "Session 7"
+        );
+
+        assertNotNull(item);
+        assertEquals("manual_auto_listen", item.notificationKind);
+        assertEquals("system", item.source);
+        assertEquals("response-7", item.dedupKey());
+        assertEquals("session-7", item.sessionId);
+        assertEquals("", item.spokenText);
+        assertEquals("listen_only", item.executionMode);
+        assertTrue(item.isListenOnly());
+        assertTrue(item.requiresSession());
+        assertTrue(!item.requiresListenValidation());
+    }
+
+    @Test
+    public void fromManualAutoListenPromptIgnoresNonAssistantPrompts() {
+        assertNull(AssistantVoiceQueueItem.fromManualAutoListenPrompt(
+            new AssistantVoicePromptEvent("event-8", "session-8", "call-8", "voice_ask", "Question?"),
+            "Session 8"
+        ));
+    }
+
+    @Test
     public void manualNotificationMicSkipsPlaybackAndStartsListeningImmediately() {
         AssistantVoiceNotificationRecord notification = new AssistantVoiceNotificationRecord(
             "notif-1",
@@ -140,6 +175,38 @@ public final class AssistantVoiceQueueItemTest {
         assertEquals("listen_only", item.executionMode);
         assertEquals("", item.spokenText);
         assertTrue(item.isListenOnly());
+        assertTrue(!item.requiresListenValidation());
+    }
+
+    @Test
+    public void manualAutoListenNotificationSkipsPlaybackAndRequiresValidationWhenSequenced() {
+        AssistantVoiceNotificationRecord notification = new AssistantVoiceNotificationRecord(
+            "notif-auto",
+            "session_attention",
+            "system",
+            "Latest assistant reply",
+            "Reply body",
+            "",
+            "session-auto",
+            "Session Auto",
+            "speak_then_listen",
+            "Reply body",
+            "response-auto",
+            Integer.valueOf(9)
+        );
+
+        AssistantVoiceQueueItem item = notification.toManualAutoListenQueueItem("Session Auto");
+
+        assertNotNull(item);
+        assertEquals("session_attention", item.notificationKind);
+        assertEquals("system", item.source);
+        assertEquals("response-auto", item.dedupKey());
+        assertEquals("session-auto", item.sessionId);
+        assertEquals("", item.spokenText);
+        assertEquals("listen_only", item.executionMode);
+        assertTrue(item.isListenOnly());
+        assertTrue(item.requiresSession());
+        assertTrue(item.requiresListenValidation());
     }
 
     @Test
