@@ -38,6 +38,7 @@ let settings: AppSettings = defaultSettings();
 let settingsPath = '';
 let httpProxyServer: http.Server | null = null;
 let wsProxyServer: http.Server | null = null;
+let proxyRestartChain: Promise<void> = Promise.resolve();
 const savePathRegistry = new SavePathRegistry();
 
 function defaultSettings(): AppSettings {
@@ -219,7 +220,7 @@ function createWsProxyServer(): http.Server {
   return server;
 }
 
-async function restartProxies(): Promise<void> {
+async function restartProxiesOnce(): Promise<void> {
   await Promise.all([closeServer(httpProxyServer), closeServer(wsProxyServer)]);
 
   httpProxyServer = createHttpProxyServer();
@@ -232,6 +233,12 @@ async function restartProxies(): Promise<void> {
   settings.wsProxyPort = wsProxyPort;
   await saveSettings();
   emitProxyReady();
+}
+
+function restartProxies(): Promise<void> {
+  const restart = proxyRestartChain.then(() => restartProxiesOnce());
+  proxyRestartChain = restart.catch(() => undefined);
+  return restart;
 }
 
 async function loadSettings(): Promise<void> {
