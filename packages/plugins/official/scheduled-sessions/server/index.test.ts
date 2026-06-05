@@ -186,7 +186,7 @@ describe('scheduled-sessions plugin operations', () => {
     } satisfies Partial<ToolError>);
   });
 
-  it('lists wake-ups for the current session', async () => {
+  it('lists current and read-only other wake-ups for the current session context', async () => {
     const plugin = createPlugin({
       manifest: manifestJson as CombinedPluginManifest,
     });
@@ -195,19 +195,49 @@ describe('scheduled-sessions plugin operations', () => {
       throw new Error('Expected wakeup-list operation');
     }
 
-    const listWakeupsForSession = vi.fn().mockResolvedValue([{ wakeupId: 'wakeup-1' }]);
+    const listWakeupsVisibleToSession = vi.fn().mockResolvedValue([
+      {
+        kind: 'one_time_wakeup',
+        scope: 'current_session',
+        manageable: true,
+        wakeupId: 'wakeup-1',
+      },
+      {
+        kind: 'one_time_wakeup',
+        scope: 'other_session',
+        manageable: false,
+        runAt: '2026-06-05T21:00:00.000Z',
+        summary: 'One-time wake-up from another session',
+      },
+    ]);
     const result = await list(
       {},
       createCtx({
         sessionId: 'session-1',
         scheduledSessionService: {
-          listWakeupsForSession,
+          listWakeupsVisibleToSession,
         },
       }),
     );
 
-    expect(listWakeupsForSession).toHaveBeenCalledWith('session-1');
-    expect(result).toEqual({ wakeups: [{ wakeupId: 'wakeup-1' }] });
+    expect(listWakeupsVisibleToSession).toHaveBeenCalledWith('session-1');
+    expect(result).toEqual({
+      wakeups: [
+        {
+          kind: 'one_time_wakeup',
+          scope: 'current_session',
+          manageable: true,
+          wakeupId: 'wakeup-1',
+        },
+        {
+          kind: 'one_time_wakeup',
+          scope: 'other_session',
+          manageable: false,
+          runAt: '2026-06-05T21:00:00.000Z',
+          summary: 'One-time wake-up from another session',
+        },
+      ],
+    });
   });
 
   it('lists all wake-ups for the panel when no session context is present', async () => {
@@ -220,20 +250,20 @@ describe('scheduled-sessions plugin operations', () => {
     }
 
     const listWakeups = vi.fn().mockResolvedValue([{ wakeupId: 'wakeup-1' }]);
-    const listWakeupsForSession = vi.fn();
+    const listWakeupsVisibleToSession = vi.fn();
     const result = await list(
       {},
       createCtx({
         sessionId: undefined,
         scheduledSessionService: {
           listWakeups,
-          listWakeupsForSession,
+          listWakeupsVisibleToSession,
         },
       }),
     );
 
     expect(listWakeups).toHaveBeenCalledWith();
-    expect(listWakeupsForSession).not.toHaveBeenCalled();
+    expect(listWakeupsVisibleToSession).not.toHaveBeenCalled();
     expect(result).toEqual({ wakeups: [{ wakeupId: 'wakeup-1' }] });
   });
 

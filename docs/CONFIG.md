@@ -641,8 +641,11 @@ Wake-up tools:
 - `scheduled_sessions_wakeup_list`
 
 Wake-up tools intentionally do not accept a `sessionId`; they use the current tool context.
-`list`, `update`, and `cancel` only operate on wake-ups belonging to the current session.
-The scheduled-sessions panel uses the same plugin operation without a session context to show all
+`update` and `cancel` only operate on wake-ups belonging to the current session. In a session
+context, `list` returns manageable current-session wake-ups with IDs and message details plus
+read-only other-session wake-ups with only safe summary fields: `kind`, `scope`, `manageable`,
+`runAt`, `status`, `summary`, false capabilities, and an `omitted` list for redacted fields. The
+scheduled-sessions panel uses the same plugin operation without a session context to show all
 wake-ups for administration.
 
 #### `pi` Provider

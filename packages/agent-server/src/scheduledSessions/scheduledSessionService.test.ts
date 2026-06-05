@@ -930,6 +930,50 @@ describe('ScheduledSessionService', () => {
       runAt: runAt.toISOString(),
     });
     await expect(service.listWakeupsForSession('session-1')).resolves.toHaveLength(2);
+    const visibleWakeups = await service.listWakeupsVisibleToSession('session-1');
+    expect(visibleWakeups).toHaveLength(3);
+    expect(visibleWakeups[0]).toMatchObject({
+      kind: 'one_time_wakeup',
+      scope: 'current_session',
+      manageable: true,
+      wakeupId: created.wakeupId,
+      sessionId: 'session-1',
+      sessionName: 'Issue Watch',
+      agentId: 'agent',
+      message: 'Check the status of the issue',
+      runAt: runAt.toISOString(),
+      capabilities: {
+        canUpdate: true,
+        canCancel: true,
+      },
+    });
+    expect(visibleWakeups[1]).toMatchObject({
+      kind: 'one_time_wakeup',
+      scope: 'other_session',
+      manageable: false,
+      runAt: runAt.toISOString(),
+      status: 'pending',
+      summary: 'One-time wake-up from another session',
+      capabilities: {
+        canUpdate: false,
+        canCancel: false,
+      },
+      omitted: [
+        'wakeupId',
+        'sessionId',
+        'sessionName',
+        'agentId',
+        'message',
+        'createdAt',
+        'managementTarget',
+      ],
+    });
+    expect(visibleWakeups[1]).not.toHaveProperty('wakeupId');
+    expect(visibleWakeups[1]).not.toHaveProperty('sessionId');
+    expect(visibleWakeups[1]).not.toHaveProperty('sessionName');
+    expect(visibleWakeups[1]).not.toHaveProperty('agentId');
+    expect(visibleWakeups[1]).not.toHaveProperty('message');
+    expect(visibleWakeups[1]).not.toHaveProperty('createdAt');
 
     const cancel = await service.cancelWakeupForSession('session-1', created.wakeupId);
     expect(cancel).toEqual({

@@ -288,7 +288,7 @@ export function createPlugin(_options: PluginFactoryArgs): PluginModule {
       'wakeup-list': async (_args, ctx) => {
         const sessionId = ctx.sessionId?.trim();
         const wakeups = sessionId
-          ? await requireService(ctx).listWakeupsForSession(sessionId)
+          ? await requireService(ctx).listWakeupsVisibleToSession(sessionId)
           : await requireService(ctx).listWakeups();
         return { wakeups };
       },

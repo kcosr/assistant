@@ -148,7 +148,7 @@
     },
     {
       "id": "wakeup-list",
-      "summary": "List pending one-shot wake-ups for the current session.",
+      "summary": "List pending one-shot wake-ups. In a session context, current-session wake-ups include IDs and message details for management, while other-session wake-ups are read-only and redacted.",
       "inputSchema": { "type": "object", "properties": {} },
       "capabilities": ["scheduled-sessions.read"]
     },

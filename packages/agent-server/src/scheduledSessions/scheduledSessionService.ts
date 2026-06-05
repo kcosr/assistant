@@ -13,7 +13,6 @@ import { startSessionMessage } from '../sessionMessages';
 import { getDefaultModelForNewSession, getDefaultThinkingForNewSession } from '../sessionModel';
 import {
   buildSessionAttributesPatchFromConfig,
-  getSelectedSessionSkillIds,
   resolveSessionConfigForAgent,
   type ResolvedSessionConfig,
 } from '../sessionConfig';
@@ -39,6 +38,7 @@ import type {
   SessionWakeupCreateInput,
   SessionWakeupDeletedEvent,
   SessionWakeupInfo,
+  SessionWakeupListItem,
   SessionWakeupSetEvent,
   SessionWakeupUpdateInput,
 } from './types';
@@ -354,6 +354,18 @@ export class ScheduledSessionService {
     return Array.from(this.wakeups.values())
       .filter((wakeup) => wakeup.sessionId === sessionId)
       .map((wakeup) => this.buildWakeupInfo(wakeup, sessions))
+      .sort((left, right) => left.runAt.localeCompare(right.runAt));
+  }
+
+  async listWakeupsVisibleToSession(sessionIdInput: string): Promise<SessionWakeupListItem[]> {
+    const sessionId = this.normalizeRequiredString(sessionIdInput, 'sessionId');
+    const sessions = await this.buildSingleSessionSummaryMap(sessionId);
+    return Array.from(this.wakeups.values())
+      .map((wakeup) =>
+        wakeup.sessionId === sessionId
+          ? this.buildManageableWakeupInfo(wakeup, sessions)
+          : this.buildReadOnlyWakeupInfo(wakeup),
+      )
       .sort((left, right) => left.runAt.localeCompare(right.runAt));
   }
 
@@ -1193,6 +1205,54 @@ export class ScheduledSessionService {
       runAt: wakeup.runAt.toISOString(),
       createdAt: wakeup.createdAt.toISOString(),
       status: wakeup.status,
+    };
+  }
+
+  private buildManageableWakeupInfo(
+    wakeup: SessionWakeupConfig,
+    sessions?: Map<string, SessionSummary>,
+  ): SessionWakeupListItem {
+    const info = this.buildWakeupInfo(wakeup, sessions);
+    return {
+      kind: 'one_time_wakeup',
+      scope: 'current_session',
+      manageable: true,
+      wakeupId: info.wakeupId,
+      sessionId: info.sessionId,
+      sessionName: info.sessionName,
+      agentId: info.agentId,
+      message: info.message,
+      runAt: info.runAt,
+      createdAt: info.createdAt,
+      status: info.status,
+      capabilities: {
+        canUpdate: wakeup.status === 'pending',
+        canCancel: true,
+      },
+    };
+  }
+
+  private buildReadOnlyWakeupInfo(wakeup: SessionWakeupConfig): SessionWakeupListItem {
+    return {
+      kind: 'one_time_wakeup',
+      scope: 'other_session',
+      manageable: false,
+      runAt: wakeup.runAt.toISOString(),
+      status: wakeup.status,
+      summary: 'One-time wake-up from another session',
+      capabilities: {
+        canUpdate: false,
+        canCancel: false,
+      },
+      omitted: [
+        'wakeupId',
+        'sessionId',
+        'sessionName',
+        'agentId',
+        'message',
+        'createdAt',
+        'managementTarget',
+      ],
     };
   }
 
