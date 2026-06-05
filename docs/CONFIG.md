@@ -591,7 +591,7 @@ The same plugin also stores pending one-shot session wake-ups under
 sessions (`chat.provider: "pi"`), target the current tool session for create/list/update/cancel
 operations, and send the configured message back to that session at the requested time. If the
 session is busy when the wake-up fires, the message is added to the existing per-session message
-queue. A session can have multiple pending wake-ups.
+queue. A session can have up to 25 active wake-ups.
 
 Each persisted schedule record includes:
 
@@ -642,6 +642,8 @@ Wake-up tools:
 
 Wake-up tools intentionally do not accept a `sessionId`; they use the current tool context.
 `list`, `update`, and `cancel` only operate on wake-ups belonging to the current session.
+The scheduled-sessions panel uses the same plugin operation without a session context to show all
+wake-ups for administration.
 
 #### `pi` Provider
 

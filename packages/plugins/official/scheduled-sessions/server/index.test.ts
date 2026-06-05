@@ -210,6 +210,33 @@ describe('scheduled-sessions plugin operations', () => {
     expect(result).toEqual({ wakeups: [{ wakeupId: 'wakeup-1' }] });
   });
 
+  it('lists all wake-ups for the panel when no session context is present', async () => {
+    const plugin = createPlugin({
+      manifest: manifestJson as CombinedPluginManifest,
+    });
+    const list = plugin.operations?.['wakeup-list'];
+    if (!list) {
+      throw new Error('Expected wakeup-list operation');
+    }
+
+    const listWakeups = vi.fn().mockResolvedValue([{ wakeupId: 'wakeup-1' }]);
+    const listWakeupsForSession = vi.fn();
+    const result = await list(
+      {},
+      createCtx({
+        sessionId: undefined,
+        scheduledSessionService: {
+          listWakeups,
+          listWakeupsForSession,
+        },
+      }),
+    );
+
+    expect(listWakeups).toHaveBeenCalledWith();
+    expect(listWakeupsForSession).not.toHaveBeenCalled();
+    expect(result).toEqual({ wakeups: [{ wakeupId: 'wakeup-1' }] });
+  });
+
   it('creates a wake-up for the current session using delaySeconds', async () => {
     const plugin = createPlugin({
       manifest: manifestJson as CombinedPluginManifest,

@@ -976,6 +976,61 @@ describe('ScheduledSessionService', () => {
     service.shutdown();
   });
 
+  it('reschedules a wake-up when its run time is updated', async () => {
+    const { service, startSessionMessageFn } = createWakeupService();
+    await service.initialize();
+
+    const created = await service.createWakeupForSession({
+      sessionId: 'session-1',
+      message: 'First',
+      runAt: new Date(Date.now() + 60_000),
+    });
+
+    await service.updateWakeupForSession({
+      sessionId: 'session-1',
+      wakeupId: created.wakeupId,
+      runAt: new Date(Date.now() + 5),
+    });
+    await wait(40);
+
+    expect(startSessionMessageFn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        input: expect.objectContaining({
+          sessionId: 'session-1',
+          content: 'First',
+        }),
+      }),
+    );
+    await expect(service.listWakeupsForSession('session-1')).resolves.toEqual([]);
+
+    service.shutdown();
+  });
+
+  it('rejects wake-up creates when the session reaches the active wake-up cap', async () => {
+    const { service } = createWakeupService();
+    await service.initialize();
+
+    const runAt = new Date(Date.now() + 60_000);
+    for (let index = 0; index < 25; index += 1) {
+      await service.createWakeupForSession({
+        sessionId: 'session-1',
+        message: `Wake-up ${index}`,
+        runAt,
+      });
+    }
+
+    await expect(
+      service.createWakeupForSession({
+        sessionId: 'session-1',
+        message: 'One too many',
+        runAt,
+      }),
+    ).rejects.toThrow(/at most 25 active wake-ups/i);
+    await expect(service.listWakeupsForSession('session-1')).resolves.toHaveLength(25);
+
+    service.shutdown();
+  });
+
   it('rejects updates for non-pending wake-ups', async () => {
     const { service, sessionHub } = createWakeupService({ active: true });
     await service.initialize();

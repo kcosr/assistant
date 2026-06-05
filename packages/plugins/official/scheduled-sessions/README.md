@@ -42,9 +42,10 @@ then revalidated again when the schedule runs. When `reuseSession` is enabled, t
 session is created up front and reconciled from the schedule on later runs after edits.
 
 Wake-ups target native Pi SDK sessions only. `wakeup-create`, `wakeup-list`, `wakeup-update`, and
-`wakeup-cancel` operate on the current session context. A session can have multiple pending
+`wakeup-cancel` operate on the current session context. A session can have up to 25 active
 wake-ups. When a wake-up fires while its target session is busy, the wake-up message is added to
-the session message queue.
+the session message queue. The panel lists all wake-ups through the same operation when no session
+context is present.
 
 ## Source files
 

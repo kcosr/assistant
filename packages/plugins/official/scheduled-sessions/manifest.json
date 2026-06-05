@@ -154,7 +154,7 @@
     },
     {
       "id": "wakeup-create",
-      "summary": "Schedule a wake-up message for the current session. Provide exactly one of runAt or delaySeconds. runAt must be an absolute ISO timestamp with a timezone offset or Z.",
+      "summary": "Schedule a wake-up message for the current session. Provide exactly one of runAt or delaySeconds. runAt must be an absolute ISO timestamp with a timezone offset or Z. Each session can have up to 25 active wake-ups.",
       "inputSchema": {
         "type": "object",
         "properties": {
