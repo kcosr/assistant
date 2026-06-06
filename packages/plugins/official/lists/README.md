@@ -6,6 +6,7 @@ List management with a dedicated lists panel, list item CRUD, tags, and browser 
 
 - [Overview](#overview)
 - [Focus View](#focus-view)
+- [Pinned View](#pinned-view)
 - [AQL Search](#aql-search)
 - [Source files](#source-files)
 - [Web UI Architecture](#web-ui-architecture)
@@ -43,12 +44,13 @@ operations.
 - Cmd/Ctrl+C/X/V support copy/cut/paste of selected list items between lists; external paste
   uses the same plain-text item block.
 - The lists dropdown includes a quick-add (+) action to add an item to a list without switching views.
-- The lists dropdown includes a virtual Focus view for ordering and working through items from
-  multiple source lists.
+- The lists dropdown includes virtual Focus and Pinned views for working through items from multiple
+  source lists.
 - Browser mode supports arrow-key grid navigation with Enter to open a list; Escape returns to the
   browser view from list mode.
 - Press **p** in browser mode to toggle pinned lists, or in list view to toggle pinned list items.
-  Pinned entries show a pin icon and appear in the command palette via `/pinned`.
+  Pinned items show a distinct pinned chip in the tag area and appear in the command palette via
+  `/pinned`.
 - Favorite lists from the add/edit dialog; favorites show a heart icon and appear in the command
   palette via `/favorites`.
 - Column headers stick while scrolling list items.
@@ -78,6 +80,20 @@ or deleting the source item still uses the source list item.
 - Dragging and keyboard reordering use the normal list UI. Copying Focus items to a real list copies
   from each item's source list.
 - Focus updates use `focus-get`, `focus-items`, `focus-add`, `focus-update`, and `focus-remove`.
+
+## Pinned View
+
+Pinned is a virtual list with the fixed id `__pinned__`. It is derived from source items tagged
+`pinned`; it does not store an independent item order.
+
+- Removing an item from Pinned removes the `pinned` tag from the source item and does not delete the
+  source item.
+- Editing, completing, touching, moving, copying, or source-deleting a Pinned row still operates on
+  the underlying source item.
+- Adding an item while Pinned is open opens a source-list dropdown, then adds the new item to that
+  list with the `pinned` tag.
+- Pinned read operations use `pinned-get` and `pinned-items`. Pinning and unpinning use the normal
+  item tag operations.
 
 ## AQL Search
 
@@ -200,8 +216,8 @@ The server broadcasts panel updates to keep all lists panels in sync:
     - `itemId` (optional)
     - `refresh` (optional)
 
-The lists panel uses these updates to refresh list metadata, invalidate previews, or
-apply incremental item updates.
+The lists panel uses these updates to refresh list metadata, invalidate previews, apply incremental
+item updates, or refresh virtual views when source item tags/focus membership change.
 
 ## Panel Context
 

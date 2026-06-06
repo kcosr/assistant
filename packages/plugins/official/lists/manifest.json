@@ -119,6 +119,34 @@
       "capabilities": ["lists.read"]
     },
     {
+      "id": "pinned-get",
+      "summary": "Get the virtual Pinned list.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "instance_id": {
+            "type": "string",
+            "description": "Instance id (defaults to \"default\")."
+          }
+        }
+      },
+      "capabilities": ["lists.read"]
+    },
+    {
+      "id": "pinned-items",
+      "summary": "List items in the virtual Pinned list.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "instance_id": {
+            "type": "string",
+            "description": "Instance id (defaults to \"default\")."
+          }
+        }
+      },
+      "capabilities": ["lists.read"]
+    },
+    {
       "id": "focus-add",
       "summary": "Add an existing item to Focus.",
       "inputSchema": {

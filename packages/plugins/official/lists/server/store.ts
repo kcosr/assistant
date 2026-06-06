@@ -12,10 +12,13 @@ import type {
   ListItem,
   ListsData,
   ListSavedQuery,
+  PinnedListItem,
 } from './types';
 import { repositionItem, reflowPositions } from './positions';
 
 const LIST_ID_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+const PINNED_LIST_ID = '__pinned__';
+const PINNED_TAG = 'pinned';
 
 export type ItemSortOrder = 'position' | 'newest' | 'oldest';
 type TagMatchMode = 'all' | 'any';
@@ -43,6 +46,10 @@ export class ListsStore {
       ...(filterTags ? { filterTags } : {}),
       ...(tagMatch ? { tagMatch } : {}),
     });
+  }
+
+  private hasPinnedTag(tags: string[] | undefined): boolean {
+    return Array.isArray(tags) && tags.some((tag) => tag.trim().toLowerCase() === PINNED_TAG);
   }
 
   private async ensureLoaded(): Promise<void> {
@@ -963,6 +970,64 @@ export class ListsStore {
     this.data.focusEntries = nextEntries;
     this.assignFocusPositions();
     await this.save();
+  }
+
+  async getPinnedList(): Promise<ListDefinition> {
+    await this.ensureLoaded();
+    const pinnedItems = this.data.items.filter((item) => this.hasPinnedTag(item.tags));
+    const now = new Date().toISOString();
+    const updatedAt =
+      pinnedItems.reduce((latest, item) => {
+        const latestMs = Date.parse(latest);
+        const itemMs = Date.parse(item.updatedAt);
+        return Number.isFinite(itemMs) && (!Number.isFinite(latestMs) || itemMs > latestMs)
+          ? item.updatedAt
+          : latest;
+      }, '') || now;
+    const createdAt =
+      pinnedItems.reduce((earliest, item) => {
+        const earliestMs = Date.parse(earliest);
+        const itemMs = Date.parse(item.addedAt);
+        return Number.isFinite(itemMs) && (!Number.isFinite(earliestMs) || itemMs < earliestMs)
+          ? item.addedAt
+          : earliest;
+      }, '') || now;
+    return {
+      id: PINNED_LIST_ID,
+      name: 'Pinned',
+      description: 'Pinned items from multiple lists.',
+      tags: [],
+      defaultTags: [],
+      savedQueries: [],
+      createdAt,
+      updatedAt,
+    };
+  }
+
+  async listPinnedItems(): Promise<PinnedListItem[]> {
+    await this.ensureLoaded();
+    const listById = new Map(this.data.lists.map((list) => [list.id, list]));
+    const result: PinnedListItem[] = [];
+
+    for (const item of this.data.items) {
+      if (!this.hasPinnedTag(item.tags)) {
+        continue;
+      }
+      const list = listById.get(item.listId);
+      if (!list) {
+        continue;
+      }
+      result.push({
+        ...item,
+        tags: [...(item.tags ?? [])],
+        ...(item.customFields ? { customFields: { ...item.customFields } } : {}),
+        position: result.length,
+        sourceListId: item.listId,
+        sourceListName: list.name,
+      });
+    }
+
+    return result;
   }
 
   // Query operations

@@ -71,7 +71,7 @@ export interface ListPanelData {
     updatedAt?: string;
   }>;
   items?: ListPanelItem[];
-  viewKind?: 'list' | 'focus';
+  viewKind?: 'list' | 'focus' | 'pinned';
 }
 
 export interface ListPanelControllerOptions {
@@ -213,9 +213,18 @@ type ListColumnState = {
 };
 
 const FOCUS_LIST_ID = '__focus__';
+const PINNED_LIST_ID = '__pinned__';
 
 function isFocusListId(listId: string | null | undefined): boolean {
   return listId === FOCUS_LIST_ID;
+}
+
+function isPinnedListId(listId: string | null | undefined): boolean {
+  return listId === PINNED_LIST_ID;
+}
+
+function isVirtualListId(listId: string | null | undefined): boolean {
+  return isFocusListId(listId) || isPinnedListId(listId);
 }
 
 export class ListPanelController {
@@ -472,6 +481,10 @@ export class ListPanelController {
       void this.openFocusAddItemDialog(options?.openOptions);
       return;
     }
+    if (isPinnedListId(listId)) {
+      void this.openPinnedAddItemDialog(options?.openOptions);
+      return;
+    }
     if (options?.instanceId) {
       this.addDialogInstanceOverrides.set(listId, options.instanceId);
     } else {
@@ -495,6 +508,29 @@ export class ListPanelController {
       ...(openOptions ?? {}),
       ...(target.openOptions ?? {}),
       focused: true,
+      showFocusToggle: true,
+    };
+    this.openAddItemDialog(target.listId, {
+      ...(target.instanceId ? { instanceId: target.instanceId } : {}),
+      openOptions: targetOpenOptions,
+    });
+  }
+
+  private async openPinnedAddItemDialog(
+    openOptions?: ListItemEditorDialogOpenOptions,
+  ): Promise<void> {
+    if (!this.options.resolveAddItemTarget) {
+      this.options.setStatus('Choose a source list before adding pinned items');
+      return;
+    }
+    const target = await this.options.resolveAddItemTarget();
+    if (!target) {
+      return;
+    }
+    const targetOpenOptions: ListItemEditorDialogOpenOptions = {
+      ...(openOptions ?? {}),
+      ...(target.openOptions ?? {}),
+      defaultTags: [PINNED_TAG],
       showFocusToggle: true,
     };
     this.openAddItemDialog(target.listId, {
@@ -767,6 +803,7 @@ export class ListPanelController {
     // Get custom fields early for the header
     const customFields = Array.isArray(data.customFields) ? data.customFields : [];
     const isFocusView = data.viewKind === 'focus' || isFocusListId(listId);
+    const isVirtualView = isFocusView || data.viewKind === 'pinned' || isPinnedListId(listId);
 
     // Check if sorted by position (default or explicit)
     const aqlPrimarySort = this.currentAqlQuery?.orderBy?.[0] ?? null;
@@ -822,8 +859,8 @@ export class ListPanelController {
         this.options.setRightControls(newControls.rightControls);
       },
       onEditMetadata: () => {
-        if (isFocusView) {
-          this.options.setStatus('Focus metadata is managed by the app');
+        if (isVirtualView) {
+          this.options.setStatus(`${data.name} metadata is managed by the app`);
           return;
         }
         this.options.openListMetadataDialog(listId, data);
@@ -1328,6 +1365,13 @@ export class ListPanelController {
           instanceId ? { instanceId } : undefined,
         );
       }
+      if (this.currentData?.viewKind === 'pinned' && created?.id) {
+        await this.runOperation(
+          'item-tags-add',
+          { listId, id: created.id, tags: [PINNED_TAG] },
+          instanceId ? { instanceId } : undefined,
+        );
+      }
       if (instanceId) {
         this.addDialogInstanceOverrides.delete(listId);
       }
@@ -1377,6 +1421,37 @@ export class ListPanelController {
             id: itemId,
             ...sourceUpdates,
           });
+        }
+        if (targetListId && targetListId !== sourceListId) {
+          await this.runOperation('item-move', { id: itemId, targetListId });
+        }
+        return true;
+      }
+      if (this.currentData?.viewKind === 'pinned' || isPinnedListId(listId)) {
+        const sourceUpdates = { ...updates };
+        delete sourceUpdates['position'];
+        delete sourceUpdates['targetListId'];
+        const focused = sourceUpdates['focused'];
+        delete sourceUpdates['focused'];
+        const sourceListId = this.getSourceListIdForItem(itemId);
+        if (!sourceListId) {
+          return false;
+        }
+        if (updates['position'] !== undefined && Object.keys(sourceUpdates).length === 0) {
+          this.options.setStatus('Pinned is tag-derived and cannot be reordered');
+          return false;
+        }
+        if (Object.keys(sourceUpdates).length > 0) {
+          await this.runOperation('item-update', {
+            listId: sourceListId,
+            id: itemId,
+            ...sourceUpdates,
+          });
+        }
+        if (focused === true && !this.isItemFocused(itemId, listId)) {
+          await this.runOperation('focus-add', { itemId });
+        } else if (focused === false && this.isItemFocused(itemId, listId)) {
+          await this.runOperation('focus-remove', { itemId });
         }
         if (targetListId && targetListId !== sourceListId) {
           await this.runOperation('item-move', { id: itemId, targetListId });
@@ -1436,7 +1511,7 @@ export class ListPanelController {
       return true;
     }
     const item = this.currentData?.items?.find((entry) => entry.id === itemId);
-    return item?.focused === true || !!item?.sourceListId;
+    return item?.focused === true;
   }
 
   private getSourceListIdForItem(itemId: string): string | null {
@@ -1454,7 +1529,9 @@ export class ListPanelController {
     }
     try {
       const operationListId =
-        this.currentData?.viewKind === 'focus' || isFocusListId(listId)
+        this.currentData?.viewKind === 'focus' ||
+        this.currentData?.viewKind === 'pinned' ||
+        isVirtualListId(listId)
           ? this.getSourceListIdForItem(itemId)
           : listId;
       if (!operationListId) {
@@ -1480,7 +1557,9 @@ export class ListPanelController {
     }
     try {
       const operationListId =
-        this.currentData?.viewKind === 'focus' || isFocusListId(listId)
+        this.currentData?.viewKind === 'focus' ||
+        this.currentData?.viewKind === 'pinned' ||
+        isVirtualListId(listId)
           ? this.getSourceListIdForItem(itemId)
           : listId;
       if (!operationListId) {
@@ -1512,6 +1591,18 @@ export class ListPanelController {
     try {
       if (this.currentData?.viewKind === 'focus' || isFocusListId(listId)) {
         await this.runOperation('focus-remove', { itemId });
+        return true;
+      }
+      if (this.currentData?.viewKind === 'pinned' || isPinnedListId(listId)) {
+        const sourceListId = this.getSourceListIdForItem(itemId);
+        if (!sourceListId) {
+          return false;
+        }
+        await this.runOperation('item-tags-remove', {
+          listId: sourceListId,
+          id: itemId,
+          tags: [PINNED_TAG],
+        });
         return true;
       }
       await this.runOperation('item-remove', { listId, id: itemId });
@@ -1624,7 +1715,8 @@ export class ListPanelController {
       openOptions.initialCustomFieldValues = item.customFields as Record<string, unknown>;
     }
     if (mode === 'edit' && item) {
-      openOptions.focused = item.focused === true || !!item.sourceListId;
+      openOptions.focused =
+        item.focused === true || this.currentData?.viewKind === 'focus' || isFocusListId(listId);
     } else if (mode === 'add' && openOptionsOverride?.focused !== undefined) {
       openOptions.focused = openOptionsOverride.focused;
     }
@@ -1634,13 +1726,16 @@ export class ListPanelController {
 
   private showListItemDeleteConfirmation(listId: string, itemId: string, title: string): void {
     const isFocusItem = this.currentData?.viewKind === 'focus' || isFocusListId(listId);
+    const isPinnedItem = this.currentData?.viewKind === 'pinned' || isPinnedListId(listId);
     this.options.dialogManager.showConfirmDialog({
-      title: isFocusItem ? 'Remove From Focus' : 'Delete Item',
+      title: isFocusItem ? 'Remove From Focus' : isPinnedItem ? 'Remove From Pinned' : 'Delete Item',
       message: isFocusItem
         ? `Remove "${title}" from Focus? The source item will stay in its list.`
-        : `Delete "${title}" from this list?`,
-      confirmText: isFocusItem ? 'Remove' : 'Delete',
-      confirmClassName: isFocusItem ? 'primary' : 'danger',
+        : isPinnedItem
+          ? `Remove "${title}" from Pinned? The source item will stay in its list.`
+          : `Delete "${title}" from this list?`,
+      confirmText: isFocusItem || isPinnedItem ? 'Remove' : 'Delete',
+      confirmClassName: isFocusItem || isPinnedItem ? 'primary' : 'danger',
       keydownStopsPropagation: true,
       onConfirm: () => {
         void (async () => {
@@ -1662,7 +1757,7 @@ export class ListPanelController {
   ): void {
     this.options.dialogManager.showConfirmDialog({
       title: 'Delete Source Item',
-      message: `Delete "${title}" from its source list? This also removes it from Focus.`,
+      message: `Delete "${title}" from its source list? This also removes it from virtual views.`,
       confirmText: 'Delete',
       confirmClassName: 'danger',
       keydownStopsPropagation: true,
@@ -1687,13 +1782,20 @@ export class ListPanelController {
 
     const count = selectedIds.length;
     const isFocusList = this.currentData?.viewKind === 'focus' || isFocusListId(listId);
+    const isPinnedList = this.currentData?.viewKind === 'pinned' || isPinnedListId(listId);
     this.options.dialogManager.showConfirmDialog({
-      title: isFocusList ? 'Delete Source Items' : 'Delete Selected Items',
+      title: isPinnedList
+        ? 'Remove From Pinned'
+        : isFocusList
+          ? 'Delete Source Items'
+          : 'Delete Selected Items',
       message: isFocusList
         ? `Delete ${count} selected source item${count === 1 ? '' : 's'}? This also removes them from Focus.`
-        : `Delete ${count} selected item${count === 1 ? '' : 's'} from this list? This cannot be undone.`,
-      confirmText: 'Delete',
-      confirmClassName: 'danger',
+        : isPinnedList
+          ? `Remove ${count} selected item${count === 1 ? '' : 's'} from Pinned? The source items will stay in their lists.`
+          : `Delete ${count} selected item${count === 1 ? '' : 's'} from this list? This cannot be undone.`,
+      confirmText: isPinnedList ? 'Remove' : 'Delete',
+      confirmClassName: isPinnedList ? 'primary' : 'danger',
       keydownStopsPropagation: true,
       onConfirm: () => {
         this.clearListSelection();
@@ -1894,6 +1996,9 @@ export class ListPanelController {
     if (isFocusListId(targetListId)) {
       return this.addItemsToFocus(itemIds, options?.targetPosition ?? null);
     }
+    if (isPinnedListId(targetListId)) {
+      return this.addItemsToPinned(itemIds);
+    }
     try {
       const basePosition =
         typeof options?.targetPosition === 'number' && Number.isFinite(options.targetPosition)
@@ -1945,7 +2050,7 @@ export class ListPanelController {
       return;
     }
     const trimmedTargetId = targetListId.trim();
-    if (!trimmedTargetId || (!isFocusListId(trimmedTargetId) && trimmedTargetId === sourceListId)) {
+    if (!trimmedTargetId || (!isVirtualListId(trimmedTargetId) && trimmedTargetId === sourceListId)) {
       return;
     }
     await this.bulkMoveItems(itemIds, trimmedTargetId, {
@@ -2038,8 +2143,12 @@ export class ListPanelController {
       await this.addItemsToFocus(itemIds, null);
       return;
     }
+    if (isPinnedListId(trimmedTargetId)) {
+      await this.addItemsToPinned(itemIds);
+      return;
+    }
     try {
-      if (this.currentData?.viewKind === 'focus' || isFocusListId(sourceListId)) {
+      if (this.currentData?.viewKind === 'focus' || isVirtualListId(sourceListId)) {
         await this.copyFocusItemsToList(itemIds, trimmedTargetId);
         return;
       }
@@ -2122,6 +2231,64 @@ export class ListPanelController {
       return okCount === itemIds.length;
     }
     this.options.setStatus('Failed to remove items from Focus');
+    return false;
+  }
+
+  private async addItemsToPinned(itemIds: string[]): Promise<boolean> {
+    if (!this.options.callOperation || itemIds.length === 0) {
+      return false;
+    }
+    let okCount = 0;
+    for (const itemId of itemIds) {
+      const sourceListId = this.getSourceListIdForItem(itemId) ?? this.currentListId;
+      if (!itemId || !sourceListId || isVirtualListId(sourceListId)) {
+        continue;
+      }
+      try {
+        await this.runOperation('item-tags-add', {
+          listId: sourceListId,
+          id: itemId,
+          tags: [PINNED_TAG],
+        });
+        okCount += 1;
+      } catch {
+        // Continue pinning the remaining selection.
+      }
+    }
+    if (okCount > 0) {
+      this.options.setStatus(`Pinned ${okCount} item${okCount === 1 ? '' : 's'}`);
+      return okCount === itemIds.length;
+    }
+    this.options.setStatus('Failed to pin items');
+    return false;
+  }
+
+  private async removeItemsFromPinned(itemIds: string[]): Promise<boolean> {
+    if (!this.options.callOperation || itemIds.length === 0) {
+      return false;
+    }
+    let okCount = 0;
+    for (const itemId of itemIds) {
+      const sourceListId = this.getSourceListIdForItem(itemId);
+      if (!itemId || !sourceListId) {
+        continue;
+      }
+      try {
+        await this.runOperation('item-tags-remove', {
+          listId: sourceListId,
+          id: itemId,
+          tags: [PINNED_TAG],
+        });
+        okCount += 1;
+      } catch {
+        // Continue removing the remaining selection.
+      }
+    }
+    if (okCount > 0) {
+      this.options.setStatus(`Removed ${okCount} item${okCount === 1 ? '' : 's'} from Pinned`);
+      return okCount === itemIds.length;
+    }
+    this.options.setStatus('Failed to remove items from Pinned');
     return false;
   }
 
@@ -2489,6 +2656,11 @@ export class ListPanelController {
     }
 
     try {
+      if (this.currentData.viewKind === 'pinned' || isPinnedListId(listId)) {
+        return shouldPin
+          ? await this.addItemsToPinned(itemIds)
+          : await this.removeItemsFromPinned(itemIds);
+      }
       await this.runOperation('items-bulk-update-tags', {
         listId,
         items: itemIds.map((id) => ({

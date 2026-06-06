@@ -25,6 +25,7 @@ type PluginFactoryArgs = { manifest: CombinedPluginManifest };
 
 const LIST_ID_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const FOCUS_LIST_ID = '__focus__';
+const PINNED_LIST_ID = '__pinned__';
 
 function asObject(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
@@ -535,6 +536,16 @@ export function createPlugin(_options: PluginFactoryArgs): PluginModule {
         const { store: listsStore } = await resolveStore(parsed);
         return listsStore.listFocusItems();
       },
+      'pinned-get': async (args): Promise<unknown> => {
+        const parsed = asObject(args);
+        const { store: listsStore } = await resolveStore(parsed);
+        return listsStore.getPinnedList();
+      },
+      'pinned-items': async (args): Promise<unknown> => {
+        const parsed = asObject(args);
+        const { store: listsStore } = await resolveStore(parsed);
+        return listsStore.listPinnedItems();
+      },
       'focus-add': async (args, ctx): Promise<unknown> => {
         const parsed = asObject(args);
         const { instanceId, store: listsStore } = await resolveStore(parsed);
@@ -578,7 +589,7 @@ export function createPlugin(_options: PluginFactoryArgs): PluginModule {
         const { instanceId, store: listsStore } = await resolveStore(parsed);
         const id = requireNonEmptyString(parsed['id'], 'id');
         const panelId = requireNonEmptyString(parsed['panelId'], 'panelId');
-        if (id !== FOCUS_LIST_ID) {
+        if (id !== FOCUS_LIST_ID && id !== PINNED_LIST_ID) {
           const list = await listsStore.getList(id);
           if (!list) {
             throw new ToolError('list_not_found', `List not found: ${id}`);

@@ -229,8 +229,8 @@ export class CollectionDropdownController {
       if (idxA !== idxB) {
         return idxA - idxB;
       }
-      const specialRankA = a.specialKind === 'focus' ? 0 : 1;
-      const specialRankB = b.specialKind === 'focus' ? 0 : 1;
+      const specialRankA = a.specialKind === 'focus' ? 0 : a.specialKind === 'pinned' ? 1 : 2;
+      const specialRankB = b.specialKind === 'focus' ? 0 : b.specialKind === 'pinned' ? 1 : 2;
       if (specialRankA !== specialRankB) {
         return specialRankA - specialRankB;
       }

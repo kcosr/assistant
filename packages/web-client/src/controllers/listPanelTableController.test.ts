@@ -116,6 +116,41 @@ describe('ListPanelTableController double-click edit', () => {
     );
   });
 
+  it('renders pinned state through the tags area instead of a title prefix', () => {
+    const renderTags = vi.fn((tags: string[] | undefined) => {
+      if (!tags?.includes('pinned')) {
+        return null;
+      }
+      const wrapper = document.createElement('div');
+      wrapper.className = 'collection-tags';
+      const chip = document.createElement('span');
+      chip.className = 'collection-tag collection-tag-pinned';
+      chip.textContent = 'Pinned';
+      wrapper.appendChild(chip);
+      return wrapper;
+    });
+    const controller = new ListPanelTableController({
+      icons: { moreVertical: '', pin: '' },
+      renderTags,
+      recentUserItemUpdates,
+      userUpdateTimeoutMs: 1000,
+      getSelectedItemCount: () => 0,
+      showListItemMenu: vi.fn(),
+      updateListItem: vi.fn(async () => true),
+    });
+
+    const { table } = controller.renderTable({
+      ...baseRenderOptions,
+      sortedItems: [{ id: 'item1', title: 'Item 1', tags: ['pinned'] }],
+      showTagsColumn: true,
+    });
+
+    expect(table.querySelector('.list-item-pin')).toBeNull();
+    expect(table.querySelector('.list-item-title-main .collection-tag-pinned')).toBeNull();
+    expect(table.querySelector('td[data-column-key="tags"] .collection-tag-pinned')).not.toBeNull();
+    expect(renderTags).toHaveBeenCalledWith(['pinned']);
+  });
+
   it('does not call onEditItem when double-clicking the menu trigger', () => {
     const onEditItem = vi.fn();
     const controller = new ListPanelTableController({

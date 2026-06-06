@@ -57,6 +57,11 @@ export interface FocusListItem extends ListItem {
   focusEntryId: string;
 }
 
+export interface PinnedListItem extends ListItem {
+  sourceListId: string;
+  sourceListName: string;
+}
+
 export interface ListsData {
   lists: ListDefinition[];
   items: ListItem[];

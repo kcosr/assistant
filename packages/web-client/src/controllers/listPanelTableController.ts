@@ -1,5 +1,4 @@
 import { applyMarkdownToElement } from '../utils/markdown';
-import { hasPinnedTag } from '../utils/pinnedTag';
 import type { ListCustomFieldDefinition } from './listCustomFields';
 import type { ListPanelItem } from './listPanelController';
 import type { ColumnVisibility } from '../utils/listColumnPreferences';
@@ -1986,7 +1985,7 @@ export class ListPanelTableController {
 
     const menuTrigger = document.createElement('button');
     menuTrigger.type = 'button';
-    const isFocusedItem = item.focused === true || !!item.sourceListId;
+    const isFocusedItem = item.focused === true || (listId === '__focus__' && !!item.sourceListId);
     menuTrigger.className = isFocusedItem
       ? 'list-item-menu-trigger list-item-menu-trigger-focused'
       : 'list-item-menu-trigger';
@@ -2387,14 +2386,6 @@ export class ListPanelTableController {
 
       const titleMain = document.createElement('div');
       titleMain.className = 'list-item-title-main';
-
-      if (hasPinnedTag(item.tags)) {
-        const pin = document.createElement('span');
-        pin.className = 'list-item-pin';
-        pin.innerHTML = this.options.icons.pin;
-        pin.setAttribute('aria-hidden', 'true');
-        titleMain.appendChild(pin);
-      }
 
       if (!showUrlColumn && item.url) {
         const link = document.createElement('a');

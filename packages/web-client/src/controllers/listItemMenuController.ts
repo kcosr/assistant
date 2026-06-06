@@ -191,7 +191,9 @@ export class ListItemMenuController {
       this.options.onCopyItemToList(listId, itemId);
     });
 
-    const isFocusItem = typeof item.sourceListId === 'string' && item.sourceListId.trim().length > 0;
+    const hasSourceItem =
+      typeof item.sourceListId === 'string' && item.sourceListId.trim().length > 0;
+    const isFocusItem = listId === '__focus__' && hasSourceItem;
     if (this.options.onToggleItemFocus) {
       const isFocused = isFocusItem || item.focused === true;
       addMenuButton(
@@ -215,7 +217,7 @@ export class ListItemMenuController {
       );
     }
 
-    if (isFocusItem && this.options.onDeleteUnderlyingItem) {
+    if (hasSourceItem && this.options.onDeleteUnderlyingItem) {
       addMenuButton(
         this.options.icons.trash,
         'Delete source item',

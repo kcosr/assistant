@@ -1012,6 +1012,90 @@ describe('ListPanelController focus view', () => {
     });
   });
 
+  it('routes pinned view edits to source items and removal to pinned tag removal', async () => {
+    const callOperation = vi.fn(
+      async () => ({} as unknown),
+    ) as NonNullable<ListPanelControllerOptions['callOperation']>;
+    const controller = buildController({ callOperation });
+    controller.render('__pinned__', {
+      id: '__pinned__',
+      name: 'Pinned',
+      viewKind: 'pinned',
+      items: [
+        {
+          id: 'item-1',
+          title: 'Pinned task',
+          tags: ['pinned', 'urgent'],
+          sourceListId: 'work',
+          sourceListName: 'Work',
+        },
+      ],
+    });
+
+    const internal = controller as unknown as {
+      updateListItem: (
+        listId: string,
+        itemId: string,
+        updates: Record<string, unknown>,
+      ) => Promise<boolean>;
+      deleteListItem: (listId: string, itemId: string) => Promise<boolean>;
+    };
+
+    await expect(
+      internal.updateListItem('__pinned__', 'item-1', { completed: true }),
+    ).resolves.toBe(true);
+    expect(callOperation).toHaveBeenLastCalledWith('item-update', {
+      listId: 'work',
+      id: 'item-1',
+      completed: true,
+    });
+
+    await expect(internal.deleteListItem('__pinned__', 'item-1')).resolves.toBe(true);
+    expect(callOperation).toHaveBeenLastCalledWith('item-tags-remove', {
+      listId: 'work',
+      id: 'item-1',
+      tags: ['pinned'],
+    });
+    expect(callOperation).not.toHaveBeenCalledWith(
+      'item-remove',
+      expect.objectContaining({ id: 'item-1' }),
+    );
+  });
+
+  it('does not treat pinned view source-backed rows as focused', async () => {
+    const callOperation = vi.fn(
+      async () => ({} as unknown),
+    ) as NonNullable<ListPanelControllerOptions['callOperation']>;
+    const controller = buildController({ callOperation });
+    controller.render('__pinned__', {
+      id: '__pinned__',
+      name: 'Pinned',
+      viewKind: 'pinned',
+      items: [
+        {
+          id: 'item-1',
+          title: 'Pinned task',
+          tags: ['pinned'],
+          sourceListId: 'work',
+          sourceListName: 'Work',
+        },
+      ],
+    });
+
+    const internal = controller as unknown as {
+      updateListItem: (
+        listId: string,
+        itemId: string,
+        updates: Record<string, unknown>,
+      ) => Promise<boolean>;
+    };
+
+    await expect(
+      internal.updateListItem('__pinned__', 'item-1', { focused: true }),
+    ).resolves.toBe(true);
+    expect(callOperation).toHaveBeenLastCalledWith('focus-add', { itemId: 'item-1' });
+  });
+
   it('does not remove focus when editing a non-focused source item', async () => {
     const callOperation = vi.fn(
       async () => ({} as unknown),

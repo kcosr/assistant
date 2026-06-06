@@ -44,12 +44,13 @@ function makeController(
 }
 
 describe('CollectionDropdownController', () => {
-  it('keeps the Focus list at the top of list dropdown results', () => {
+  it('keeps virtual Focus and Pinned lists at the top of list dropdown results', () => {
     const { controller, list } = makeController();
 
     controller.populate([
       { type: 'list', id: 'agent-pack', name: 'Agent Pack' },
       { type: 'list', id: '__focus__', name: 'Focus', specialKind: 'focus' },
+      { type: 'list', id: '__pinned__', name: 'Pinned', specialKind: 'pinned' },
       { type: 'list', id: 'today', name: 'Today' },
     ]);
 
@@ -57,6 +58,6 @@ describe('CollectionDropdownController', () => {
       list.querySelectorAll<HTMLElement>('.collection-search-dropdown-item'),
     ).map((el) => el.dataset['collectionId']);
 
-    expect(ids).toEqual(['__focus__', 'agent-pack', 'today']);
+    expect(ids).toEqual(['__focus__', '__pinned__', 'agent-pack', 'today']);
   });
 });

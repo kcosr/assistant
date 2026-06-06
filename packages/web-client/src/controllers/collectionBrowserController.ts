@@ -9,7 +9,7 @@ import { CollectionDropdownFilterController } from './collectionDropdownFilterCo
 import { handleCollectionSearchKeyDown } from '../utils/collectionSearchKeyboard';
 import { applyMarkdownToElement } from '../utils/markdown';
 import { applyTagColorToElement, normalizeTag } from '../utils/tagColors';
-import { hasPinnedTag, isPinnedTag } from '../utils/pinnedTag';
+import { isPinnedTag } from '../utils/pinnedTag';
 import type { DialogManager } from './dialogManager';
 import {
   ListMetadataDialog,
@@ -540,35 +540,8 @@ export class CollectionBrowserController {
     }
   }
 
-  private decorateItemPinned(itemEl: HTMLElement, item: CollectionItemSummary): void {
-    if (!hasPinnedTag(item.tags)) {
-      return;
-    }
-    const labelEl = itemEl.querySelector<HTMLElement>('.collection-search-dropdown-item-label');
-    if (!labelEl) {
-      return;
-    }
-    let titleRow: HTMLElement | null = null;
-    if (
-      labelEl.parentElement &&
-      labelEl.parentElement.classList.contains('collection-browser-item-title')
-    ) {
-      titleRow = labelEl.parentElement as HTMLElement;
-    } else {
-      titleRow = document.createElement('div');
-      titleRow.className = 'collection-browser-item-title';
-      labelEl.insertAdjacentElement('beforebegin', titleRow);
-      titleRow.appendChild(labelEl);
-    }
-    const pin = document.createElement('span');
-    pin.className = 'collection-browser-item-pin';
-    pin.innerHTML = this.options.icons.pin;
-    pin.setAttribute('aria-hidden', 'true');
-    titleRow.insertBefore(pin, labelEl);
-  }
-
   private decorateItemSpecialKind(itemEl: HTMLElement, item: CollectionItemSummary): void {
-    if (item.specialKind !== 'focus') {
+    if (item.specialKind !== 'focus' && item.specialKind !== 'pinned') {
       return;
     }
     const labelEl = itemEl.querySelector<HTMLElement>('.collection-search-dropdown-item-label');
@@ -587,11 +560,15 @@ export class CollectionBrowserController {
       labelEl.insertAdjacentElement('beforebegin', titleRow);
       titleRow.appendChild(labelEl);
     }
-    const focus = document.createElement('span');
-    focus.className = 'collection-browser-item-focus';
-    focus.innerHTML = this.options.icons.focus;
-    focus.setAttribute('aria-hidden', 'true');
-    titleRow.insertBefore(focus, labelEl);
+    const marker = document.createElement('span');
+    marker.className =
+      item.specialKind === 'focus'
+        ? 'collection-browser-item-focus'
+        : 'collection-browser-item-pin';
+    marker.innerHTML =
+      item.specialKind === 'focus' ? this.options.icons.focus : this.options.icons.pin;
+    marker.setAttribute('aria-hidden', 'true');
+    titleRow.insertBefore(marker, labelEl);
   }
 
   private decorateItemFavorite(itemEl: HTMLElement, item: CollectionItemSummary): void {
@@ -656,6 +633,9 @@ export class CollectionBrowserController {
 
   private decorateListItem(itemEl: HTMLElement, item: CollectionItemSummary): void {
     if (item.type.toLowerCase().trim() !== 'list') {
+      return;
+    }
+    if (item.specialKind === 'focus' || item.specialKind === 'pinned') {
       return;
     }
     if (this.options.showListEditActions === false) {
@@ -922,8 +902,8 @@ export class CollectionBrowserController {
       if (idxA !== idxB) {
         return idxA - idxB;
       }
-      const specialRankA = a.specialKind === 'focus' ? 0 : 1;
-      const specialRankB = b.specialKind === 'focus' ? 0 : 1;
+      const specialRankA = a.specialKind === 'focus' ? 0 : a.specialKind === 'pinned' ? 1 : 2;
+      const specialRankB = b.specialKind === 'focus' ? 0 : b.specialKind === 'pinned' ? 1 : 2;
       if (specialRankA !== specialRankB) {
         return specialRankA - specialRankB;
       }
@@ -945,7 +925,6 @@ export class CollectionBrowserController {
       renderItemContent: (itemEl, item) => {
         this.decorateItemFavorite(itemEl, item);
         this.decorateItemSpecialKind(itemEl, item);
-        this.decorateItemPinned(itemEl, item);
         this.decorateItemInstanceBadge(itemEl, item);
         this.decorateListItem(itemEl, item);
         this.decorateItemPreview(itemEl, item);
@@ -988,7 +967,6 @@ export class CollectionBrowserController {
       ? item.tags
           .filter((tag): tag is string => typeof tag === 'string' && tag.trim().length > 0)
           .map((tag) => tag.trim())
-          .filter((tag) => !isPinnedTag(tag))
       : [];
 
     if (tags.length === 0) {
@@ -1000,10 +978,17 @@ export class CollectionBrowserController {
 
     for (const tag of tags) {
       const tagEl = document.createElement('span');
-      tagEl.className = 'collection-browser-item-tag';
-      tagEl.textContent = tag;
+      if (isPinnedTag(tag)) {
+        tagEl.className = 'collection-browser-item-tag collection-browser-item-tag-pinned';
+        tagEl.innerHTML = `${this.options.icons.pin}<span>Pinned</span>`;
+        tagEl.title = 'Pinned';
+        tagEl.setAttribute('aria-label', 'Pinned');
+      } else {
+        tagEl.className = 'collection-browser-item-tag';
+        tagEl.textContent = tag;
+        applyTagColorToElement(tagEl, tag);
+      }
       tagEl.dataset['tag'] = normalizeTag(tag);
-      applyTagColorToElement(tagEl, tag);
       tagsEl.appendChild(tagEl);
     }
 
