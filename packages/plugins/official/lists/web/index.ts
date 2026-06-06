@@ -265,9 +265,11 @@ const USER_UPDATE_TIMEOUT_MS = 5000;
 const DEFAULT_INSTANCE_ID = 'default';
 const LISTS_BROWSER_SORT_MODE_KEY = 'aiAssistantListsBrowserSortMode';
 const FOCUS_LIST_ID = '__focus__';
+const PINNED_LIST_ID = '__pinned__';
 const FOCUS_DEFAULT_LIST_STORAGE_KEY = 'aiAssistantFocusDefaultListId';
 
 type ViewMode = 'browser' | 'list';
+type ListViewKind = 'list' | 'focus' | 'pinned';
 
 type Instance = {
   id: string;
@@ -286,7 +288,7 @@ type ListSummary = {
   updatedAt?: string;
   instanceId: string;
   instanceLabel?: string;
-  viewKind?: 'list' | 'focus';
+  viewKind?: ListViewKind;
 };
 
 type NoteSummary = {
@@ -367,8 +369,29 @@ function buildFocusSummary(instanceId: string, instanceLabel?: string): ListSumm
   };
 }
 
+function buildPinnedSummary(instanceId: string, instanceLabel?: string): ListSummary {
+  return {
+    id: PINNED_LIST_ID,
+    name: 'Pinned',
+    description: 'Pinned items from multiple lists.',
+    tags: [],
+    defaultTags: [],
+    instanceId,
+    ...(instanceLabel ? { instanceLabel } : {}),
+    viewKind: 'pinned',
+  };
+}
+
 function isFocusListId(listId: string | null | undefined): boolean {
   return listId === FOCUS_LIST_ID;
+}
+
+function isPinnedListId(listId: string | null | undefined): boolean {
+  return listId === PINNED_LIST_ID;
+}
+
+function isVirtualListId(listId: string | null | undefined): boolean {
+  return isFocusListId(listId) || isPinnedListId(listId);
 }
 
 function parseInstance(value: unknown): Instance | null {
@@ -595,14 +618,21 @@ function renderListTags(tags: string[] | undefined): HTMLElement | null {
   wrapper.className = 'collection-tags';
   for (const rawTag of tags) {
     const tag = rawTag.trim();
-    if (!tag || isPinnedTag(tag)) {
+    if (!tag) {
       continue;
     }
     const pill = document.createElement('span');
-    pill.className = 'collection-tag';
-    pill.textContent = rawTag;
+    if (isPinnedTag(tag)) {
+      pill.className = 'collection-tag collection-tag-pinned';
+      pill.innerHTML = `${ICONS.pin}<span>Pinned</span>`;
+      pill.title = 'Pinned';
+      pill.setAttribute('aria-label', 'Pinned');
+    } else {
+      pill.className = 'collection-tag';
+      pill.textContent = rawTag;
+      applyTagColorToElement(pill, tag);
+    }
     pill.dataset['tag'] = normalizeTag(tag);
-    applyTagColorToElement(pill, tag);
     wrapper.appendChild(pill);
   }
   return wrapper.firstChild ? wrapper : null;
@@ -670,11 +700,13 @@ async function fetchListPreview(
 ): Promise<CollectionPreviewCacheEntry | null> {
   const rawItems = isFocusListId(listId)
     ? await callInstanceOperation<unknown>('focus-items', {})
-    : await callInstanceOperation<unknown>('items-list', {
-        listId,
-        limit: 50,
-        sort: 'position',
-      });
+    : isPinnedListId(listId)
+      ? await callInstanceOperation<unknown>('pinned-items', {})
+      : await callInstanceOperation<unknown>('items-list', {
+          listId,
+          limit: 50,
+          sort: 'position',
+        });
   const items = buildListPreviewItems(parseListItems(rawItems));
   if (items.length === 0) {
     return null;
@@ -1299,7 +1331,9 @@ if (!registry || typeof registry.registerPanel !== 'function') {
             updatedAt: list.updatedAt,
             instanceId: list.instanceId,
             instanceLabel: list.instanceLabel ?? getInstanceLabel(list.instanceId),
-            ...(list.viewKind === 'focus' ? { specialKind: 'focus' as const } : {}),
+            ...(list.viewKind === 'focus' || list.viewKind === 'pinned'
+              ? { specialKind: list.viewKind }
+              : {}),
           }));
 
       const emitGlobalTags = (): void => {
@@ -1363,11 +1397,11 @@ if (!registry || typeof registry.registerPanel !== 'function') {
           ? { type: 'list', id: activeListId, instanceId: activeListInstanceId }
           : null;
 
-      const decorateFocusCollectionItem = (
+      const decorateVirtualCollectionItem = (
         itemEl: HTMLElement,
         item: CollectionItemSummary,
       ): void => {
-        if (item.specialKind !== 'focus') {
+        if (item.specialKind !== 'focus' && item.specialKind !== 'pinned') {
           return;
         }
         const labelEl = itemEl.querySelector<HTMLElement>('.collection-search-dropdown-item-label');
@@ -1375,11 +1409,16 @@ if (!registry || typeof registry.registerPanel !== 'function') {
           return;
         }
         const icon = document.createElement('span');
-        icon.className = 'collection-focus-icon';
-        icon.innerHTML = ICONS.eye;
+        icon.className =
+          item.specialKind === 'focus' ? 'collection-focus-icon' : 'collection-pinned-icon';
+        icon.innerHTML = item.specialKind === 'focus' ? ICONS.eye : ICONS.pin;
         icon.setAttribute('aria-hidden', 'true');
         labelEl.insertAdjacentElement('beforebegin', icon);
-        itemEl.classList.add('collection-search-dropdown-item--focus');
+        itemEl.classList.add(
+          item.specialKind === 'focus'
+            ? 'collection-search-dropdown-item--focus'
+            : 'collection-search-dropdown-item--pinned',
+        );
       };
 
       const openReference = (reference: ListItemReference): void => {
@@ -1718,7 +1757,10 @@ if (!registry || typeof registry.registerPanel !== 'function') {
         if (!dropdownTriggerText) {
           return;
         }
-        dropdownTriggerText.classList.remove('collection-search-dropdown-trigger-text--focus');
+        dropdownTriggerText.classList.remove(
+          'collection-search-dropdown-trigger-text--focus',
+          'collection-search-dropdown-trigger-text--pinned',
+        );
         if (!reference) {
           dropdownTriggerText.textContent = 'Select a list...';
           chromeController?.scheduleLayoutCheck();
@@ -1736,18 +1778,23 @@ if (!registry || typeof registry.registerPanel !== 'function') {
         } else {
           dropdownTriggerText.textContent = list?.name ?? 'Select a list...';
         }
-        if (list?.viewKind === 'focus') {
-          const label = dropdownTriggerText.textContent ?? 'Focus';
+        if (list?.viewKind === 'focus' || list?.viewKind === 'pinned') {
+          const label = dropdownTriggerText.textContent ?? list.name;
           dropdownTriggerText.textContent = '';
           const icon = document.createElement('span');
-          icon.className = 'collection-focus-icon';
-          icon.innerHTML = ICONS.eye;
+          icon.className =
+            list.viewKind === 'focus' ? 'collection-focus-icon' : 'collection-pinned-icon';
+          icon.innerHTML = list.viewKind === 'focus' ? ICONS.eye : ICONS.pin;
           icon.setAttribute('aria-hidden', 'true');
           const labelEl = document.createElement('span');
           labelEl.textContent = label;
           dropdownTriggerText.appendChild(icon);
           dropdownTriggerText.appendChild(labelEl);
-          dropdownTriggerText.classList.add('collection-search-dropdown-trigger-text--focus');
+          dropdownTriggerText.classList.add(
+            list.viewKind === 'focus'
+              ? 'collection-search-dropdown-trigger-text--focus'
+              : 'collection-search-dropdown-trigger-text--pinned',
+          );
         }
         chromeController?.scheduleLayoutCheck();
       };
@@ -2133,7 +2180,9 @@ if (!registry || typeof registry.registerPanel !== 'function') {
               }
             })();
           return sortListSummariesForMoveTargets(
-            availableLists.filter((list) => list.instanceId === instanceId && !isFocusListId(list.id)),
+            availableLists.filter(
+              (list) => list.instanceId === instanceId && !isVirtualListId(list.id),
+            ),
             sortMode,
           )
             .map((list) => ({
@@ -2147,7 +2196,7 @@ if (!registry || typeof registry.registerPanel !== 'function') {
         resolveAddItemTarget: async () => {
           const instanceId = activeListInstanceId ?? activeInstanceId;
           const candidates = availableLists.filter(
-            (list) => list.instanceId === instanceId && !isFocusListId(list.id),
+            (list) => list.instanceId === instanceId && !isVirtualListId(list.id),
           );
           if (candidates.length === 0) {
             services.setStatus('Create a list before adding focus items');
@@ -2361,8 +2410,8 @@ if (!registry || typeof registry.registerPanel !== 'function') {
             const targetInstanceId = instanceId ?? activeListInstanceId ?? activeInstanceId;
             const raw = await callInstanceOperation<unknown>(
               targetInstanceId,
-              isFocusListId(listId) ? 'focus-get' : 'get',
-              isFocusListId(listId) ? {} : { id: listId },
+              isFocusListId(listId) ? 'focus-get' : isPinnedListId(listId) ? 'pinned-get' : 'get',
+              isVirtualListId(listId) ? {} : { id: listId },
             );
             const list = parseListSummary(raw, targetInstanceId);
             if (!list) {
@@ -2390,8 +2439,8 @@ if (!registry || typeof registry.registerPanel !== 'function') {
             return list?.id ?? null;
           },
           updateList: async (listId, payload) => {
-            if (isFocusListId(listId)) {
-              services.setStatus('Focus metadata is managed by the app');
+            if (isVirtualListId(listId)) {
+              services.setStatus('Virtual list metadata is managed by the app');
               return false;
             }
             const sourceInstanceId = payload.sourceInstanceId ?? activeListInstanceId ?? activeInstanceId;
@@ -2416,8 +2465,8 @@ if (!registry || typeof registry.registerPanel !== 'function') {
             return true;
           },
           deleteList: async (listId) => {
-            if (isFocusListId(listId)) {
-              services.setStatus('Focus cannot be deleted');
+            if (isVirtualListId(listId)) {
+              services.setStatus('Virtual lists cannot be deleted');
               return false;
             }
             const targetInstanceId = activeListInstanceId ?? activeInstanceId;
@@ -2503,7 +2552,7 @@ if (!registry || typeof registry.registerPanel !== 'function') {
           const instanceId = item.instanceId ?? activeInstanceId;
           void selectList(item.id, instanceId, { focus: false });
         },
-        renderItemContent: decorateFocusCollectionItem,
+        renderItemContent: decorateVirtualCollectionItem,
         renderItemActions: (actionsEl, item) => {
           if (item.type !== 'list') {
             return;
@@ -3310,7 +3359,11 @@ if (!registry || typeof registry.registerPanel !== 'function') {
                 ...list,
                 instanceLabel,
               }));
-              return [buildFocusSummary(instanceId, instanceLabel), ...lists];
+              return [
+                buildFocusSummary(instanceId, instanceLabel),
+                buildPinnedSummary(instanceId, instanceLabel),
+                ...lists,
+              ];
             }),
           );
           if (currentToken !== refreshToken) {
@@ -3372,10 +3425,11 @@ if (!registry || typeof registry.registerPanel !== 'function') {
             : null;
         try {
           const focusView = isFocusListId(listId);
+          const pinnedView = isPinnedListId(listId);
           const rawList = await callInstanceOperation<unknown>(
             instanceId,
-            focusView ? 'focus-get' : 'get',
-            focusView ? {} : { id: listId },
+            focusView ? 'focus-get' : pinnedView ? 'pinned-get' : 'get',
+            focusView || pinnedView ? {} : { id: listId },
           );
           const list = parseListSummary(rawList, instanceId);
           if (!list) {
@@ -3383,16 +3437,18 @@ if (!registry || typeof registry.registerPanel !== 'function') {
           }
           const rawItems = await callInstanceOperation<unknown>(
             instanceId,
-            focusView ? 'focus-items' : 'items-list',
+            focusView ? 'focus-items' : pinnedView ? 'pinned-items' : 'items-list',
             focusView
               ? {}
-              : {
-                  listId,
-                  limit: 0,
-                  sort: 'position',
-                },
+              : pinnedView
+                ? {}
+                : {
+                    listId,
+                    limit: 0,
+                    sort: 'position',
+                  },
           );
-          const rawSavedQueries = focusView
+          const rawSavedQueries = focusView || pinnedView
             ? []
             : await callInstanceOperation<unknown>(instanceId, 'aql-query-list', { listId });
           if (currentToken !== loadToken) {
@@ -3441,7 +3497,7 @@ if (!registry || typeof registry.registerPanel !== 'function') {
             customFields: list.customFields,
             savedQueries,
             items,
-            viewKind: focusView ? 'focus' : 'list',
+            viewKind: focusView ? 'focus' : pinnedView ? 'pinned' : 'list',
           };
           activeListId = list.id;
           activeListInstanceId = instanceId;
@@ -3630,7 +3686,7 @@ if (!registry || typeof registry.registerPanel !== 'function') {
 
         if (action === 'focus_updated') {
           if (
-            activeListId === FOCUS_LIST_ID &&
+            isVirtualListId(activeListId) &&
             activeListInstanceId === instanceId &&
             mode === 'list'
           ) {

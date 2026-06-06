@@ -1727,6 +1727,20 @@
   color: var(--tag-fg, var(--color-text-secondary));
 }
 
+.collection-browser-item-tag-pinned {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--color-accent-primary);
+  background-color: color-mix(in srgb, var(--color-accent-primary) 12%, transparent);
+  border-color: color-mix(in srgb, var(--color-accent-primary) 38%, transparent);
+}
+
+.collection-browser-item-tag-pinned .icon {
+  width: 12px;
+  height: 12px;
+}
+
 .collection-list-table {
   width: 100%;
   border-collapse: collapse;

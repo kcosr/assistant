@@ -8,7 +8,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { ToolContext } from '../../../../agent-server/src/tools';
 import manifestJson from '../manifest.json';
 import { createPlugin } from './index';
-import type { FocusListItem, ListDefinition, ListItem } from './types';
+import type { FocusListItem, ListDefinition, ListItem, PinnedListItem } from './types';
 
 function createTempDataDir(): string {
   return path.join(os.tmpdir(), `lists-plugin-test-${Date.now()}-${Math.random().toString(16)}`);
@@ -528,6 +528,28 @@ describe('lists plugin operations', () => {
       panelId: string;
     };
     expect(showResult).toEqual({ ok: true, panelId: 'lists-1' });
+
+    await ops['item-tags-add']({ listId: 'home', id: homeItem.id, tags: ['pinned'] }, ctx);
+    const pinnedList = (await ops['pinned-get']({}, ctx)) as ListDefinition;
+    expect(pinnedList).toMatchObject({
+      id: '__pinned__',
+      name: 'Pinned',
+    });
+    const pinnedItems = (await ops['pinned-items']({}, ctx)) as PinnedListItem[];
+    expect(pinnedItems).toHaveLength(1);
+    expect(pinnedItems[0]).toMatchObject({
+      id: homeItem.id,
+      listId: 'home',
+      sourceListId: 'home',
+      sourceListName: 'Home',
+      tags: expect.arrayContaining(['pinned']),
+    });
+
+    const pinnedShowResult = (await ops.show({ id: '__pinned__', panelId: 'lists-1' }, ctx)) as {
+      ok: true;
+      panelId: string;
+    };
+    expect(pinnedShowResult).toEqual({ ok: true, panelId: 'lists-1' });
     expect(broadcastToAll).toHaveBeenCalledWith(
       expect.objectContaining({
         type: 'panel_event',

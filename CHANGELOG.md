@@ -8,6 +8,7 @@
 
 ### Added
 
+- Added a virtual Pinned list view for list items tagged `pinned`, including first-class list picker placement, source-item actions, tag-chip rendering, and pin/unpin menu icon states. ([#111](https://github.com/kcosr/assistant/pull/111))
 - Added an Electron desktop package with native backend proxying, WebSocket forwarding, variant-aware backend defaults, and packaged-app asset routing. ([#108](https://github.com/kcosr/assistant/pull/108))
 - Added native Android voice replay for assistant turns and text/markdown attachments, using the existing local voice queue with front-of-queue, non-interrupting playback. ([#106](https://github.com/kcosr/assistant/pull/106))
 - Added one-shot Pi SDK session wake-ups to the scheduled-sessions plugin, including durable wake-up storage, current-session create/update/cancel-by-id tools, current-session tool listing, multiple wake-ups per session with an active wake-up cap, busy-session queue delivery, and panel visibility/cancel controls. ([#105](https://github.com/kcosr/assistant/pull/105))

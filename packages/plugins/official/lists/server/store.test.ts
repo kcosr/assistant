@@ -442,6 +442,44 @@ describe('ListsStore (plugin)', () => {
     await expect(store.removeFocusItem('missing-item')).resolves.toBeUndefined();
   });
 
+  it('derives the virtual pinned list from pinned item tags', async () => {
+    const filePath = createTempFilePath();
+    const store = createStore(filePath);
+
+    vi.setSystemTime(new Date('2024-05-01T00:00:00.000Z'));
+    await store.createList({ id: 'work', name: 'Work' });
+    await store.createList({ id: 'home', name: 'Home' });
+
+    const workItem = await store.addItem({
+      listId: 'work',
+      title: 'Ship feature',
+      tags: ['pinned', 'urgent'],
+    });
+    const homeItem = await store.addItem({
+      listId: 'home',
+      title: 'Pay bills',
+      tags: ['PINNED'],
+    });
+    await store.addItem({ listId: 'home', title: 'Clean kitchen' });
+
+    const pinnedList = await store.getPinnedList();
+    expect(pinnedList).toMatchObject({
+      id: '__pinned__',
+      name: 'Pinned',
+      tags: [],
+      defaultTags: [],
+      savedQueries: [],
+    });
+
+    const pinnedItems = await store.listPinnedItems();
+    expect(pinnedItems.map((item) => item.id)).toEqual([workItem.id, homeItem.id]);
+    expect(pinnedItems.map((item) => item.position)).toEqual([0, 1]);
+    expect(pinnedItems.map((item) => item.sourceListName)).toEqual(['Work', 'Home']);
+
+    await store.updateItem({ id: workItem.id, tags: ['urgent'] });
+    expect((await store.listPinnedItems()).map((item) => item.id)).toEqual([homeItem.id]);
+  });
+
   it('touches items without changing updatedAt', async () => {
     const filePath = createTempFilePath();
     const store = createStore(filePath);

@@ -1,5 +1,9 @@
 import type { ContextMenuManager } from './contextMenu';
 import type { ListMoveTarget, ListPanelItem } from './listPanelController';
+import { hasPinnedTag } from '../utils/pinnedTag';
+
+const FOCUS_LIST_ID = '__focus__';
+const PINNED_LIST_ID = '__pinned__';
 
 export interface ListItemMenuControllerOptions {
   contextMenuManager: ContextMenuManager;
@@ -11,6 +15,7 @@ export interface ListItemMenuControllerOptions {
     duplicate: string;
     x: string;
     eye: string;
+    pin: string;
     clock: string;
     clockOff: string;
     moveTop: string;
@@ -32,6 +37,7 @@ export interface ListItemMenuControllerOptions {
   onDeleteItem: (listId: string, itemId: string, title: string) => void;
   onDeleteUnderlyingItem?: (listId: string, itemId: string, title: string) => void;
   onToggleItemFocus?: (listId: string, itemId: string, focused: boolean) => void;
+  onToggleItemPinned?: (listId: string, itemId: string, pinned: boolean) => void;
   onMoveItemToList: (listId: string, itemId: string) => void;
   onCopyItemToList: (listId: string, itemId: string) => void;
   onTouchItem: (listId: string, itemId: string) => void;
@@ -191,7 +197,10 @@ export class ListItemMenuController {
       this.options.onCopyItemToList(listId, itemId);
     });
 
-    const isFocusItem = typeof item.sourceListId === 'string' && item.sourceListId.trim().length > 0;
+    const hasSourceItem =
+      typeof item.sourceListId === 'string' && item.sourceListId.trim().length > 0;
+    const isFocusItem = listId === FOCUS_LIST_ID && hasSourceItem;
+    const isPinnedViewItem = listId === PINNED_LIST_ID && hasSourceItem;
     if (this.options.onToggleItemFocus) {
       const isFocused = isFocusItem || item.focused === true;
       addMenuButton(
@@ -204,7 +213,19 @@ export class ListItemMenuController {
       );
     }
 
-    if (!isFocusItem) {
+    if (this.options.onToggleItemPinned) {
+      const isPinned = isPinnedViewItem || hasPinnedTag(item.tags);
+      addMenuButton(
+        this.options.icons.pin,
+        isPinned ? 'Unpin item' : 'Pin item',
+        () => {
+          this.options.onToggleItemPinned?.(listId, itemId, isPinned);
+        },
+        isPinned ? 'pin-toggle active' : 'pin-toggle',
+      );
+    }
+
+    if (!isFocusItem && !isPinnedViewItem) {
       addMenuButton(
         this.options.icons.trash,
         'Delete item',
@@ -215,7 +236,7 @@ export class ListItemMenuController {
       );
     }
 
-    if (isFocusItem && this.options.onDeleteUnderlyingItem) {
+    if (hasSourceItem && this.options.onDeleteUnderlyingItem) {
       addMenuButton(
         this.options.icons.trash,
         'Delete source item',

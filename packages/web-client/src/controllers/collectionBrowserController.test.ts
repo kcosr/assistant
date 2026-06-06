@@ -285,11 +285,12 @@ describe('CollectionBrowserController list CRUD UI', () => {
     });
   });
 
-  it('keeps the Focus list at the top of browser list results', () => {
+  it('keeps virtual Focus and Pinned lists at the top of browser list results', () => {
     const { controller, containerEl } = makeController({
       getAvailableItems: () => [
         { type: 'list', id: 'agent-pack', name: 'Agent Pack' },
         { type: 'list', id: '__focus__', name: 'Focus', specialKind: 'focus' },
+        { type: 'list', id: '__pinned__', name: 'Pinned', specialKind: 'pinned' },
         { type: 'list', id: 'today', name: 'Today' },
       ],
     });
@@ -302,7 +303,7 @@ describe('CollectionBrowserController list CRUD UI', () => {
       ),
     ).map((el) => el.dataset['collectionId']);
 
-    expect(ids).toEqual(['__focus__', 'agent-pack', 'today']);
+    expect(ids).toEqual(['__focus__', '__pinned__', 'agent-pack', 'today']);
   });
 
   it('sorts items by last updated and persists the choice', () => {
