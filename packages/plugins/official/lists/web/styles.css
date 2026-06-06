@@ -2826,6 +2826,14 @@ button.list-item-menu-checkbox {
   color: var(--color-accent-primary);
 }
 
+.list-item-menu-item.pin-toggle {
+  color: var(--color-text-muted);
+}
+
+.list-item-menu-item.pin-toggle.active {
+  color: #f59e0b;
+}
+
 .input-mic-button {
   display: inline-flex;
   align-items: center;

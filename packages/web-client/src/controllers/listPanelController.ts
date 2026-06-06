@@ -281,6 +281,7 @@ export class ListPanelController {
         trash: options.icons.trash,
         x: options.icons.x,
         eye: options.icons.eye,
+        pin: options.icons.pin,
         clock: options.icons.clock,
         clockOff: options.icons.clockOff,
         moveTop: options.icons.moveTop,
@@ -305,6 +306,9 @@ export class ListPanelController {
       },
       onToggleItemFocus: (_listId, itemId, focused) => {
         void this.toggleItemFocus(itemId, focused);
+      },
+      onToggleItemPinned: (listId, itemId, pinned) => {
+        void this.toggleItemPinned(listId, itemId, pinned);
       },
       onMoveItemToList: (listId, itemId) => {
         void this.showMoveItemToListDialog(listId, itemId);
@@ -1499,10 +1503,71 @@ export class ListPanelController {
     }
   }
 
+  private async toggleItemPinned(
+    listId: string,
+    itemId: string,
+    currentlyPinned: boolean,
+  ): Promise<boolean> {
+    if (!this.options.callOperation) {
+      this.options.setStatus('Lists tool is unavailable');
+      return false;
+    }
+    const sourceListId =
+      this.currentData?.viewKind === 'pinned' || isPinnedListId(listId)
+        ? this.getSourceListIdForItem(itemId)
+        : listId;
+    if (!sourceListId || isVirtualListId(sourceListId)) {
+      this.options.setStatus('Source list is unavailable');
+      return false;
+    }
+
+    try {
+      await this.runOperation(currentlyPinned ? 'item-tags-remove' : 'item-tags-add', {
+        listId: sourceListId,
+        id: itemId,
+        tags: [PINNED_TAG],
+      });
+      this.markItemPinned(itemId, !currentlyPinned);
+      this.options.setStatus(currentlyPinned ? 'Removed from Pinned' : 'Added to Pinned');
+      this.rerenderCurrent();
+      return true;
+    } catch {
+      this.options.setStatus(
+        currentlyPinned ? 'Failed to remove from Pinned' : 'Failed to add to Pinned',
+      );
+      return false;
+    }
+  }
+
   private markItemFocused(itemId: string, focused: boolean): void {
     const item = this.currentData?.items?.find((entry) => entry.id === itemId);
     if (item) {
       item.focused = focused;
+    }
+  }
+
+  private markItemPinned(itemId: string, pinned: boolean): void {
+    const currentData = this.currentData;
+    if (!currentData) {
+      return;
+    }
+    const item = currentData.items?.find((entry) => entry.id === itemId);
+    if (!item) {
+      return;
+    }
+    if (!pinned && (currentData.viewKind === 'pinned' || isPinnedListId(this.currentListId))) {
+      currentData.items = currentData.items?.filter((entry) => entry.id !== itemId) ?? [];
+      syncArrayContents(
+        this.currentSortedItems,
+        this.currentSortedItems.filter((entry) => entry.id !== itemId),
+      );
+      return;
+    }
+    const tags = Array.isArray(item.tags) ? item.tags : [];
+    if (pinned) {
+      item.tags = hasPinnedTag(tags) ? tags : [...tags, PINNED_TAG];
+    } else {
+      item.tags = withoutPinnedTag(tags);
     }
   }
 

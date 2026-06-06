@@ -41,6 +41,7 @@ describe('ListItemMenuController', () => {
         move: '<svg></svg>',
         x: '<svg></svg>',
         eye: '<svg></svg>',
+        pin: '<svg></svg>',
         clock: '<svg></svg>',
         clockOff: '<svg></svg>',
         moveTop: '<svg></svg>',
@@ -106,6 +107,7 @@ describe('ListItemMenuController', () => {
         move: '<svg></svg>',
         x: '<svg></svg>',
         eye: '<svg></svg>',
+        pin: '<svg></svg>',
         clock: '<svg></svg>',
         clockOff: '<svg></svg>',
         moveTop: '<svg></svg>',
@@ -185,6 +187,7 @@ describe('ListItemMenuController', () => {
         move: '<svg></svg>',
         x: '<svg></svg>',
         eye: '<svg></svg>',
+        pin: '<svg></svg>',
         clock: '<svg></svg>',
         clockOff: '<svg></svg>',
         moveTop: '<svg></svg>',
@@ -263,6 +266,7 @@ describe('ListItemMenuController', () => {
         move: '<svg></svg>',
         x: '<svg></svg>',
         eye: '<svg></svg>',
+        pin: '<svg></svg>',
         clock: '<svg></svg>',
         clockOff: '<svg></svg>',
         moveTop: '<svg></svg>',
@@ -298,5 +302,106 @@ describe('ListItemMenuController', () => {
 
     addButton!.click();
     expect(onToggleItemFocus).toHaveBeenCalledWith('source-list', 'item-123', false);
+  });
+
+  it('uses pin toggle actions for pinned state without treating unpin as delete', () => {
+    const contextMenuManager = new ContextMenuManager({
+      isSessionPinned: () => false,
+      pinSession: vi.fn(),
+      clearHistory: vi.fn(),
+      deleteSession: vi.fn(),
+      renameSession: vi.fn(),
+      editSession: vi.fn(),
+    });
+    const onToggleItemPinned = vi.fn();
+    const onDeleteItem = vi.fn();
+    const onDeleteUnderlyingItem = vi.fn();
+
+    const controller = new ListItemMenuController({
+      contextMenuManager,
+      icons: {
+        edit: '<svg class="edit"></svg>',
+        trash: '<svg class="trash"></svg>',
+        copy: '<svg class="copy"></svg>',
+        duplicate: '<svg class="duplicate"></svg>',
+        move: '<svg class="move"></svg>',
+        x: '<svg class="x"></svg>',
+        eye: '<svg class="eye"></svg>',
+        pin: '<svg class="pin"></svg>',
+        clock: '<svg class="clock"></svg>',
+        clockOff: '<svg class="clock-off"></svg>',
+        moveTop: '<svg class="move-top"></svg>',
+        moveBottom: '<svg class="move-bottom"></svg>',
+      },
+      recentUserItemUpdates: new Set<string>(),
+      userUpdateTimeoutMs: 1000,
+      getMoveTargetLists: () => [],
+      updateListItem: vi.fn(),
+      onEditItem: vi.fn(),
+      onDeleteItem,
+      onDeleteUnderlyingItem,
+      onToggleItemPinned,
+      onMoveItemToList: vi.fn(),
+      onCopyItemToList: vi.fn(),
+      onTouchItem: vi.fn(),
+      onClearTouchItem: vi.fn(),
+    });
+
+    const trigger = document.createElement('button');
+    document.body.appendChild(trigger);
+    const row = document.createElement('tr');
+
+    controller.open(
+      trigger,
+      'source-list',
+      { id: 'item-1', title: 'Unpinned task', tags: ['work'] },
+      'item-1',
+      row,
+    );
+    const pinButton = Array.from(
+      document.querySelectorAll<HTMLButtonElement>('.list-item-menu-item'),
+    ).find((btn) => btn.getAttribute('aria-label') === 'Pin item');
+    expect(pinButton).toBeDefined();
+    expect(pinButton?.innerHTML).toContain('pin');
+    expect(pinButton?.classList.contains('pin-toggle')).toBe(true);
+    expect(pinButton?.classList.contains('active')).toBe(false);
+
+    pinButton!.click();
+    expect(onToggleItemPinned).toHaveBeenCalledWith('source-list', 'item-1', false);
+
+    controller.open(
+      trigger,
+      '__pinned__',
+      {
+        id: 'item-2',
+        title: 'Pinned task',
+        tags: ['pinned', 'work'],
+        sourceListId: 'source-list',
+        sourceListName: 'Source List',
+      },
+      'item-2',
+      row,
+    );
+    const unpinButton = Array.from(
+      document.querySelectorAll<HTMLButtonElement>('.list-item-menu-item'),
+    ).find((btn) => btn.getAttribute('aria-label') === 'Unpin item');
+    const removeFromPinnedTrashButton = Array.from(
+      document.querySelectorAll<HTMLButtonElement>('.list-item-menu-item'),
+    ).find((btn) => btn.getAttribute('aria-label') === 'Delete item');
+    const deleteSourceButton = Array.from(
+      document.querySelectorAll<HTMLButtonElement>('.list-item-menu-item'),
+    ).find((btn) => btn.getAttribute('aria-label') === 'Delete source item');
+
+    expect(unpinButton).toBeDefined();
+    expect(unpinButton?.innerHTML).toContain('pin');
+    expect(unpinButton?.classList.contains('pin-toggle')).toBe(true);
+    expect(unpinButton?.classList.contains('active')).toBe(true);
+    expect(removeFromPinnedTrashButton).toBeUndefined();
+    expect(deleteSourceButton).toBeDefined();
+
+    unpinButton!.click();
+    expect(onToggleItemPinned).toHaveBeenCalledWith('__pinned__', 'item-2', true);
+    expect(onDeleteItem).not.toHaveBeenCalled();
+    expect(onDeleteUnderlyingItem).not.toHaveBeenCalled();
   });
 });
