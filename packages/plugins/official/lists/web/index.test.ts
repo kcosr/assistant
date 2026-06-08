@@ -519,6 +519,163 @@ describe('lists panel keyboard shortcuts', () => {
     handle.unmount();
   });
 
+  it('renders the pinned list header tag as an icon-only chip', async () => {
+    vi.resetModules();
+
+    const respond = (result: unknown) =>
+      new Response(JSON.stringify({ ok: true, result }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+
+    vi.stubGlobal('ASSISTANT_API_HOST', 'localhost');
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === 'string' ? input : input.toString();
+      const body =
+        typeof init?.body === 'string' && init.body.length > 0
+          ? (JSON.parse(init.body) as Record<string, unknown>)
+          : {};
+      const operation = url.split('/').pop();
+      switch (operation) {
+        case 'instance_list':
+          return respond([{ id: 'default', label: 'Default' }]);
+        case 'list':
+          return respond([{ id: 'list-a', name: 'List A', tags: ['pinned', 'work'] }]);
+        case 'get':
+          return respond({
+            id: String(body['id']),
+            name: 'List A',
+            tags: ['pinned', 'work'],
+            customFields: [],
+          });
+        case 'items-list':
+        case 'aql-query-list':
+          return respond([]);
+        default:
+          return respond([]);
+      }
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    (globalThis as { fetch?: typeof fetchMock }).fetch = fetchMock;
+    window.fetch = fetchMock as typeof window.fetch;
+    (window as { ASSISTANT_API_HOST?: string }).ASSISTANT_API_HOST = 'http://localhost';
+
+    await import('./index');
+
+    const factory = factories['lists'];
+    expect(factory).toBeDefined();
+
+    const panelModule = factory!();
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+
+    const context = new Map<string, unknown>();
+    const subscribers = new Map<string, Set<(value: unknown) => void>>();
+    const notify = (key: string, value: unknown) => {
+      const handlers = subscribers.get(key);
+      if (!handlers) return;
+      for (const handler of handlers) {
+        handler(value);
+      }
+    };
+
+    const host = {
+      panelId: () => 'lists-pinned-tag-header',
+      getContext: (key: string) => context.get(key) ?? null,
+      subscribeContext: (key: string, handler: (value: unknown) => void) => {
+        const handlers = subscribers.get(key) ?? new Set();
+        handlers.add(handler);
+        subscribers.set(key, handlers);
+        return () => {
+          handlers.delete(handler);
+        };
+      },
+      setContext: (key: string, value: unknown) => {
+        context.set(key, value);
+        notify(key, value);
+      },
+      persistPanelState: () => undefined,
+      loadPanelState: () => ({
+        selectedListId: 'list-a',
+        selectedListInstanceId: 'default',
+        mode: 'list',
+        instanceIds: ['default'],
+      }),
+      setPanelMetadata: () => undefined,
+      openPanel: () => null,
+      closePanel: () => undefined,
+      openPanelMenu: () => undefined,
+      startPanelDrag: () => undefined,
+      startPanelReorder: () => undefined,
+    };
+
+    const keyboardShortcuts = createShortcutHarness(() => {
+      const active = context.get('panel.active') as
+        | { panelId?: string; panelType?: string }
+        | null;
+      if (!active || typeof active.panelId !== 'string' || typeof active.panelType !== 'string') {
+        return null;
+      }
+      return { panelId: active.panelId, panelType: active.panelType };
+    });
+    host.setContext('core.services', {
+      dialogManager: { hasOpenDialog: false },
+      contextMenuManager: { close: () => undefined, setActiveMenu: () => undefined },
+      listColumnPreferencesClient: {
+        load: () => Promise.resolve(),
+        getListPreferences: () => null,
+        updateColumn: () => undefined,
+        getSortState: () => null,
+        updateSortState: () => undefined,
+        getTimelineField: () => null,
+        updateTimelineField: () => undefined,
+        getFocusMarkerItemId: () => null,
+        getFocusMarkerExpanded: () => false,
+        updateFocusMarker: () => undefined,
+        updateFocusMarkerExpanded: () => undefined,
+      },
+      keyboardShortcuts,
+      focusInput: () => undefined,
+      setStatus: () => undefined,
+      isMobileViewport: () => false,
+      notifyContextAvailabilityChange: () => undefined,
+    });
+
+    host.setContext('panel.active', { panelId: host.panelId(), panelType: 'lists' });
+
+    const handle = panelModule.mount(container, host);
+    handle.onVisibilityChange?.(true);
+
+    const waitFor = async (predicate: () => boolean) => {
+      for (let i = 0; i < 20; i += 1) {
+        if (predicate()) {
+          return;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      }
+      throw new Error('Timed out waiting for tags');
+    };
+
+    await waitFor(() => {
+      const header = container.querySelector('.collection-list-header');
+      return (
+        !!header?.querySelector('.collection-tag-pinned') &&
+        !!header?.querySelector('.collection-tag[data-tag="work"]')
+      );
+    });
+
+    const header = container.querySelector<HTMLElement>('.collection-list-header');
+    const pinnedChip = header?.querySelector<HTMLElement>('.collection-tag-pinned');
+    const workChip = header?.querySelector<HTMLElement>('.collection-tag[data-tag="work"]');
+
+    expect(pinnedChip?.innerHTML.trim().length).toBeGreaterThan(0);
+    expect(pinnedChip?.textContent).not.toContain('Pinned');
+    expect(pinnedChip?.getAttribute('aria-label')).toBe('Pinned');
+    expect(workChip?.textContent).toBe('work');
+
+    handle.unmount();
+  });
+
   it('clears previous AQL input and applies list defaults when switching lists', async () => {
     vi.resetModules();
 

@@ -624,7 +624,7 @@ function renderListTags(tags: string[] | undefined): HTMLElement | null {
     const pill = document.createElement('span');
     if (isPinnedTag(tag)) {
       pill.className = 'collection-tag collection-tag-pinned';
-      pill.innerHTML = `${ICONS.pin}<span>Pinned</span>`;
+      pill.innerHTML = ICONS.pin;
       pill.title = 'Pinned';
       pill.setAttribute('aria-label', 'Pinned');
     } else {

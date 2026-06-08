@@ -43,6 +43,7 @@
 
 ### Fixed
 
+- Fixed the Lists header pinned tag chip to show only the pin icon while preserving accessible labeling. ([#112](https://github.com/kcosr/assistant/pull/112))
 - Fixed Electron desktop HTML links and time-tracker XLSX export clicks so they open in the system browser/download path instead of being captured inside the Electron webview. ([#108](https://github.com/kcosr/assistant/pull/108))
 - Fixed the time tracker entry list refresh so relative Today/Week/Month presets resolve to the current date before listing newly added entries. ([#107](https://github.com/kcosr/assistant/pull/107))
 - Fixed Pi session sync so unreconcilable persisted/live message divergence repairs the canonical JSONL from current messages instead of skipping the write, with diagnostics and failed-rewrite safeguards. ([#104](https://github.com/kcosr/assistant/pull/104))
