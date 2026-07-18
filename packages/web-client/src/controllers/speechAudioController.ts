@@ -1422,23 +1422,37 @@ export class SpeechAudioController {
     enabled: boolean;
     mode: 'idle' | 'speaking' | 'listening' | 'realtime';
   } {
-    if (this.isNativeRealtimeActive()) {
+    // Active interactions stay actionable even if audioMode flipped mid-call.
+    if (
+      this.nativeRuntimeState === 'realtime_active' ||
+      this.nativeRuntimeState === 'realtime_connecting'
+    ) {
       return { enabled: true, mode: 'realtime' };
     }
-    if (this.isNativeListening()) {
+    if (this.nativeRuntimeState === 'listening') {
       return { enabled: true, mode: 'listening' };
     }
-    if (this.isNativeSpeaking()) {
+    if (this.nativeRuntimeState === 'speaking') {
       return { enabled: true, mode: 'speaking' };
     }
-    if (!this.isUsingNativeVoiceRuntime()) {
+
+    const bridgeAvailable = Boolean(
+      this.options.useNativeVoiceRuntime && this.options.nativeVoiceBridge?.isAvailable(),
+    );
+    if (!bridgeAvailable) {
+      return { enabled: false, mode: 'idle' };
+    }
+    // Native rejects starts when audioMode is off.
+    if (this.currentAudioMode === 'off') {
       return { enabled: false, mode: 'idle' };
     }
     if (this.isRealtimeRuntimeMode()) {
       // Realtime does not require a Thread session selection.
       return { enabled: true, mode: 'idle' };
     }
-    const hasSession = Boolean(sessionId && sessionId.trim().length > 0);
+    const hasSession =
+      Boolean(sessionId && sessionId.trim().length > 0) ||
+      Boolean(this.currentVoiceSettings.preferredVoiceSessionId?.trim());
     return { enabled: hasSession, mode: 'idle' };
   }
 

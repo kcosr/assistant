@@ -75,7 +75,9 @@ export function resolveVoiceFabController<T>(
 ): T | null {
   if (
     input.nativeRuntimeState === 'speaking' ||
-    input.nativeRuntimeState === 'listening'
+    input.nativeRuntimeState === 'listening' ||
+    input.nativeRuntimeState === 'realtime_active' ||
+    input.nativeRuntimeState === 'realtime_connecting'
   ) {
     return input.activeController ?? input.primaryController ?? null;
   }
