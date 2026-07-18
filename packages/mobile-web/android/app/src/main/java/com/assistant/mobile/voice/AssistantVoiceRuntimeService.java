@@ -560,15 +560,19 @@ public final class AssistantVoiceRuntimeService extends Service {
         boolean adapterUrlChanged = !previous.voiceAdapterBaseUrl.equals(updated.voiceAdapterBaseUrl);
         boolean assistantUrlChanged = !previous.assistantBaseUrl.equals(updated.assistantBaseUrl);
 
-        // Contract seam for Phase 3: leaving Realtime while it is the live owner must stop it.
+        // Leaving Realtime preference (or an active Realtime owner) must fully stop the call —
+        // owner fence alone leaves WebRTC/media live and the next mic press can race.
         if (
             AssistantVoiceControllerPolicy.shouldStopRealtimeForConfig(
                 previous.voiceRuntimeMode,
                 updated.voiceRuntimeMode,
                 liveOwner
             )
+            || (AssistantVoiceControllerPolicy.isRealtimeRuntimeMode(previous.voiceRuntimeMode)
+                && !AssistantVoiceControllerPolicy.isRealtimeRuntimeMode(updated.voiceRuntimeMode)
+                && isRealtimeActiveState(runtimeState))
         ) {
-            stopRealtimeOwner("config_runtime_mode");
+            stopRealtimeCall("config_runtime_mode");
         }
 
         if (!updated.isEnabled()) {

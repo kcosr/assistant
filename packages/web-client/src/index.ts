@@ -1218,11 +1218,18 @@ async function main(): Promise<void> {
       }
       return {
         getVoiceFabState: () => {
+          const voiceSettings = getCurrentVoiceSettings();
+          if (isNativeRealtimeRuntimeState(nativeVoiceRuntimeState)) {
+            return { enabled: true, mode: 'realtime' as const };
+          }
           if (nativeVoiceRuntimeState === 'speaking') {
             return { enabled: true, mode: 'speaking' as const };
           }
           if (nativeVoiceRuntimeState === 'listening') {
             return { enabled: true, mode: 'listening' as const };
+          }
+          if (voiceSettings.voiceRuntimeMode === 'realtime') {
+            return { enabled: true, mode: 'idle' as const };
           }
           return {
             enabled: Boolean(targetSessionId),
@@ -1230,14 +1237,24 @@ async function main(): Promise<void> {
           };
         },
         startVoiceFromFab: async () => {
+          // Push latest settings before start so native mode matches the dropdown.
+          const voiceSettings = getCurrentVoiceSettings();
+          await nativeVoiceBridge.setSessionTitles(getNativeVoiceSessionTitles());
+          await nativeVoiceBridge.setVoiceSettings(voiceSettings);
+          if (voiceSettings.voiceRuntimeMode === 'realtime') {
+            return nativeVoiceBridge.startRealtime();
+          }
           const normalizedTargetSessionId = normalizeSessionId(targetSessionId);
           if (!normalizedTargetSessionId) {
             return false;
           }
-          await nativeVoiceBridge.setSessionTitles(getNativeVoiceSessionTitles());
           return nativeVoiceBridge.startManualListen(normalizedTargetSessionId);
         },
         stopVoiceFromFab: () => {
+          if (isNativeRealtimeRuntimeState(nativeVoiceRuntimeState)) {
+            void nativeVoiceBridge.stopRealtime();
+            return true;
+          }
           if (nativeVoiceRuntimeState === 'speaking' || nativeVoiceRuntimeState === 'listening') {
             void nativeVoiceBridge.stopCurrentInteraction();
             return true;
@@ -1249,6 +1266,9 @@ async function main(): Promise<void> {
     return {
       getVoiceFabState: () => {
         const baseState = controller.getVoiceFabStateForSession(targetSessionId);
+        if (isNativeRealtimeRuntimeState(nativeVoiceRuntimeState)) {
+          return { enabled: true, mode: 'realtime' as const };
+        }
         if (nativeVoiceRuntimeState === 'speaking') {
           return { enabled: true, mode: 'speaking' as const };
         }
@@ -1257,7 +1277,11 @@ async function main(): Promise<void> {
         }
         return baseState;
       },
-      startVoiceFromFab: () => controller.startVoiceFromFabForSession(targetSessionId),
+      startVoiceFromFab: async () => {
+        // Ensure native mode is current even if async settings sync is still in flight.
+        await nativeVoiceBridge.setVoiceSettings(getCurrentVoiceSettings());
+        return controller.startVoiceFromFabForSession(targetSessionId);
+      },
       stopVoiceFromFab: () => controller.stopVoiceFromFab(),
     };
   }
@@ -1276,11 +1300,16 @@ async function main(): Promise<void> {
     return label || normalizedSessionId.slice(0, 8);
   }
 
-  function getVoiceFabSessionChipState(mode: 'idle' | 'speaking' | 'listening'): {
+  function getVoiceFabSessionChipState(
+    mode: 'idle' | 'speaking' | 'listening' | 'realtime',
+  ): {
     visible: boolean;
     interactive: boolean;
     title: string | null;
   } {
+    if (mode === 'realtime') {
+      return { visible: false, interactive: false, title: null };
+    }
     const panelSessionId = getVoiceFabPanelSessionId();
     return resolveVoiceFabSessionChipState({
       mode,
@@ -1406,6 +1435,10 @@ async function main(): Promise<void> {
       }
       entry.inputRuntime.setVoiceSettingsFromExternal(settings);
     }
+    // Always push to native. Relying only on speech-controller notify misses the
+    // no-primary-panel path and can leave native voiceRuntimeMode stale (e.g. still
+    // realtime after the settings dropdown switches to thread).
+    syncNativeVoiceSettings();
   }
 
   function syncNativeAssistantBaseUrl(): void {
@@ -1432,11 +1465,19 @@ async function main(): Promise<void> {
       case 'idle':
       case 'speaking':
       case 'listening':
+      case 'realtime_connecting':
+      case 'realtime_active':
       case 'error':
         return value;
       default:
         return null;
     }
+  }
+
+  function isNativeRealtimeRuntimeState(
+    state: AssistantNativeVoiceRuntimeState | null,
+  ): boolean {
+    return state === 'realtime_active' || state === 'realtime_connecting';
   }
 
   function applyNativeVoiceRuntimePayload(

@@ -9,6 +9,8 @@ export type NativeVoiceRuntimeState =
   | 'idle'
   | 'speaking'
   | 'listening'
+  | 'realtime_connecting'
+  | 'realtime_active'
   | 'error'
   | null;
 

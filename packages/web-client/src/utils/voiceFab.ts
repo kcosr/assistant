@@ -1,7 +1,9 @@
+export type VoiceFabMode = 'idle' | 'speaking' | 'listening' | 'realtime';
+
 interface VoiceFabSpeechController {
   getVoiceFabState: () => {
     enabled: boolean;
-    mode: 'idle' | 'speaking' | 'listening';
+    mode: VoiceFabMode;
   };
   startVoiceFromFab: () => Promise<boolean>;
   stopVoiceFromFab: () => boolean;
@@ -11,7 +13,7 @@ export interface VoiceFabOptions {
   button: HTMLButtonElement | null;
   isVisible: () => boolean;
   getSpeechController: () => VoiceFabSpeechController | null;
-  getSessionChipState: (mode: 'idle' | 'speaking' | 'listening') => {
+  getSessionChipState: (mode: VoiceFabMode) => {
     visible: boolean;
     interactive: boolean;
     title: string | null;
@@ -73,7 +75,12 @@ export function setupVoiceFab(options: VoiceFabOptions): VoiceFabHandle {
     chip.hidden = true;
   };
 
-  const renderSessionChip = (mode: 'idle' | 'speaking' | 'listening'): void => {
+  const renderSessionChip = (mode: VoiceFabMode): void => {
+    // Realtime is a separate conversation — hide Thread session chip while active.
+    if (mode === 'realtime') {
+      hideSessionChip();
+      return;
+    }
     const chipState = options.getSessionChipState(mode);
     const title = chipState.title?.trim() ?? '';
     if (!chipState.visible || !title) {
@@ -108,7 +115,11 @@ export function setupVoiceFab(options: VoiceFabOptions): VoiceFabHandle {
     renderSessionChip(state.mode);
     button.classList.add('voice-fab');
     button.classList.toggle('voice-fab-speaking', state.mode === 'speaking');
-    button.classList.toggle('voice-fab-listening', state.mode === 'listening');
+    // Reuse the red stop treatment for Thread listen and active Realtime.
+    button.classList.toggle(
+      'voice-fab-listening',
+      state.mode === 'listening' || state.mode === 'realtime',
+    );
     button.classList.toggle('voice-fab-disabled', !state.enabled);
     button.disabled = !state.enabled && state.mode === 'idle';
 
@@ -120,6 +131,10 @@ export function setupVoiceFab(options: VoiceFabOptions): VoiceFabHandle {
       button.innerHTML = STOP_ICON;
       button.setAttribute('aria-label', 'Stop voice listening');
       button.setAttribute('title', 'Stop voice listening');
+    } else if (state.mode === 'realtime') {
+      button.innerHTML = STOP_ICON;
+      button.setAttribute('aria-label', 'Stop realtime call');
+      button.setAttribute('title', 'Stop realtime call');
     } else {
       button.innerHTML = MICROPHONE_ICON;
       button.setAttribute('aria-label', state.enabled ? 'Start voice input' : 'No selected session');
@@ -134,7 +149,7 @@ export function setupVoiceFab(options: VoiceFabOptions): VoiceFabHandle {
       return;
     }
     const state = controller.getVoiceFabState();
-    if (state.mode === 'speaking' || state.mode === 'listening') {
+    if (state.mode === 'speaking' || state.mode === 'listening' || state.mode === 'realtime') {
       controller.stopVoiceFromFab();
       update();
       return;

@@ -71,6 +71,8 @@ export type AssistantNativeVoiceRuntimeState =
   | 'idle'
   | 'speaking'
   | 'listening'
+  | 'realtime_connecting'
+  | 'realtime_active'
   | 'error';
 
 export interface AssistantNativeVoiceStatePayload {
@@ -1411,15 +1413,18 @@ export class SpeechAudioController {
 
   getVoiceFabState(): {
     enabled: boolean;
-    mode: 'idle' | 'speaking' | 'listening';
+    mode: 'idle' | 'speaking' | 'listening' | 'realtime';
   } {
     return this.getVoiceFabStateForSession(this.options.getSessionId());
   }
 
   getVoiceFabStateForSession(sessionId: string | null): {
     enabled: boolean;
-    mode: 'idle' | 'speaking' | 'listening';
+    mode: 'idle' | 'speaking' | 'listening' | 'realtime';
   } {
+    if (this.isNativeRealtimeActive()) {
+      return { enabled: true, mode: 'realtime' };
+    }
     if (this.isNativeListening()) {
       return { enabled: true, mode: 'listening' };
     }
@@ -1428,6 +1433,10 @@ export class SpeechAudioController {
     }
     if (!this.isUsingNativeVoiceRuntime()) {
       return { enabled: false, mode: 'idle' };
+    }
+    if (this.isRealtimeRuntimeMode()) {
+      // Realtime does not require a Thread session selection.
+      return { enabled: true, mode: 'idle' };
     }
     const hasSession = Boolean(sessionId && sessionId.trim().length > 0);
     return { enabled: hasSession, mode: 'idle' };
@@ -1445,6 +1454,21 @@ export class SpeechAudioController {
     if (!this.isUsingNativeVoiceRuntime()) {
       return false;
     }
+    // Push settings first so native voiceRuntimeMode matches the UI (dropdown) before start.
+    try {
+      await this.options.nativeVoiceBridge?.setVoiceSettings(this.currentVoiceSettings);
+    } catch (error) {
+      this.logState('fab-start-settings-sync-failed', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+    if (this.isRealtimeRuntimeMode()) {
+      const started = this.options.nativeVoiceBridge?.startRealtime() ?? false;
+      if (!started) {
+        this.logState('fab-start-abort', { reason: 'native-realtime-start-unavailable' });
+      }
+      return started;
+    }
     const normalizedSessionId = sessionId?.trim() ?? '';
     if (!normalizedSessionId) {
       return false;
@@ -1461,6 +1485,10 @@ export class SpeechAudioController {
   }
 
   stopVoiceFromFab(): boolean {
+    if (this.isNativeRealtimeActive()) {
+      this.options.nativeVoiceBridge?.stopRealtime();
+      return true;
+    }
     if (this.isNativeInteractionActive()) {
       this.options.nativeVoiceBridge?.stopCurrentInteraction();
       return true;
@@ -1535,15 +1563,17 @@ export class SpeechAudioController {
     micButton.setAttribute('aria-hidden', 'false');
     const isNativeSpeaking = this.isNativeSpeaking();
     const isNativeListening = this.isNativeListening();
+    const isNativeRealtime = this.isNativeRealtimeActive();
     const shouldShowStop =
       isNativeListening ||
+      isNativeRealtime ||
       (!this.isUsingNativeVoiceRuntime() &&
         !this.isSpeechInputActive &&
         !this.isTtsPlaying &&
         this.options.isOutputActive());
     micButton.classList.toggle('stopping', shouldShowStop);
     micButton.classList.toggle('native-speaking', isNativeSpeaking);
-    micButton.classList.toggle('native-listening', isNativeListening);
+    micButton.classList.toggle('native-listening', isNativeListening || isNativeRealtime);
     this.renderMicButtonIcon(
       this.isSpeechInputActive || shouldShowStop
         ? 'stop'
@@ -1556,6 +1586,7 @@ export class SpeechAudioController {
       micButton.disabled &&
       (isNativeSpeaking ||
         isNativeListening ||
+        isNativeRealtime ||
         this.isSpeechInputActive ||
         this.isTtsPlaying ||
         this.options.isOutputActive() ||
@@ -1570,6 +1601,8 @@ export class SpeechAudioController {
     let label = 'Voice input';
     if (isNativeSpeaking) {
       label = 'Stop playback';
+    } else if (isNativeRealtime) {
+      label = 'Stop realtime call';
     } else if (isNativeListening) {
       label = 'Stop listening';
     } else if (this.isSpeechInputActive) {
@@ -1655,7 +1688,7 @@ export class SpeechAudioController {
   }
 
   private isNativeInteractionActive(): boolean {
-    return this.isNativeSpeaking() || this.isNativeListening();
+    return this.isNativeSpeaking() || this.isNativeListening() || this.isNativeRealtimeActive();
   }
 
   private isNativeSpeaking(): boolean {
@@ -1664,6 +1697,18 @@ export class SpeechAudioController {
 
   private isNativeListening(): boolean {
     return this.isNativeRuntimeAvailable() && this.nativeRuntimeState === 'listening';
+  }
+
+  private isNativeRealtimeActive(): boolean {
+    return (
+      this.isNativeRuntimeAvailable()
+      && (this.nativeRuntimeState === 'realtime_active'
+        || this.nativeRuntimeState === 'realtime_connecting')
+    );
+  }
+
+  private isRealtimeRuntimeMode(): boolean {
+    return this.currentVoiceSettings.voiceRuntimeMode === 'realtime';
   }
 
   private renderMicButtonIcon(mode: 'microphone' | 'speaker' | 'stop'): void {
