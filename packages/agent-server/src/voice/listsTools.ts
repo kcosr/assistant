@@ -3,6 +3,32 @@ import { matchesGlobPattern } from '../tools/scoping';
 
 import type { RealtimeFunctionTool } from './types';
 
+/** Built-in Realtime-only hangup tool (not a plugin op; always available on Realtime sessions). */
+export const REALTIME_END_SESSION_TOOL_NAME = 'realtime_end_session';
+
+export function isRealtimeEndSessionTool(name: string): boolean {
+  return name === REALTIME_END_SESSION_TOOL_NAME;
+}
+
+export function buildRealtimeEndSessionTool(): RealtimeFunctionTool {
+  return {
+    type: 'function',
+    name: REALTIME_END_SESSION_TOOL_NAME,
+    description:
+      'End the current realtime voice call immediately. Use when the user wants to hang up, stop, or end the conversation. Prefer a brief spoken goodbye first when natural, then call this tool.',
+    parameters: {
+      type: 'object',
+      properties: {
+        reason: {
+          type: 'string',
+          description: 'Optional short reason (for example user_request or done).',
+        },
+      },
+      additionalProperties: false,
+    },
+  };
+}
+
 /**
  * Explicit opt-in filter for realtime voice tools.
  *
@@ -36,6 +62,10 @@ export function isToolAllowedForVoiceRealtime(
   allowlist: string[] | undefined,
   denylist: string[] | undefined,
 ): boolean {
+  // Built-in hangup is always available on Realtime sessions.
+  if (isRealtimeEndSessionTool(name)) {
+    return true;
+  }
   if (!allowlist || allowlist.length === 0) {
     return false;
   }
@@ -79,7 +109,9 @@ export async function buildRealtimeToolsFromHost(options: {
 }): Promise<RealtimeFunctionTool[]> {
   const all = await options.listTools();
   const filtered = filterToolsForVoiceRealtime(all, options.toolAllowlist, options.toolDenylist);
-  return toRealtimeFunctionTools(filtered);
+  const hostTools = toRealtimeFunctionTools(filtered);
+  // Always expose hangup, independent of plugin allowlist (including empty allowlist).
+  return [...hostTools, buildRealtimeEndSessionTool()];
 }
 
 export function buildRealtimeInstructions(
@@ -94,6 +126,7 @@ export function buildRealtimeInstructions(
           'Speak concisely. Prefer short confirmations after mutations.',
           'You may only use the provided tools. Never invent tool names.',
           'Prefer title or name lookup fields when the user refers to items by name.',
+          'When the user wants to hang up, stop, or end the call, call realtime_end_session. A short goodbye first is fine; the call ends when that tool runs.',
           'Do not claim you can control Thread voice, notifications, or coding agents unless those tools are provided.',
         ].join('\n');
 

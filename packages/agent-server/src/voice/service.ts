@@ -5,6 +5,7 @@ import { ToolError } from '../tools';
 import {
   buildRealtimeInstructions,
   buildRealtimeToolsFromHost,
+  isRealtimeEndSessionTool,
   isToolAllowedForVoiceRealtime,
 } from './listsTools';
 import {
@@ -376,6 +377,41 @@ export class VoiceService {
       toolCallId: callId,
       payload: args,
     });
+
+    // Built-in hangup: acknowledge the tool, then close so the client plays the end cue.
+    if (isRealtimeEndSessionTool(name)) {
+      const reason =
+        typeof args['reason'] === 'string' && args['reason'].trim().length > 0
+          ? args['reason'].trim()
+          : 'agent_end';
+      const output = { ok: true, ending: true, reason };
+      await this.store.appendJournal(live.conversationId, {
+        kind: 'tool_result',
+        toolName: name,
+        toolCallId: callId,
+        payload: output,
+      });
+      await this.store.appendEvent(sessionId, {
+        type: 'tool',
+        name,
+        status: 'completed',
+      });
+      // Best-effort tool output before hangup (provider may already be tearing down).
+      try {
+        live.sideband.send({
+          type: 'conversation.item.create',
+          item: {
+            type: 'function_call_output',
+            call_id: callId,
+            output: JSON.stringify(output),
+          },
+        });
+      } catch {
+        // ignore
+      }
+      await this.closeSession(sessionId, reason);
+      return;
+    }
 
     const ctx = this.options.createToolContext(`voice:${live.conversationId}`);
     let output: unknown;
