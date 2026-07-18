@@ -8,7 +8,8 @@
 
 ### Added
 
-- Added Android native voice foundations for exclusive Thread vs Realtime ownership: generation-fenced controller helpers, shared audio router (focus/mode/SCO), Thread queue stop/clear/pause-admission hooks, and a `voiceRuntimeMode` preference (Thread queue vs Realtime) in web settings. Realtime WebRTC media remains a follow-up.
+- Added Android Realtime voice end-to-end: server `/api/voice/*` (conversation/session, OpenAI SDP negotiate, sideband lists tools, events), Android WebRTC Realtime client with exclusive-owner preemption, wake lock, start/stop/mute plugin APIs, and web settings controls. Uses server-side `OPENAI_API_KEY` only.
+- Added Android native voice foundations for exclusive Thread vs Realtime ownership: generation-fenced controller helpers, shared audio router (focus/mode/SCO), Thread queue stop/clear/pause-admission hooks, and a `voiceRuntimeMode` preference.
 - Wait for the agent-voice-adapter client identity before starting direct TTS playback from the Android voice queue, and drain the queue once the identity arrives.
 - Added a virtual Pinned list view for list items tagged `pinned`, including first-class list picker placement, source-item actions, tag-chip rendering, and pin/unpin menu icon states. ([#111](https://github.com/kcosr/assistant/pull/111))
 - Added an Electron desktop package with native backend proxying, WebSocket forwarding, variant-aware backend defaults, and packaged-app asset routing. ([#108](https://github.com/kcosr/assistant/pull/108))

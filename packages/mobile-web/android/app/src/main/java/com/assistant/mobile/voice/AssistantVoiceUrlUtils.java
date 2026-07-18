@@ -82,6 +82,39 @@ final class AssistantVoiceUrlUtils {
         return joinApiPath(baseUrl, "api/plugins/notifications/operations/clear");
     }
 
+    static String assistantVoiceCapabilitiesUrl(String baseUrl) {
+        return joinApiPath(baseUrl, "api/voice/capabilities");
+    }
+
+    static String assistantVoiceSessionsUrl(String baseUrl) {
+        return joinApiPath(baseUrl, "api/voice/sessions");
+    }
+
+    static String assistantVoiceSessionOfferUrl(String baseUrl, String sessionId) {
+        return joinApiPath(baseUrl, "api/voice/sessions/" + encode(sessionId) + "/offer");
+    }
+
+    static String assistantVoiceSessionHeartbeatUrl(String baseUrl, String sessionId) {
+        return joinApiPath(baseUrl, "api/voice/sessions/" + encode(sessionId) + "/heartbeat");
+    }
+
+    static String assistantVoiceSessionMuteUrl(String baseUrl, String sessionId) {
+        return joinApiPath(baseUrl, "api/voice/sessions/" + encode(sessionId) + "/mute");
+    }
+
+    static String assistantVoiceSessionEventsUrl(String baseUrl, String sessionId, long after) {
+        return joinApiPath(baseUrl, "api/voice/sessions/" + encode(sessionId) + "/events")
+            + "?after=" + after;
+    }
+
+    static String assistantVoiceSessionCloseUrl(String baseUrl, String sessionId) {
+        return joinApiPath(baseUrl, "api/voice/sessions/" + encode(sessionId) + "/close");
+    }
+
+    private static String encode(String value) {
+        return Uri.encode(value == null ? "" : value);
+    }
+
     private static String joinApiPath(String baseUrl, String suffix) {
         Uri base = Uri.parse(normalizeBaseUrl(baseUrl, AssistantVoiceConfig.DEFAULT_ASSISTANT_BASE_URL));
         return base.buildUpon()

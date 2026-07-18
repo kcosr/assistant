@@ -208,7 +208,10 @@ public final class AssistantVoiceConfigTest {
             false,
             false,
             true,
-            false
+            false,
+            "",
+            false,
+            AssistantVoiceConfig.DEFAULT_REALTIME_LISTS_INSTANCE_ID
         );
     }
 
@@ -313,7 +316,10 @@ public final class AssistantVoiceConfigTest {
             mediaButtonsEnabled,
             false,
             true,
-            false
+            false,
+            "",
+            false,
+            AssistantVoiceConfig.DEFAULT_REALTIME_LISTS_INSTANCE_ID
         );
     }
 

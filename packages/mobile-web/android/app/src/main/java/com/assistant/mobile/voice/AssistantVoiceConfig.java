@@ -42,6 +42,8 @@ final class AssistantVoiceConfig {
     static final boolean DEFAULT_TTS_PREFERRED_SESSION_ONLY = false;
     static final boolean DEFAULT_STANDALONE_NOTIFICATION_PLAYBACK_ENABLED = true;
     static final boolean DEFAULT_NOTIFICATION_TITLE_PLAYBACK_ENABLED = false;
+    static final boolean DEFAULT_REALTIME_MUTE_ON_START = false;
+    static final String DEFAULT_REALTIME_LISTS_INSTANCE_ID = "default";
 
     private static final String PREFS_NAME = "assistant_voice_runtime";
     private static final String KEY_AUDIO_MODE = "audio_mode";
@@ -71,6 +73,9 @@ final class AssistantVoiceConfig {
         "standalone_notification_playback_enabled";
     private static final String KEY_NOTIFICATION_TITLE_PLAYBACK_ENABLED =
         "notification_title_playback_enabled";
+    private static final String KEY_REALTIME_CONVERSATION_ID = "realtime_conversation_id";
+    private static final String KEY_REALTIME_MUTE_ON_START = "realtime_mute_on_start";
+    private static final String KEY_REALTIME_LISTS_INSTANCE_ID = "realtime_lists_instance_id";
     private static final String KEY_RUNTIME_STATE = "runtime_state";
     private static final String KEY_RUNTIME_ERROR = "runtime_error";
     private static final String KEY_RUNTIME_ACTIVE_SESSION_ID = "runtime_active_session_id";
@@ -102,6 +107,9 @@ final class AssistantVoiceConfig {
         "standaloneNotificationPlaybackEnabled";
     static final String EXTRA_NOTIFICATION_TITLE_PLAYBACK_ENABLED =
         "notificationTitlePlaybackEnabled";
+    static final String EXTRA_REALTIME_CONVERSATION_ID = "realtimeConversationId";
+    static final String EXTRA_REALTIME_MUTE_ON_START = "realtimeMuteOnStart";
+    static final String EXTRA_REALTIME_LISTS_INSTANCE_ID = "realtimeListsInstanceId";
 
     final String audioMode;
     final String voiceRuntimeMode;
@@ -128,6 +136,9 @@ final class AssistantVoiceConfig {
     final boolean ttsPreferredSessionOnly;
     final boolean standaloneNotificationPlaybackEnabled;
     final boolean notificationTitlePlaybackEnabled;
+    final String realtimeConversationId;
+    final boolean realtimeMuteOnStart;
+    final String realtimeListsInstanceId;
 
     AssistantVoiceConfig(
         String audioMode,
@@ -154,7 +165,10 @@ final class AssistantVoiceConfig {
         boolean mediaButtonsEnabled,
         boolean ttsPreferredSessionOnly,
         boolean standaloneNotificationPlaybackEnabled,
-        boolean notificationTitlePlaybackEnabled
+        boolean notificationTitlePlaybackEnabled,
+        String realtimeConversationId,
+        boolean realtimeMuteOnStart,
+        String realtimeListsInstanceId
     ) {
         this.audioMode = normalizeAudioMode(audioMode);
         this.voiceRuntimeMode = AssistantVoiceControllerPolicy.normalizeRuntimeMode(voiceRuntimeMode);
@@ -202,6 +216,12 @@ final class AssistantVoiceConfig {
         this.ttsPreferredSessionOnly = ttsPreferredSessionOnly;
         this.standaloneNotificationPlaybackEnabled = standaloneNotificationPlaybackEnabled;
         this.notificationTitlePlaybackEnabled = notificationTitlePlaybackEnabled;
+        this.realtimeConversationId = normalizeOptional(realtimeConversationId);
+        this.realtimeMuteOnStart = realtimeMuteOnStart;
+        String listsInstance = normalizeOptional(realtimeListsInstanceId);
+        this.realtimeListsInstanceId = listsInstance.isEmpty()
+            ? DEFAULT_REALTIME_LISTS_INSTANCE_ID
+            : listsInstance;
     }
 
     static AssistantVoiceConfig load(Context context) {
@@ -243,7 +263,10 @@ final class AssistantVoiceConfig {
             prefs.getBoolean(
                 KEY_NOTIFICATION_TITLE_PLAYBACK_ENABLED,
                 DEFAULT_NOTIFICATION_TITLE_PLAYBACK_ENABLED
-            )
+            ),
+            prefs.getString(KEY_REALTIME_CONVERSATION_ID, null),
+            prefs.getBoolean(KEY_REALTIME_MUTE_ON_START, DEFAULT_REALTIME_MUTE_ON_START),
+            prefs.getString(KEY_REALTIME_LISTS_INSTANCE_ID, DEFAULT_REALTIME_LISTS_INSTANCE_ID)
         );
     }
 
@@ -284,6 +307,9 @@ final class AssistantVoiceConfig {
                 KEY_NOTIFICATION_TITLE_PLAYBACK_ENABLED,
                 config.notificationTitlePlaybackEnabled
             )
+            .putString(KEY_REALTIME_CONVERSATION_ID, config.realtimeConversationId)
+            .putBoolean(KEY_REALTIME_MUTE_ON_START, config.realtimeMuteOnStart)
+            .putString(KEY_REALTIME_LISTS_INSTANCE_ID, config.realtimeListsInstanceId)
             .apply();
     }
 
@@ -363,7 +389,14 @@ final class AssistantVoiceConfig {
             intent.getBooleanExtra(
                 EXTRA_NOTIFICATION_TITLE_PLAYBACK_ENABLED,
                 fallback.notificationTitlePlaybackEnabled
-            )
+            ),
+            intent.hasExtra(EXTRA_REALTIME_CONVERSATION_ID)
+                ? intent.getStringExtra(EXTRA_REALTIME_CONVERSATION_ID)
+                : fallback.realtimeConversationId,
+            intent.getBooleanExtra(EXTRA_REALTIME_MUTE_ON_START, fallback.realtimeMuteOnStart),
+            intent.hasExtra(EXTRA_REALTIME_LISTS_INSTANCE_ID)
+                ? intent.getStringExtra(EXTRA_REALTIME_LISTS_INSTANCE_ID)
+                : fallback.realtimeListsInstanceId
         );
     }
 
@@ -398,6 +431,9 @@ final class AssistantVoiceConfig {
             EXTRA_NOTIFICATION_TITLE_PLAYBACK_ENABLED,
             notificationTitlePlaybackEnabled
         );
+        intent.putExtra(EXTRA_REALTIME_CONVERSATION_ID, emptyToNull(realtimeConversationId));
+        intent.putExtra(EXTRA_REALTIME_MUTE_ON_START, realtimeMuteOnStart);
+        intent.putExtra(EXTRA_REALTIME_LISTS_INSTANCE_ID, emptyToNull(realtimeListsInstanceId));
         return intent;
     }
 
@@ -570,7 +606,13 @@ final class AssistantVoiceConfig {
             mediaButtonsEnabled,
             ttsPreferredSessionOnly,
             standaloneNotificationPlaybackEnabled,
-            notificationTitlePlaybackEnabled
+            notificationTitlePlaybackEnabled,
+
+            realtimeConversationId,
+
+            realtimeMuteOnStart,
+
+            realtimeListsInstanceId
         );
     }
 
@@ -600,7 +642,13 @@ final class AssistantVoiceConfig {
             mediaButtonsEnabled,
             ttsPreferredSessionOnly,
             standaloneNotificationPlaybackEnabled,
-            notificationTitlePlaybackEnabled
+            notificationTitlePlaybackEnabled,
+
+            realtimeConversationId,
+
+            realtimeMuteOnStart,
+
+            realtimeListsInstanceId
         );
     }
 
@@ -637,7 +685,10 @@ final class AssistantVoiceConfig {
             && mediaButtonsEnabled == config.mediaButtonsEnabled
             && ttsPreferredSessionOnly == config.ttsPreferredSessionOnly
             && standaloneNotificationPlaybackEnabled == config.standaloneNotificationPlaybackEnabled
-            && notificationTitlePlaybackEnabled == config.notificationTitlePlaybackEnabled;
+            && notificationTitlePlaybackEnabled == config.notificationTitlePlaybackEnabled
+            && Objects.equals(realtimeConversationId, config.realtimeConversationId)
+            && realtimeMuteOnStart == config.realtimeMuteOnStart
+            && Objects.equals(realtimeListsInstanceId, config.realtimeListsInstanceId);
     }
 
     @Override
@@ -667,7 +718,13 @@ final class AssistantVoiceConfig {
             mediaButtonsEnabled,
             ttsPreferredSessionOnly,
             standaloneNotificationPlaybackEnabled,
-            notificationTitlePlaybackEnabled
+            notificationTitlePlaybackEnabled,
+
+            realtimeConversationId,
+
+            realtimeMuteOnStart,
+
+            realtimeListsInstanceId
         );
     }
 
@@ -709,7 +766,10 @@ final class AssistantVoiceConfig {
             settings.optBoolean(
                 "notificationTitlePlaybackEnabled",
                 notificationTitlePlaybackEnabled
-            )
+            ),
+            settings.optString("realtimeConversationId", realtimeConversationId),
+            settings.optBoolean("realtimeMuteOnStart", realtimeMuteOnStart),
+            settings.optString("realtimeListsInstanceId", realtimeListsInstanceId)
         );
     }
 
@@ -739,7 +799,13 @@ final class AssistantVoiceConfig {
             mediaButtonsEnabled,
             ttsPreferredSessionOnly,
             standaloneNotificationPlaybackEnabled,
-            notificationTitlePlaybackEnabled
+            notificationTitlePlaybackEnabled,
+
+            realtimeConversationId,
+
+            realtimeMuteOnStart,
+
+            realtimeListsInstanceId
         );
     }
 
@@ -769,7 +835,13 @@ final class AssistantVoiceConfig {
             mediaButtonsEnabled,
             ttsPreferredSessionOnly,
             standaloneNotificationPlaybackEnabled,
-            notificationTitlePlaybackEnabled
+            notificationTitlePlaybackEnabled,
+
+            realtimeConversationId,
+
+            realtimeMuteOnStart,
+
+            realtimeListsInstanceId
         );
     }
 
@@ -799,7 +871,13 @@ final class AssistantVoiceConfig {
             mediaButtonsEnabled,
             ttsPreferredSessionOnly,
             standaloneNotificationPlaybackEnabled,
-            notificationTitlePlaybackEnabled
+            notificationTitlePlaybackEnabled,
+
+            realtimeConversationId,
+
+            realtimeMuteOnStart,
+
+            realtimeListsInstanceId
         );
     }
 
@@ -829,7 +907,13 @@ final class AssistantVoiceConfig {
             mediaButtonsEnabled,
             ttsPreferredSessionOnly,
             standaloneNotificationPlaybackEnabled,
-            notificationTitlePlaybackEnabled
+            notificationTitlePlaybackEnabled,
+
+            realtimeConversationId,
+
+            realtimeMuteOnStart,
+
+            realtimeListsInstanceId
         );
     }
 
@@ -859,7 +943,13 @@ final class AssistantVoiceConfig {
             enabled,
             ttsPreferredSessionOnly,
             standaloneNotificationPlaybackEnabled,
-            notificationTitlePlaybackEnabled
+            notificationTitlePlaybackEnabled,
+
+            realtimeConversationId,
+
+            realtimeMuteOnStart,
+
+            realtimeListsInstanceId
         );
     }
 
@@ -889,7 +979,13 @@ final class AssistantVoiceConfig {
             mediaButtonsEnabled,
             ttsPreferredSessionOnly,
             standaloneNotificationPlaybackEnabled,
-            notificationTitlePlaybackEnabled
+            notificationTitlePlaybackEnabled,
+
+            realtimeConversationId,
+
+            realtimeMuteOnStart,
+
+            realtimeListsInstanceId
         );
     }
 

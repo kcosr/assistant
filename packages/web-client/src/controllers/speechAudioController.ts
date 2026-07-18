@@ -104,6 +104,9 @@ export interface AssistantNativeVoiceBridgeTarget {
   setAssistantBaseUrl?: (args: AssistantNativeVoiceUrlArgs) => void | Promise<void>;
   stopCurrentInteraction?: () => void | Promise<void>;
   startManualListen?: (args?: AssistantNativeVoiceStartListenArgs) => void | Promise<void>;
+  startRealtime?: () => void | Promise<void>;
+  stopRealtime?: () => void | Promise<void>;
+  setRealtimeMuted?: (args: { muted: boolean }) => void | Promise<void>;
   playText?: (args: AssistantNativeVoicePlayTextArgs) => void | Promise<void>;
   listInputDevices?: () =>
     | AssistantNativeVoiceInputDevice[]
@@ -206,6 +209,18 @@ export class AssistantNativeVoiceBridge {
 
   startManualListen(sessionId?: string | null): boolean {
     return this.invoke('startManualListen', { sessionId: sessionId ?? null });
+  }
+
+  startRealtime(): boolean {
+    return this.invoke('startRealtime');
+  }
+
+  stopRealtime(): boolean {
+    return this.invoke('stopRealtime');
+  }
+
+  setRealtimeMuted(muted: boolean): boolean {
+    return this.invoke('setRealtimeMuted', { muted });
   }
 
   playText(args: AssistantNativeVoicePlayTextArgs): boolean {

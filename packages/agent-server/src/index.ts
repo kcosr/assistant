@@ -31,6 +31,7 @@ import {
 } from './history/historyProvider';
 import { PiSessionWriter } from './history/piSessionWriter';
 import { AttachmentStore } from './attachments/store';
+import { VoiceService } from './voice/service';
 
 export {
   buildSystemPrompt,
@@ -168,6 +169,28 @@ export async function startServer(
     await scheduledSessionService.initialize();
   }
 
+  const voiceService = new VoiceService(
+    {
+      envConfig: config,
+      toolHost,
+      createToolContext: (sessionId) => ({
+        sessionId,
+        signal: new AbortController().signal,
+        eventStore: chatEventStore,
+        sessionHub,
+        sessionIndex,
+        agentRegistry: registry,
+        envConfig: config,
+        baseToolHost: toolHost,
+        ...(historyProvider ? { historyProvider } : {}),
+        ...(scheduledSessionService ? { scheduledSessionService } : {}),
+        ...(searchService ? { searchService } : {}),
+      }),
+    },
+    config.dataDir,
+  );
+  await voiceService.init();
+
   const httpServer = createHttpServer({
     config,
     sessionIndex,
@@ -179,6 +202,7 @@ export async function startServer(
     ...(scheduledSessionService ? { scheduledSessionService } : {}),
     historyProvider,
     ...(pluginRegistry ? { pluginRegistry } : {}),
+    voiceService,
   });
 
   const wss = new WebSocketServer({

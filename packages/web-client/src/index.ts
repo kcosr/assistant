@@ -3981,9 +3981,13 @@ async function main(): Promise<void> {
   };
   const syncVoiceSettingsFromInputs = (overrides?: Partial<VoiceSettings>): void => {
     const currentSettings = getCurrentVoiceSettings();
+    const realtimeMuteOnStartCheckbox = document.getElementById(
+      'realtime-mute-on-start-checkbox',
+    ) as HTMLInputElement | null;
     const nextSettings = normalizeVoiceSettings({
       ...currentSettings,
       voiceRuntimeMode: voiceRuntimeModeSelectEl.value,
+      realtimeMuteOnStart: realtimeMuteOnStartCheckbox?.checked ?? currentSettings.realtimeMuteOnStart,
       audioMode: audioModeSelectEl.value,
       autoListenEnabled: autoListenCheckboxEl.checked,
       standaloneNotificationPlaybackEnabled: standaloneNotificationPlaybackCheckboxEl.checked,
@@ -4019,8 +4023,36 @@ async function main(): Promise<void> {
   voiceSettingsButtonEl.addEventListener('click', () => {
     openVoiceSettingsModal();
   });
+  const realtimeMuteOnStartCheckboxEl = document.getElementById(
+    'realtime-mute-on-start-checkbox',
+  ) as HTMLInputElement | null;
+  const realtimeStartButtonEl = document.getElementById(
+    'realtime-start-button',
+  ) as HTMLButtonElement | null;
+  const realtimeStopButtonEl = document.getElementById(
+    'realtime-stop-button',
+  ) as HTMLButtonElement | null;
+  const realtimeVoiceControlsEl = document.getElementById('realtime-voice-controls');
+  const syncRealtimeControlsVisibility = (): void => {
+    if (!realtimeVoiceControlsEl) {
+      return;
+    }
+    realtimeVoiceControlsEl.style.display =
+      voiceRuntimeModeSelectEl.value === 'realtime' ? '' : 'none';
+  };
+  voiceRuntimeModeSelectEl.addEventListener('change', () => {
+    syncRealtimeControlsVisibility();
+  });
+  realtimeStartButtonEl?.addEventListener('click', () => {
+    syncVoiceSettingsFromInputs({ voiceRuntimeMode: 'realtime' });
+    nativeVoiceBridge.startRealtime();
+  });
+  realtimeStopButtonEl?.addEventListener('click', () => {
+    nativeVoiceBridge.stopRealtime();
+  });
   [
     voiceRuntimeModeSelectEl,
+    realtimeMuteOnStartCheckboxEl,
     audioModeSelectEl,
     autoListenCheckboxEl,
     standaloneNotificationPlaybackCheckboxEl,
@@ -4036,9 +4068,11 @@ async function main(): Promise<void> {
     voiceRecognitionCueGainSliderEl,
     voiceStartupPreRollSliderEl,
     voiceTtsGainSliderEl,
-  ].forEach((control) => {
-    control.addEventListener('change', () => syncVoiceSettingsFromInputs());
-  });
+  ]
+    .filter((control): control is HTMLElement => control != null)
+    .forEach((control) => {
+      control.addEventListener('change', () => syncVoiceSettingsFromInputs());
+    });
   voicePreferredSessionButtonEl.addEventListener('click', () => {
     const settings = getCurrentVoiceSettings();
     const useMobilePickerPlacement = isMobileViewport();
@@ -4066,6 +4100,10 @@ async function main(): Promise<void> {
   const resetVoiceSettingsInputs = (): void => {
     const settings = getCurrentVoiceSettings();
     voiceRuntimeModeSelectEl.value = settings.voiceRuntimeMode;
+    if (realtimeMuteOnStartCheckboxEl) {
+      realtimeMuteOnStartCheckboxEl.checked = settings.realtimeMuteOnStart;
+    }
+    syncRealtimeControlsVisibility();
     audioModeSelectEl.value = settings.audioMode;
     autoListenCheckboxEl.checked = settings.autoListenEnabled;
     standaloneNotificationPlaybackCheckboxEl.checked =

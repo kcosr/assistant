@@ -14,6 +14,7 @@ import android.os.Build;
 import android.os.Handler;
 import android.os.IBinder;
 import android.os.Looper;
+import android.os.PowerManager;
 import android.util.Base64;
 import android.util.Log;
 import android.view.KeyEvent;
@@ -67,6 +68,12 @@ public final class AssistantVoiceRuntimeService extends Service {
     static final String ACTION_NOTIFICATION_SPEAKER = "com.assistant.mobile.voice.NOTIFICATION_SPEAKER";
     static final String ACTION_NOTIFICATION_MIC = "com.assistant.mobile.voice.NOTIFICATION_MIC";
     static final String ACTION_NOTIFICATION_DISMISS = "com.assistant.mobile.voice.NOTIFICATION_DISMISS";
+    static final String ACTION_START_REALTIME = "com.assistant.mobile.voice.START_REALTIME";
+    static final String ACTION_STOP_REALTIME = "com.assistant.mobile.voice.STOP_REALTIME";
+    static final String ACTION_SET_REALTIME_MUTED = "com.assistant.mobile.voice.SET_REALTIME_MUTED";
+    static final String EXTRA_REALTIME_MUTED = "realtimeMuted";
+    public static final String STATE_REALTIME_CONNECTING = "realtime_connecting";
+    public static final String STATE_REALTIME_ACTIVE = "realtime_active";
     static final String EXTRA_MANUAL_LISTEN_SESSION_ID = "manualListenSessionId";
     static final String EXTRA_PLAY_TEXT_SESSION_ID = "playTextSessionId";
     static final String EXTRA_PLAY_TEXT_TEXT = "playTextText";
@@ -137,7 +144,12 @@ public final class AssistantVoiceRuntimeService extends Service {
     private AssistantVoicePcmPlayer player;
     private AssistantVoiceMicStreamer micStreamer;
     private AssistantVoiceAudioRouter audioRouter;
+    private AssistantVoiceRealtimeClient realtimeClient;
+    private PowerManager.WakeLock realtimeWakeLock;
     private MediaSession mediaSession;
+    private String realtimeSessionId = "";
+    private String realtimeConversationId = "";
+    private boolean realtimeMuted = false;
     /** Monotonic controller generation; advanced on exclusive-owner transitions. */
     private long controllerGeneration = 1L;
     /** Generation stamped onto the currently admitted Thread media interaction. */
@@ -312,6 +324,66 @@ public final class AssistantVoiceRuntimeService extends Service {
         micStreamer.setAudioRouter(audioRouter);
         player = new AssistantVoicePcmPlayer(this);
         player.setAudioRouter(audioRouter);
+        realtimeClient = new AssistantVoiceRealtimeClient(this, httpClient);
+        realtimeClient.setListener(new AssistantVoiceRealtimeClient.Listener() {
+            @Override
+            public void onConnecting() {
+                mainHandler.post(() -> updateState(STATE_REALTIME_CONNECTING, null));
+            }
+
+            @Override
+            public void onConnected(String sessionId, String conversationId) {
+                mainHandler.post(() -> {
+                    realtimeSessionId = sessionId == null ? "" : sessionId;
+                    realtimeConversationId = conversationId == null ? "" : conversationId;
+                    if (!realtimeConversationId.isEmpty() && config != null) {
+                        try {
+                            JSONObject patch = new JSONObject();
+                            patch.put("realtimeConversationId", realtimeConversationId);
+                            config = config.withVoiceSettings(patch);
+                            AssistantVoiceConfig.save(AssistantVoiceRuntimeService.this, config);
+                        } catch (Exception ignored) {
+                        }
+                    }
+                    acquireRealtimeWakeLock();
+                    updateState(STATE_REALTIME_ACTIVE, null);
+                });
+            }
+
+            @Override
+            public void onFailed(String message) {
+                mainHandler.post(() -> {
+                    releaseRealtimeWakeLock();
+                    stopRealtimeOwner("realtime_failed");
+                    updateState(STATE_ERROR, message);
+                    emitRuntimeError(message == null ? "Realtime failed" : message);
+                });
+            }
+
+            @Override
+            public void onClosed(String reason) {
+                mainHandler.post(() -> {
+                    releaseRealtimeWakeLock();
+                    if (AssistantVoiceControllerPolicy.OWNER_REALTIME.equals(liveOwner)) {
+                        stopRealtimeOwner(reason == null ? "realtime_closed" : reason);
+                    }
+                    if (!STATE_ERROR.equals(runtimeState)) {
+                        updateState(resolveInactiveState(), null);
+                    }
+                });
+            }
+
+            @Override
+            public void onTranscript(String role, String text, boolean isFinal) {
+                // Native authority owns speech; transcript events are available for future UI sheets.
+                Log.d(TAG, "realtime transcript role=" + role + " final=" + isFinal + " len=" + (text == null ? 0 : text.length()));
+            }
+
+            @Override
+            public void onTool(String name, String status, String detail) {
+                Log.d(TAG, "realtime tool name=" + name + " status=" + status + " detail=" + safe(detail));
+            }
+        });
         config = AssistantVoiceConfig.load(this);
         micStreamer.setPreferredDeviceId(config.selectedMicDeviceId);
         player.setTtsGain(config.ttsGain);
@@ -402,8 +474,35 @@ public final class AssistantVoiceRuntimeService extends Service {
             applyConfig(updated);
             return START_STICKY;
         }
+        if (ACTION_START_REALTIME.equals(action)) {
+            startRealtimeCall("intent_start");
+            return START_STICKY;
+        }
+        if (ACTION_STOP_REALTIME.equals(action)) {
+            stopRealtimeCall("intent_stop");
+            return START_STICKY;
+        }
+        if (ACTION_SET_REALTIME_MUTED.equals(action)) {
+            boolean muted = intent != null && intent.getBooleanExtra(EXTRA_REALTIME_MUTED, false);
+            setRealtimeMuted(muted);
+            return START_STICKY;
+        }
 
         return START_STICKY;
+    }
+
+    public static Intent startRealtimeIntent(Context context) {
+        return new Intent(context, AssistantVoiceRuntimeService.class).setAction(ACTION_START_REALTIME);
+    }
+
+    public static Intent stopRealtimeIntent(Context context) {
+        return new Intent(context, AssistantVoiceRuntimeService.class).setAction(ACTION_STOP_REALTIME);
+    }
+
+    public static Intent setRealtimeMutedIntent(Context context, boolean muted) {
+        return new Intent(context, AssistantVoiceRuntimeService.class)
+            .setAction(ACTION_SET_REALTIME_MUTED)
+            .putExtra(EXTRA_REALTIME_MUTED, muted);
     }
 
     @Override
@@ -419,6 +518,11 @@ public final class AssistantVoiceRuntimeService extends Service {
         if (micStreamer != null) {
             micStreamer.release();
         }
+        if (realtimeClient != null) {
+            realtimeClient.release();
+            realtimeClient = null;
+        }
+        releaseRealtimeWakeLock();
         if (audioRouter != null) {
             audioRouter.shutdown();
         }
@@ -1789,6 +1893,13 @@ public final class AssistantVoiceRuntimeService extends Service {
         advanceControllerGeneration("prepare_realtime:" + safe(reason));
         if (player != null) {
             player.setPreferVoiceCommunicationCueFocus(true);
+            // Arming cue on voice-comm route when entering Realtime.
+            if (config != null && config.recognitionCueEnabled) {
+                player.playRecognitionCue(
+                    "__realtime_arming__:" + controllerGeneration,
+                    AssistantVoicePcmPlayer.RecognitionCueType.ARMING
+                );
+            }
         }
     }
 
@@ -1800,12 +1911,93 @@ public final class AssistantVoiceRuntimeService extends Service {
         if (audioRouter != null) {
             audioRouter.releaseAll(controllerGeneration);
         }
+        boolean success = reason == null
+            || (!reason.contains("fail") && !reason.contains("error") && !reason.contains("ice"));
         if (player != null) {
             player.setPreferVoiceCommunicationCueFocus(false);
+            if (config != null && config.recognitionCueEnabled) {
+                player.playRecognitionCue(
+                    "__realtime_completion__:" + controllerGeneration,
+                    success
+                        ? AssistantVoicePcmPlayer.RecognitionCueType.SUCCESS_COMPLETION
+                        : AssistantVoicePcmPlayer.RecognitionCueType.FAILURE_COMPLETION
+                );
+            }
         }
         liveOwner = AssistantVoiceControllerPolicy.OWNER_THREAD;
+        realtimeSessionId = "";
         advanceControllerGeneration("stop_realtime:" + safe(reason));
         resumeThreadAdmission();
+    }
+
+    private void startRealtimeCall(String reason) {
+        if (config == null || !config.isEnabled()) {
+            emitRuntimeError("Enable native voice before starting Realtime");
+            return;
+        }
+        if (realtimeClient == null) {
+            emitRuntimeError("Realtime client unavailable");
+            return;
+        }
+        if (AssistantVoiceControllerPolicy.OWNER_REALTIME.equals(liveOwner)
+            && (STATE_REALTIME_ACTIVE.equals(runtimeState)
+                || STATE_REALTIME_CONNECTING.equals(runtimeState))) {
+            Log.d(TAG, "startRealtimeCall ignored already active");
+            return;
+        }
+        prepareRealtimeOwnerPreempt(reason);
+        realtimeMuted = config.realtimeMuteOnStart;
+        realtimeClient.start(
+            config.assistantBaseUrl,
+            config.realtimeConversationId,
+            config.realtimeListsInstanceId,
+            config.realtimeMuteOnStart,
+            controllerGeneration,
+            audioRouter
+        );
+    }
+
+    private void stopRealtimeCall(String reason) {
+        if (realtimeClient != null) {
+            realtimeClient.stop(reason);
+        }
+        releaseRealtimeWakeLock();
+        stopRealtimeOwner(reason);
+        updateState(resolveInactiveState(), null);
+    }
+
+    private void setRealtimeMuted(boolean muted) {
+        realtimeMuted = muted;
+        if (realtimeClient != null) {
+            realtimeClient.setMuted(muted);
+        }
+        refreshNotification();
+    }
+
+    private void acquireRealtimeWakeLock() {
+        if (realtimeWakeLock != null && realtimeWakeLock.isHeld()) {
+            return;
+        }
+        PowerManager powerManager = (PowerManager) getSystemService(POWER_SERVICE);
+        if (powerManager == null) {
+            return;
+        }
+        realtimeWakeLock = powerManager.newWakeLock(
+            PowerManager.PARTIAL_WAKE_LOCK,
+            "assistant:voice-realtime"
+        );
+        realtimeWakeLock.setReferenceCounted(false);
+        realtimeWakeLock.acquire(60 * 60 * 1000L);
+    }
+
+    private void releaseRealtimeWakeLock() {
+        if (realtimeWakeLock != null && realtimeWakeLock.isHeld()) {
+            try {
+                realtimeWakeLock.release();
+            } catch (Exception ignored) {
+            }
+        }
+        realtimeWakeLock = null;
     }
 
     private void drainVoiceQueueIfPossible() {

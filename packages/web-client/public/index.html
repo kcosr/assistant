@@ -352,6 +352,20 @@
               <option value="realtime">Realtime</option>
             </select>
           </label>
+          <div id="realtime-voice-controls" class="voice-settings-grid" style="display: none">
+            <label class="settings-dropdown-item" for="realtime-mute-on-start-checkbox">
+              <input type="checkbox" id="realtime-mute-on-start-checkbox" />
+              Mute Realtime on start
+            </label>
+            <div class="voice-settings-actions" style="display: flex; gap: 8px; flex-wrap: wrap">
+              <button type="button" id="realtime-start-button" class="list-item-form-input">
+                Start Realtime call
+              </button>
+              <button type="button" id="realtime-stop-button" class="list-item-form-input">
+                Stop Realtime call
+              </button>
+            </div>
+          </div>
           <label class="list-item-form-label" for="audio-mode-select">
             <span class="list-item-form-label-text">Thread audio mode</span>
             <select id="audio-mode-select" class="list-item-form-input">

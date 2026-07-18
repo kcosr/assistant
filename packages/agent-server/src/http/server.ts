@@ -21,6 +21,8 @@ import { handlePreferencesRoutes } from './routes/preferences';
 import { handlePanelRoutes } from './routes/panels';
 import { handleStaticRoutes } from './routes/static';
 import { handleSearchRoutes } from './routes/search';
+import { createVoiceRouteHandler } from './routes/voice';
+import type { VoiceService } from '../voice/service';
 import type { HttpContext, HttpHelpers, HttpRouteHandler } from './types';
 
 const WEB_CLIENT_PUBLIC_DIR = path.resolve(__dirname, '../../../../../web-client/public');
@@ -37,6 +39,7 @@ export function createHttpServer(options: {
   eventStore: EventStore;
   scheduledSessionService?: ScheduledSessionService;
   historyProvider?: HistoryProviderRegistry;
+  voiceService?: VoiceService;
 }): http.Server {
   const {
     config,
@@ -49,6 +52,7 @@ export function createHttpServer(options: {
     eventStore,
     scheduledSessionService,
     historyProvider,
+    voiceService,
   } = options;
 
   const pluginToolHost = pluginRegistry ? new PluginToolHost(pluginRegistry) : undefined;
@@ -181,6 +185,7 @@ export function createHttpServer(options: {
         handleExternalRoutes,
         handlePanelRoutes,
         handleSearchRoutes,
+        createVoiceRouteHandler(() => voiceService ?? null),
         ...pluginRoutes,
         handlePluginRoutes,
         handlePreferencesRoutes,

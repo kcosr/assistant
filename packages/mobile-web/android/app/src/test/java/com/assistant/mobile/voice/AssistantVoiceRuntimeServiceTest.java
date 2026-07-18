@@ -1212,7 +1212,10 @@ public final class AssistantVoiceRuntimeServiceTest {
             false,
             false,
             true,
-            false
+            false,
+            "",
+            false,
+            AssistantVoiceConfig.DEFAULT_REALTIME_LISTS_INSTANCE_ID
         );
     }
 

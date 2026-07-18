@@ -72,6 +72,20 @@ reads the provider environment variables directly. For a complete list, see the
 
 OpenAI TTS requires `OPENAI_API_KEY`.
 
+### Realtime voice (Android)
+
+Realtime duplex voice reuses the same server-side OpenAI credential as TTS/chat:
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `OPENAI_API_KEY` | - | **Required** for Realtime. Held only on the agent-server host; never sent to Android/web clients. |
+| `OPENAI_REALTIME_MODEL` | `gpt-realtime` | Pinned Realtime model id (avoid floating `latest`). |
+| `OPENAI_REALTIME_VOICE` | `TTS_VOICE` / `alloy` | OpenAI Realtime output voice. |
+
+**Storage plan:** set `OPENAI_API_KEY` in the agent-server environment (systemd unit, shell profile, or secrets manager that injects env). Do not put the raw key in client apps, Capacitor assets, or committed `config.json`. Optional `${OPENAI_API_KEY}` substitution in `config.json` is fine for other agent fields; Realtime reads the env via `loadEnvConfig()` the same way OpenAI TTS does.
+
+Capability probe: `GET /api/voice/capabilities` reports `agentRealtime.status` as `ready` or `not-configured`.
+
 ### ElevenLabs TTS
 
 Used when `TTS_BACKEND=elevenlabs`.
