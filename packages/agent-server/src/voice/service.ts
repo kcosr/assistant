@@ -48,15 +48,16 @@ export class VoiceService {
     dataDir: string,
   ) {
     this.store = new VoiceStore(dataDir);
+    // Match T3 Realtime defaults (OpenAiVoiceProvider: gpt-realtime-2.1 + marin).
     this.model =
       options.model?.trim() ||
       process.env['OPENAI_REALTIME_MODEL']?.trim() ||
-      'gpt-realtime';
+      'gpt-realtime-2.1';
     this.voice =
       options.voice?.trim() ||
       process.env['OPENAI_REALTIME_VOICE']?.trim() ||
       options.envConfig.ttsVoice ||
-      'alloy';
+      'marin';
   }
 
   async init(): Promise<void> {
