@@ -98,6 +98,10 @@ final class AssistantVoicePcmPlayer {
     private int framesWritten = 0;
     private long generation = 0L;
     private FocusMode focusMode = FocusMode.NONE;
+    private AssistantVoiceAudioRouter audioRouter;
+    private long routerOwnerGeneration = 0L;
+    /** When true, recognition arming cues request voice-comm focus via the shared router. */
+    private boolean preferVoiceCommunicationCueFocus = false;
 
     AssistantVoicePcmPlayer(Context context) {
         Context appContext = context == null ? null : context.getApplicationContext();
@@ -141,6 +145,24 @@ final class AssistantVoicePcmPlayer {
         }
     }
 
+    void setAudioRouter(AssistantVoiceAudioRouter router) {
+        synchronized (lock) {
+            audioRouter = router;
+        }
+    }
+
+    void setRouterOwnerGeneration(long ownerGeneration) {
+        synchronized (lock) {
+            routerOwnerGeneration = ownerGeneration;
+        }
+    }
+
+    void setPreferVoiceCommunicationCueFocus(boolean prefer) {
+        synchronized (lock) {
+            preferVoiceCommunicationCueFocus = prefer;
+        }
+    }
+
     void setTtsGain(float gain) {
         synchronized (lock) {
             ttsGain = normalizeTtsGain(gain);
@@ -164,9 +186,6 @@ final class AssistantVoicePcmPlayer {
 
     boolean beginRecognitionCaptureFocus() {
         synchronized (lock) {
-            if (audioManager == null) {
-                return true;
-            }
             cancelPendingPlaybackFocusReleaseLocked();
             if (focusMode == FocusMode.CAPTURE) {
                 return true;
@@ -760,9 +779,6 @@ final class AssistantVoicePcmPlayer {
     }
 
     private boolean requestPlaybackFocusIfNeededLocked() {
-        if (audioManager == null) {
-            return true;
-        }
         cancelPendingPlaybackFocusReleaseLocked();
         if (focusMode == FocusMode.PLAYBACK) {
             return true;
@@ -778,7 +794,17 @@ final class AssistantVoicePcmPlayer {
     }
 
     private boolean requestPlaybackFocusLocked() {
+        if (audioRouter != null) {
+            boolean granted = preferVoiceCommunicationCueFocus
+                ? audioRouter.requestRealtimeFocus(routerOwnerGeneration)
+                : audioRouter.requestPlaybackFocus(routerOwnerGeneration);
+            if (granted) {
+                focusMode = FocusMode.PLAYBACK;
+            }
+            return granted;
+        }
         if (audioManager == null) {
+            focusMode = FocusMode.PLAYBACK;
             return true;
         }
         int result;
@@ -799,7 +825,15 @@ final class AssistantVoicePcmPlayer {
     }
 
     private boolean requestCaptureFocusLocked() {
+        if (audioRouter != null) {
+            boolean granted = audioRouter.requestCaptureFocus(routerOwnerGeneration);
+            if (granted) {
+                focusMode = FocusMode.CAPTURE;
+            }
+            return granted;
+        }
         if (audioManager == null) {
+            focusMode = FocusMode.CAPTURE;
             return true;
         }
         int result;
@@ -820,7 +854,16 @@ final class AssistantVoicePcmPlayer {
     }
 
     private void abandonPlaybackFocusLocked() {
-        if (audioManager == null || focusMode != FocusMode.PLAYBACK) {
+        if (focusMode != FocusMode.PLAYBACK) {
+            return;
+        }
+        if (audioRouter != null) {
+            audioRouter.abandonFocus(routerOwnerGeneration);
+            focusMode = FocusMode.NONE;
+            return;
+        }
+        if (audioManager == null) {
+            focusMode = FocusMode.NONE;
             return;
         }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && playbackFocusRequest != null) {
@@ -832,7 +875,16 @@ final class AssistantVoicePcmPlayer {
     }
 
     private void abandonCaptureFocusLocked() {
-        if (audioManager == null || focusMode != FocusMode.CAPTURE) {
+        if (focusMode != FocusMode.CAPTURE) {
+            return;
+        }
+        if (audioRouter != null) {
+            audioRouter.abandonFocus(routerOwnerGeneration);
+            focusMode = FocusMode.NONE;
+            return;
+        }
+        if (audioManager == null) {
+            focusMode = FocusMode.NONE;
             return;
         }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && captureFocusRequest != null) {

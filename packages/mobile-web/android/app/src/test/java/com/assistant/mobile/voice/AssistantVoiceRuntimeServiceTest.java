@@ -955,25 +955,108 @@ public final class AssistantVoiceRuntimeServiceTest {
 
     @Test
     @Config(sdk = Build.VERSION_CODES.N)
-    public void buildAdapterTtsRequestBodyTreatsClientIdAsOptional() {
-        assertFalse(
-            AssistantVoiceRuntimeService.buildAdapterTtsRequestBody("", "request-1", "hello", "")
-                .has("clientId")
+    public void controllerPolicyMatchesRealtimePreemptRules() {
+        assertTrue(
+            AssistantVoiceControllerPolicy.shouldPauseThreadAdmission(
+                AssistantVoiceControllerPolicy.OWNER_REALTIME
+            )
         );
+        assertFalse(
+            AssistantVoiceControllerPolicy.shouldAcceptThreadAdmission(true, true)
+        );
+        assertTrue(
+            AssistantVoiceControllerPolicy.shouldAcceptThreadAdmission(false, true)
+        );
+    }
+
+    @Test
+    @Config(sdk = Build.VERSION_CODES.N)
+    public void shouldWaitForAdapterClientIdentityBeforeDirectTtsPlayback() {
+        AssistantVoiceQueueItem ttsItem = new AssistantVoiceQueueItem(
+            "notification-1",
+            "voice_speak",
+            "test",
+            "event-1",
+            "session-1",
+            "Session 1",
+            "Session 1",
+            "hello",
+            "speak",
+            null,
+            false,
+            false
+        );
+        AssistantVoiceQueueItem listenOnlyItem = new AssistantVoiceQueueItem(
+            "notification-2",
+            "voice_ask",
+            "test",
+            "event-2",
+            "session-1",
+            "Session 1",
+            "Session 1",
+            "",
+            "listen_only",
+            null,
+            false,
+            true
+        );
+
+        assertTrue(
+            AssistantVoiceRuntimeService.shouldWaitForAdapterClientIdentity(true, "", ttsItem)
+        );
+        assertTrue(
+            AssistantVoiceRuntimeService.shouldWaitForAdapterClientIdentity(
+                true,
+                "   ",
+                ttsItem
+            )
+        );
+        assertFalse(
+            AssistantVoiceRuntimeService.shouldWaitForAdapterClientIdentity(
+                true,
+                "client-1",
+                ttsItem
+            )
+        );
+        assertFalse(
+            AssistantVoiceRuntimeService.shouldWaitForAdapterClientIdentity(false, "", ttsItem)
+        );
+        assertFalse(
+            AssistantVoiceRuntimeService.shouldWaitForAdapterClientIdentity(
+                true,
+                "",
+                listenOnlyItem
+            )
+        );
+    }
+
+    @Test
+    @Config(sdk = Build.VERSION_CODES.N)
+    public void buildAdapterTtsRequestBodyIncludesDirectMediaClientId() {
         assertEquals(
             "request-1",
-            AssistantVoiceRuntimeService.buildAdapterTtsRequestBody("", "request-1", "hello", "")
+            AssistantVoiceRuntimeService.buildAdapterTtsRequestBody(
+                "client-1",
+                "request-1",
+                "hello",
+                ""
+            )
                 .optString("requestId")
         );
         assertEquals(
             "hello",
-            AssistantVoiceRuntimeService.buildAdapterTtsRequestBody("", "request-1", "hello", "")
+            AssistantVoiceRuntimeService.buildAdapterTtsRequestBody(
+                "client-1",
+                "request-1",
+                "hello",
+                ""
+            )
                 .optString("text")
         );
         assertEquals(
             "session-1",
             AssistantVoiceRuntimeService.buildAdapterTtsRequestBody(
-                "",
+                "client-1",
                 "request-1",
                 "hello",
                 " session-1 "
@@ -1106,6 +1189,7 @@ public final class AssistantVoiceRuntimeServiceTest {
     ) {
         return new AssistantVoiceConfig(
             audioMode,
+            AssistantVoiceConfig.DEFAULT_RUNTIME_MODE,
             true,
             "",
             AssistantVoiceConfig.DEFAULT_RECOGNITION_START_TIMEOUT_MS,

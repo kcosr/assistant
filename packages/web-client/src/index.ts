@@ -528,6 +528,7 @@ async function main(): Promise<void> {
     voiceSettingsButton: voiceSettingsButtonEl,
     voiceSettingsModal: voiceSettingsModalEl,
     voiceSettingsCloseButton: voiceSettingsCloseButtonEl,
+    voiceRuntimeModeSelect: voiceRuntimeModeSelectEl,
     audioModeSelect: audioModeSelectEl,
     autoListenCheckbox: autoListenCheckboxEl,
     standaloneNotificationPlaybackCheckbox: standaloneNotificationPlaybackCheckboxEl,
@@ -3982,6 +3983,7 @@ async function main(): Promise<void> {
     const currentSettings = getCurrentVoiceSettings();
     const nextSettings = normalizeVoiceSettings({
       ...currentSettings,
+      voiceRuntimeMode: voiceRuntimeModeSelectEl.value,
       audioMode: audioModeSelectEl.value,
       autoListenEnabled: autoListenCheckboxEl.checked,
       standaloneNotificationPlaybackEnabled: standaloneNotificationPlaybackCheckboxEl.checked,
@@ -4018,6 +4020,7 @@ async function main(): Promise<void> {
     openVoiceSettingsModal();
   });
   [
+    voiceRuntimeModeSelectEl,
     audioModeSelectEl,
     autoListenCheckboxEl,
     standaloneNotificationPlaybackCheckboxEl,
@@ -4062,6 +4065,7 @@ async function main(): Promise<void> {
   voiceTtsGainSliderEl.addEventListener('input', syncTtsGainLabelFromSlider);
   const resetVoiceSettingsInputs = (): void => {
     const settings = getCurrentVoiceSettings();
+    voiceRuntimeModeSelectEl.value = settings.voiceRuntimeMode;
     audioModeSelectEl.value = settings.audioMode;
     autoListenCheckboxEl.checked = settings.autoListenEnabled;
     standaloneNotificationPlaybackCheckboxEl.checked =

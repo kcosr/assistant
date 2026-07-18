@@ -136,7 +136,16 @@ public final class AssistantVoiceRuntimeService extends Service {
         .build();
     private AssistantVoicePcmPlayer player;
     private AssistantVoiceMicStreamer micStreamer;
+    private AssistantVoiceAudioRouter audioRouter;
     private MediaSession mediaSession;
+    /** Monotonic controller generation; advanced on exclusive-owner transitions. */
+    private long controllerGeneration = 1L;
+    /** Generation stamped onto the currently admitted Thread media interaction. */
+    private long activeMediaGeneration = 0L;
+    /** Live exclusive owner: thread or realtime (realtime media lands in a later phase). */
+    private String liveOwner = AssistantVoiceControllerPolicy.OWNER_THREAD;
+    /** When true, automatic Thread queue admission is paused (Realtime live owner). */
+    private boolean threadAdmissionPaused = false;
 
     private final Runnable reconnectRunnable = this::connectAdapterSocketIfNeeded;
     private final Runnable assistantReconnectRunnable = this::connectAssistantSocketIfNeeded;
@@ -298,8 +307,11 @@ public final class AssistantVoiceRuntimeService extends Service {
     @Override
     public void onCreate() {
         super.onCreate();
+        audioRouter = new AssistantVoiceAudioRouter(this);
         micStreamer = new AssistantVoiceMicStreamer(this);
+        micStreamer.setAudioRouter(audioRouter);
         player = new AssistantVoicePcmPlayer(this);
+        player.setAudioRouter(audioRouter);
         config = AssistantVoiceConfig.load(this);
         micStreamer.setPreferredDeviceId(config.selectedMicDeviceId);
         player.setTtsGain(config.ttsGain);
@@ -407,6 +419,9 @@ public final class AssistantVoiceRuntimeService extends Service {
         if (micStreamer != null) {
             micStreamer.release();
         }
+        if (audioRouter != null) {
+            audioRouter.shutdown();
+        }
         networkExecutor.shutdownNow();
         httpClient.dispatcher().cancelAll();
         httpClient.dispatcher().executorService().shutdownNow();
@@ -437,8 +452,20 @@ public final class AssistantVoiceRuntimeService extends Service {
         boolean selectedSessionChanged =
             !previous.selectedSessionId.equals(updated.selectedSessionId);
         boolean audioModeChanged = !previous.audioMode.equals(updated.audioMode);
+        boolean runtimeModeChanged = !previous.voiceRuntimeMode.equals(updated.voiceRuntimeMode);
         boolean adapterUrlChanged = !previous.voiceAdapterBaseUrl.equals(updated.voiceAdapterBaseUrl);
         boolean assistantUrlChanged = !previous.assistantBaseUrl.equals(updated.assistantBaseUrl);
+
+        // Contract seam for Phase 3: leaving Realtime while it is the live owner must stop it.
+        if (
+            AssistantVoiceControllerPolicy.shouldStopRealtimeForConfig(
+                previous.voiceRuntimeMode,
+                updated.voiceRuntimeMode,
+                liveOwner
+            )
+        ) {
+            stopRealtimeOwner("config_runtime_mode");
+        }
 
         if (!updated.isEnabled()) {
             clearQueuedVoiceItems();
@@ -448,6 +475,16 @@ public final class AssistantVoiceRuntimeService extends Service {
             syncMediaSession();
             updateState(STATE_DISABLED, null);
             return;
+        }
+
+        if (runtimeModeChanged) {
+            Log.d(
+                TAG,
+                "applyConfig voiceRuntimeMode "
+                    + safe(previous.voiceRuntimeMode)
+                    + " -> "
+                    + safe(updated.voiceRuntimeMode)
+            );
         }
 
         boolean switchedToManualMode =
@@ -1578,6 +1615,12 @@ public final class AssistantVoiceRuntimeService extends Service {
             Log.d(TAG, "enqueueQueueItem dropped invalid item=" + describeQueueItem(item));
             return;
         }
+        if (threadAdmissionPaused && !front) {
+            // Automatic admission is paused while Realtime owns media; manual front-of-queue
+            // recovery is still allowed when Thread is live again (front used after resume).
+            Log.d(TAG, "enqueueQueueItem dropped admission_paused " + describeQueueItem(item));
+            return;
+        }
         if (shouldDedupManualAutoListenQueueItem(item, activeQueueItem)) {
             Log.d(TAG, "enqueueQueueItem deduped active manual auto-listen item=" + describeQueueItem(item));
             return;
@@ -1644,7 +1687,132 @@ public final class AssistantVoiceRuntimeService extends Service {
         queuedVoiceItems.clear();
     }
 
+    /**
+     * Stops the active Thread interaction and clears the local FIFO only.
+     * Durable notifications are intentionally retained for later manual recovery.
+     */
+    void stopAndClearQueue(String reason) {
+        Log.d(TAG, "stopAndClearQueue reason=" + safe(reason));
+        clearQueuedVoiceItems();
+        clearPendingManualPreemptState("stop_and_clear:" + safe(reason));
+        stopCurrentInteraction(false, "stop_and_clear_queue:" + safe(reason));
+    }
+
+    void pauseThreadAdmission() {
+        threadAdmissionPaused = true;
+        Log.d(TAG, "pauseThreadAdmission generation=" + controllerGeneration);
+    }
+
+    void resumeThreadAdmission() {
+        threadAdmissionPaused = false;
+        Log.d(TAG, "resumeThreadAdmission generation=" + controllerGeneration);
+        drainVoiceQueueIfPossible();
+    }
+
+    boolean isThreadAdmissionPaused() {
+        return threadAdmissionPaused;
+    }
+
+    long controllerGeneration() {
+        return controllerGeneration;
+    }
+
+    String liveOwner() {
+        return liveOwner;
+    }
+
+    /**
+     * Waits for Thread media to become idle after stop. Phase 1 is synchronous: stop releases
+     * local player/mic immediately; adapter ACKs for stale generations are ignored via fencing.
+     */
+    boolean awaitMediaQuiescence() {
+        if (hasActiveInteraction()) {
+            stopCurrentInteraction(false, "await_media_quiescence");
+        }
+        if (audioRouter != null) {
+            audioRouter.releaseAll(activeMediaGeneration == 0L ? controllerGeneration : activeMediaGeneration);
+        }
+        activeMediaGeneration = 0L;
+        if (player != null) {
+            player.setRouterOwnerGeneration(controllerGeneration);
+        }
+        if (micStreamer != null) {
+            micStreamer.setRouterOwnerGeneration(controllerGeneration);
+        }
+        return !hasActiveInteraction();
+    }
+
+    long advanceControllerGeneration(String reason) {
+        controllerGeneration = AssistantVoiceControllerPolicy.nextGeneration(controllerGeneration);
+        activeMediaGeneration = 0L;
+        if (player != null) {
+            player.setRouterOwnerGeneration(controllerGeneration);
+        }
+        if (micStreamer != null) {
+            micStreamer.setRouterOwnerGeneration(controllerGeneration);
+        }
+        Log.d(
+            TAG,
+            "advanceControllerGeneration reason=" + safe(reason) + " generation=" + controllerGeneration
+        );
+        return controllerGeneration;
+    }
+
+    boolean isCurrentMediaGeneration(long generation) {
+        return AssistantVoiceControllerPolicy.isCurrentGeneration(activeMediaGeneration, generation)
+            || (activeMediaGeneration == 0L
+                && AssistantVoiceControllerPolicy.isCurrentGeneration(controllerGeneration, generation));
+    }
+
+    private long admitThreadMediaGeneration() {
+        activeMediaGeneration = controllerGeneration;
+        if (player != null) {
+            player.setRouterOwnerGeneration(activeMediaGeneration);
+        }
+        if (micStreamer != null) {
+            micStreamer.setRouterOwnerGeneration(activeMediaGeneration);
+        }
+        liveOwner = AssistantVoiceControllerPolicy.OWNER_THREAD;
+        return activeMediaGeneration;
+    }
+
+    /**
+     * Phase-1 stub for the exclusive Realtime owner transition without WebRTC media.
+     * Preempts Thread (stop + clear FIFO + pause admission) and advances generation so later
+     * Realtime media can plug into the same fence.
+     */
+    void prepareRealtimeOwnerPreempt(String reason) {
+        stopAndClearQueue(reason);
+        awaitMediaQuiescence();
+        pauseThreadAdmission();
+        liveOwner = AssistantVoiceControllerPolicy.OWNER_REALTIME;
+        advanceControllerGeneration("prepare_realtime:" + safe(reason));
+        if (player != null) {
+            player.setPreferVoiceCommunicationCueFocus(true);
+        }
+    }
+
+    void stopRealtimeOwner(String reason) {
+        if (!AssistantVoiceControllerPolicy.OWNER_REALTIME.equals(liveOwner)) {
+            return;
+        }
+        Log.d(TAG, "stopRealtimeOwner reason=" + safe(reason));
+        if (audioRouter != null) {
+            audioRouter.releaseAll(controllerGeneration);
+        }
+        if (player != null) {
+            player.setPreferVoiceCommunicationCueFocus(false);
+        }
+        liveOwner = AssistantVoiceControllerPolicy.OWNER_THREAD;
+        advanceControllerGeneration("stop_realtime:" + safe(reason));
+        resumeThreadAdmission();
+    }
+
     private void drainVoiceQueueIfPossible() {
+        if (threadAdmissionPaused) {
+            Log.d(TAG, "drainVoiceQueueIfPossible blocked reason=admission_paused " + describeRuntimeState());
+            return;
+        }
         String blockedReason = explainQueueDrainBlock();
         if (!blockedReason.isEmpty()) {
             Log.d(TAG, "drainVoiceQueueIfPossible blocked reason=" + blockedReason + " " + describeRuntimeState());
@@ -1863,6 +2031,7 @@ public final class AssistantVoiceRuntimeService extends Service {
                 Log.d(TAG, "adapter client_identity clientIdPresent=" + !adapterClientId.isEmpty());
                 if (!hasActiveInteraction()) {
                     updateState(STATE_IDLE, null);
+                    drainVoiceQueueIfPossible();
                 }
                 return;
             }
@@ -1927,6 +2096,15 @@ public final class AssistantVoiceRuntimeService extends Service {
                 "ignoring media_tts_end requestId=" + requestId
                     + " active=" + activeTtsRequestId
                     + " pendingPreemptStop=" + pendingManualPreemptStopRequestId
+            );
+            return;
+        }
+        if (threadAdmissionPaused && !matchesManualPreemptStop && activeMediaGeneration != controllerGeneration) {
+            Log.d(
+                TAG,
+                "ignoring media_tts_end stale generation requestId=" + requestId
+                    + " mediaGeneration=" + activeMediaGeneration
+                    + " controllerGeneration=" + controllerGeneration
             );
             return;
         }
@@ -2215,6 +2393,7 @@ public final class AssistantVoiceRuntimeService extends Service {
         AssistantVoiceEventLog.put(details, "queueItem", describeQueueItem(item));
         AssistantVoiceEventLog.put(details, "textLength", trim(item.spokenText).length());
         recordVoiceEvent("tts_begin", details);
+        admitThreadMediaGeneration();
         activeQueueItem = item;
         activeVoiceSessionId = item.sessionId;
         activePromptToolName = item.executionMode;
@@ -2434,6 +2613,7 @@ public final class AssistantVoiceRuntimeService extends Service {
         }
 
         String requestId = UUID.randomUUID().toString();
+        admitThreadMediaGeneration();
         activeVoiceSessionId = sessionId.trim();
         activePromptToolName = "manual_listen".equals(reason) ? "voice_manual" : activePromptToolName;
         activeSttRequestId = requestId;
@@ -3666,15 +3846,40 @@ public final class AssistantVoiceRuntimeService extends Service {
         if (!config.isEnabled()) {
             return "voice_mode_disabled";
         }
+        if (threadAdmissionPaused) {
+            return "admission_paused";
+        }
         if (!isRuntimeConnected()) {
             return "runtime_not_connected";
+        }
+        AssistantVoiceQueueItem next = queuedVoiceItems.get(0);
+        if (shouldWaitForAdapterClientIdentity(adapterSocketConnected, adapterClientId, next)) {
+            return "adapter_client_identity_missing";
         }
         return "";
     }
 
+    static boolean shouldWaitForAdapterClientIdentity(
+        boolean adapterSocketConnected,
+        String adapterClientId,
+        AssistantVoiceQueueItem item
+    ) {
+        return adapterSocketConnected
+            && item != null
+            && !item.isListenOnly()
+            && item.hasSpeech()
+            && trim(adapterClientId).isEmpty();
+    }
+
     private String describeRuntimeState() {
         return "state=" + safe(runtimeState)
+            + " liveOwner=" + safe(liveOwner)
+            + " generation=" + controllerGeneration
+            + " mediaGeneration=" + activeMediaGeneration
+            + " admissionPaused=" + threadAdmissionPaused
+            + " runtimeMode=" + safe(config == null ? "" : config.voiceRuntimeMode)
             + " adapterSocketConnected=" + adapterSocketConnected
+            + " adapterClientIdPresent=" + !adapterClientId.isEmpty()
             + " assistantSocketConnected=" + assistantSocketConnected
             + " activeTtsRequestId=" + safe(activeTtsRequestId)
             + " pendingManualPreemptStopRequestId=" + safe(pendingManualPreemptStopRequestId)

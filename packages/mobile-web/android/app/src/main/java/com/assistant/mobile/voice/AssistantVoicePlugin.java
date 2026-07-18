@@ -452,6 +452,7 @@ public final class AssistantVoicePlugin extends Plugin {
         inputContext.put("contextLine", current.inputContextLine);
 
         JSObject voiceSettings = new JSObject();
+        voiceSettings.put("voiceRuntimeMode", current.voiceRuntimeMode);
         voiceSettings.put("audioMode", current.audioMode);
         voiceSettings.put("autoListenEnabled", current.autoListenEnabled);
         voiceSettings.put("voiceAdapterBaseUrl", current.voiceAdapterBaseUrl);

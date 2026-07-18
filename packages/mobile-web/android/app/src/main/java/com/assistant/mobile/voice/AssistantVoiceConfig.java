@@ -21,6 +21,9 @@ final class AssistantVoiceConfig {
     static final String AUDIO_MODE_TOOL = "tool";
     static final String AUDIO_MODE_RESPONSE = "response";
     static final String DEFAULT_AUDIO_MODE = AUDIO_MODE_TOOL;
+    static final String RUNTIME_MODE_THREAD = "thread";
+    static final String RUNTIME_MODE_REALTIME = "realtime";
+    static final String DEFAULT_RUNTIME_MODE = RUNTIME_MODE_THREAD;
     static final int DEFAULT_RECOGNITION_START_TIMEOUT_MS = 30000;
     static final int DEFAULT_RECOGNITION_COMPLETION_TIMEOUT_MS = 60000;
     static final int DEFAULT_RECOGNITION_END_SILENCE_MS = 1200;
@@ -42,6 +45,7 @@ final class AssistantVoiceConfig {
 
     private static final String PREFS_NAME = "assistant_voice_runtime";
     private static final String KEY_AUDIO_MODE = "audio_mode";
+    private static final String KEY_RUNTIME_MODE = "voice_runtime_mode";
     private static final String KEY_AUTO_LISTEN_ENABLED = "auto_listen_enabled";
     private static final String KEY_RECOGNITION_START_TIMEOUT_MS = "recognition_start_timeout_ms";
     private static final String KEY_RECOGNITION_COMPLETION_TIMEOUT_MS = "recognition_completion_timeout_ms";
@@ -73,6 +77,7 @@ final class AssistantVoiceConfig {
     private static final String KEY_RUNTIME_ACTIVE_DISPLAY_TITLE = "runtime_active_display_title";
 
     static final String EXTRA_AUDIO_MODE = "audioMode";
+    static final String EXTRA_RUNTIME_MODE = "voiceRuntimeMode";
     static final String EXTRA_AUTO_LISTEN_ENABLED = "autoListenEnabled";
     static final String EXTRA_SELECTED_MIC_DEVICE_ID = "selectedMicDeviceId";
     static final String EXTRA_RECOGNITION_START_TIMEOUT_MS = "recognitionStartTimeoutMs";
@@ -99,6 +104,7 @@ final class AssistantVoiceConfig {
         "notificationTitlePlaybackEnabled";
 
     final String audioMode;
+    final String voiceRuntimeMode;
     final boolean autoListenEnabled;
     final String selectedMicDeviceId;
     final int recognitionStartTimeoutMs;
@@ -125,6 +131,7 @@ final class AssistantVoiceConfig {
 
     AssistantVoiceConfig(
         String audioMode,
+        String voiceRuntimeMode,
         boolean autoListenEnabled,
         String selectedMicDeviceId,
         int recognitionStartTimeoutMs,
@@ -150,6 +157,7 @@ final class AssistantVoiceConfig {
         boolean notificationTitlePlaybackEnabled
     ) {
         this.audioMode = normalizeAudioMode(audioMode);
+        this.voiceRuntimeMode = AssistantVoiceControllerPolicy.normalizeRuntimeMode(voiceRuntimeMode);
         this.autoListenEnabled = autoListenEnabled;
         this.selectedMicDeviceId = normalizeOptional(selectedMicDeviceId);
         this.recognitionStartTimeoutMs = normalizePositiveInt(
@@ -200,6 +208,7 @@ final class AssistantVoiceConfig {
         SharedPreferences prefs = prefs(context);
         return new AssistantVoiceConfig(
             prefs.getString(KEY_AUDIO_MODE, DEFAULT_AUDIO_MODE),
+            prefs.getString(KEY_RUNTIME_MODE, DEFAULT_RUNTIME_MODE),
             prefs.getBoolean(KEY_AUTO_LISTEN_ENABLED, true),
             prefs.getString(KEY_SELECTED_MIC_DEVICE_ID, null),
             prefs.getInt(KEY_RECOGNITION_START_TIMEOUT_MS, DEFAULT_RECOGNITION_START_TIMEOUT_MS),
@@ -242,6 +251,7 @@ final class AssistantVoiceConfig {
         prefs(context)
             .edit()
             .putString(KEY_AUDIO_MODE, config.audioMode)
+            .putString(KEY_RUNTIME_MODE, config.voiceRuntimeMode)
             .putBoolean(KEY_AUTO_LISTEN_ENABLED, config.autoListenEnabled)
             .putString(KEY_SELECTED_MIC_DEVICE_ID, emptyToNull(config.selectedMicDeviceId))
             .putInt(KEY_RECOGNITION_START_TIMEOUT_MS, config.recognitionStartTimeoutMs)
@@ -285,6 +295,9 @@ final class AssistantVoiceConfig {
             intent.hasExtra(EXTRA_AUDIO_MODE)
                 ? intent.getStringExtra(EXTRA_AUDIO_MODE)
                 : fallback.audioMode,
+            intent.hasExtra(EXTRA_RUNTIME_MODE)
+                ? intent.getStringExtra(EXTRA_RUNTIME_MODE)
+                : fallback.voiceRuntimeMode,
             intent.getBooleanExtra(EXTRA_AUTO_LISTEN_ENABLED, fallback.autoListenEnabled),
             intent.hasExtra(EXTRA_SELECTED_MIC_DEVICE_ID)
                 ? intent.getStringExtra(EXTRA_SELECTED_MIC_DEVICE_ID)
@@ -356,6 +369,7 @@ final class AssistantVoiceConfig {
 
     Intent applyToIntent(Intent intent) {
         intent.putExtra(EXTRA_AUDIO_MODE, audioMode);
+        intent.putExtra(EXTRA_RUNTIME_MODE, voiceRuntimeMode);
         intent.putExtra(EXTRA_AUTO_LISTEN_ENABLED, autoListenEnabled);
         intent.putExtra(EXTRA_SELECTED_MIC_DEVICE_ID, emptyToNull(selectedMicDeviceId));
         intent.putExtra(EXTRA_RECOGNITION_START_TIMEOUT_MS, recognitionStartTimeoutMs);
@@ -518,6 +532,10 @@ final class AssistantVoiceConfig {
         return AUDIO_MODE_RESPONSE.equals(audioMode);
     }
 
+    boolean isRealtimeRuntimeMode() {
+        return AssistantVoiceControllerPolicy.isRealtimeRuntimeMode(voiceRuntimeMode);
+    }
+
     boolean allowsNotificationPlay() {
         return !AUDIO_MODE_OFF.equals(audioMode);
     }
@@ -529,6 +547,7 @@ final class AssistantVoiceConfig {
     AssistantVoiceConfig withSelection(String panelId, String sessionId) {
         return new AssistantVoiceConfig(
             audioMode,
+            voiceRuntimeMode,
             autoListenEnabled,
             selectedMicDeviceId,
             recognitionStartTimeoutMs,
@@ -558,6 +577,7 @@ final class AssistantVoiceConfig {
     AssistantVoiceConfig withAssistantBaseUrl(String url) {
         return new AssistantVoiceConfig(
             audioMode,
+            voiceRuntimeMode,
             autoListenEnabled,
             selectedMicDeviceId,
             recognitionStartTimeoutMs,
@@ -594,6 +614,7 @@ final class AssistantVoiceConfig {
         }
         AssistantVoiceConfig config = (AssistantVoiceConfig) other;
         return Objects.equals(audioMode, config.audioMode)
+            && Objects.equals(voiceRuntimeMode, config.voiceRuntimeMode)
             && autoListenEnabled == config.autoListenEnabled
             && Objects.equals(selectedMicDeviceId, config.selectedMicDeviceId)
             && recognitionStartTimeoutMs == config.recognitionStartTimeoutMs
@@ -623,6 +644,7 @@ final class AssistantVoiceConfig {
     public int hashCode() {
         return Objects.hash(
             audioMode,
+            voiceRuntimeMode,
             autoListenEnabled,
             selectedMicDeviceId,
             recognitionStartTimeoutMs,
@@ -655,6 +677,7 @@ final class AssistantVoiceConfig {
         }
         return new AssistantVoiceConfig(
             settings.optString("audioMode", audioMode),
+            settings.optString("voiceRuntimeMode", voiceRuntimeMode),
             settings.optBoolean("autoListenEnabled", autoListenEnabled),
             settings.optString("selectedMicDeviceId", selectedMicDeviceId),
             settings.optInt("recognitionStartTimeoutMs", recognitionStartTimeoutMs),
@@ -693,6 +716,7 @@ final class AssistantVoiceConfig {
     AssistantVoiceConfig withInputContext(boolean enabled, String contextLine) {
         return new AssistantVoiceConfig(
             audioMode,
+            voiceRuntimeMode,
             autoListenEnabled,
             selectedMicDeviceId,
             recognitionStartTimeoutMs,
@@ -722,6 +746,7 @@ final class AssistantVoiceConfig {
     AssistantVoiceConfig withWatchedSessionIds(List<String> sessionIds) {
         return new AssistantVoiceConfig(
             audioMode,
+            voiceRuntimeMode,
             autoListenEnabled,
             selectedMicDeviceId,
             recognitionStartTimeoutMs,
@@ -751,6 +776,7 @@ final class AssistantVoiceConfig {
     AssistantVoiceConfig withPreferredVoiceSessionId(String sessionId) {
         return new AssistantVoiceConfig(
             audioMode,
+            voiceRuntimeMode,
             autoListenEnabled,
             selectedMicDeviceId,
             recognitionStartTimeoutMs,
@@ -780,6 +806,7 @@ final class AssistantVoiceConfig {
     AssistantVoiceConfig withSessionTitles(JSONObject titles) {
         return new AssistantVoiceConfig(
             audioMode,
+            voiceRuntimeMode,
             autoListenEnabled,
             selectedMicDeviceId,
             recognitionStartTimeoutMs,
@@ -809,6 +836,7 @@ final class AssistantVoiceConfig {
     AssistantVoiceConfig withMediaButtonsEnabled(boolean enabled) {
         return new AssistantVoiceConfig(
             audioMode,
+            voiceRuntimeMode,
             autoListenEnabled,
             selectedMicDeviceId,
             recognitionStartTimeoutMs,
@@ -838,6 +866,7 @@ final class AssistantVoiceConfig {
     AssistantVoiceConfig withAudioMode(String mode) {
         return new AssistantVoiceConfig(
             mode,
+            voiceRuntimeMode,
             autoListenEnabled,
             selectedMicDeviceId,
             recognitionStartTimeoutMs,
