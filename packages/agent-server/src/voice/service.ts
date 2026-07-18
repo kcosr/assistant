@@ -78,7 +78,10 @@ export class VoiceService {
     conversationId?: string | null;
     listsInstanceId?: string;
   }) {
-    return this.store.getOrCreateConversation(input);
+    return this.store.getOrCreateConversation({
+      ...(input.conversationId !== undefined ? { conversationId: input.conversationId } : {}),
+      ...(input.listsInstanceId !== undefined ? { listsInstanceId: input.listsInstanceId } : {}),
+    });
   }
 
   async getConversation(id: VoiceConversationId) {
@@ -90,8 +93,8 @@ export class VoiceService {
     listsInstanceId?: string;
   }): Promise<{ conversationId: string; session: VoiceSessionRecord }> {
     const conversation = await this.store.getOrCreateConversation({
-      conversationId: input.conversationId,
-      listsInstanceId: input.listsInstanceId,
+      ...(input.conversationId !== undefined ? { conversationId: input.conversationId } : {}),
+      ...(input.listsInstanceId !== undefined ? { listsInstanceId: input.listsInstanceId } : {}),
     });
     const session = await this.store.createSession({
       conversationId: conversation.id,
@@ -320,7 +323,7 @@ export class VoiceService {
       status: 'started',
     });
 
-    if (!isRealtimeListsTool(name) || name === 'voice_speak' || name === 'voice_ask') {
+    if (!isRealtimeListsTool(name)) {
       const denied = { error: `Tool not allowed in realtime: ${name}` };
       live.sideband.send({
         type: 'conversation.item.create',

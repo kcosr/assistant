@@ -23,10 +23,12 @@ export function createVoiceRouteHandler(getVoiceService: () => VoiceService | nu
     if (segments.length === 3 && segments[2] === 'conversations' && req.method === 'POST') {
       const body = (await helpers.readJsonBody()) ?? {};
       const conversation = await voice.createConversation({
-        conversationId:
-          typeof body['conversationId'] === 'string' ? body['conversationId'] : null,
-        listsInstanceId:
-          typeof body['listsInstanceId'] === 'string' ? body['listsInstanceId'] : undefined,
+        ...(typeof body['conversationId'] === 'string'
+          ? { conversationId: body['conversationId'] }
+          : {}),
+        ...(typeof body['listsInstanceId'] === 'string'
+          ? { listsInstanceId: body['listsInstanceId'] }
+          : {}),
       });
       helpers.sendJson(200, {
         conversationId: conversation.id,
@@ -59,10 +61,12 @@ export function createVoiceRouteHandler(getVoiceService: () => VoiceService | nu
       try {
         const body = (await helpers.readJsonBody()) ?? {};
         const result = await voice.createSession({
-          conversationId:
-            typeof body['conversationId'] === 'string' ? body['conversationId'] : null,
-          listsInstanceId:
-            typeof body['listsInstanceId'] === 'string' ? body['listsInstanceId'] : undefined,
+          ...(typeof body['conversationId'] === 'string'
+            ? { conversationId: body['conversationId'] }
+            : {}),
+          ...(typeof body['listsInstanceId'] === 'string'
+            ? { listsInstanceId: body['listsInstanceId'] }
+            : {}),
         });
         helpers.sendJson(200, {
           conversationId: result.conversationId,

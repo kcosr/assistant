@@ -10,6 +10,7 @@ import type {
   VoiceSessionRecord,
   VoiceSessionState,
   VoiceClientEvent,
+  VoiceClientEventInput,
 } from './types';
 
 interface VoiceStoreFile {
@@ -186,10 +187,7 @@ export class VoiceStore {
     return session;
   }
 
-  pushEvent(
-    session: VoiceSessionRecord,
-    event: Omit<VoiceClientEvent, 'sequence'>,
-  ): VoiceClientEvent {
+  pushEvent(session: VoiceSessionRecord, event: VoiceClientEventInput): VoiceClientEvent {
     session.sequence += 1;
     const full = { ...event, sequence: session.sequence } as VoiceClientEvent;
     session.events.push(full);
@@ -202,7 +200,7 @@ export class VoiceStore {
 
   async appendEvent(
     sessionId: VoiceSessionId,
-    event: Omit<VoiceClientEvent, 'sequence'>,
+    event: VoiceClientEventInput,
   ): Promise<VoiceClientEvent | null> {
     await this.init();
     const session = this.data.sessions.find((s) => s.id === sessionId);

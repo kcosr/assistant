@@ -4069,7 +4069,7 @@ async function main(): Promise<void> {
     voiceStartupPreRollSliderEl,
     voiceTtsGainSliderEl,
   ]
-    .filter((control): control is HTMLElement => control != null)
+    .filter((control): control is HTMLInputElement | HTMLSelectElement => control != null)
     .forEach((control) => {
       control.addEventListener('change', () => syncVoiceSettingsFromInputs());
     });

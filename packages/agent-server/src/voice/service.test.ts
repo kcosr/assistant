@@ -48,10 +48,10 @@ function makeToolContext(sessionId: string): ToolContext {
   return {
     sessionId,
     signal: new AbortController().signal,
-    eventStore: {} as ToolContext['eventStore'],
-    sessionHub: {} as ToolContext['sessionHub'],
-    sessionIndex: {} as ToolContext['sessionIndex'],
-    agentRegistry: {} as ToolContext['agentRegistry'],
+    eventStore: {} as NonNullable<ToolContext['eventStore']>,
+    sessionHub: {} as NonNullable<ToolContext['sessionHub']>,
+    sessionIndex: {} as NonNullable<ToolContext['sessionIndex']>,
+    agentRegistry: {} as NonNullable<ToolContext['agentRegistry']>,
     envConfig: makeEnv(),
     baseToolHost: makeToolHost(),
   };
@@ -75,7 +75,7 @@ describe('VoiceService', () => {
     tempDirs.push(dataDir);
     const service = new VoiceService(
       {
-        envConfig: makeEnv({ dataDir, apiKey: undefined }),
+        envConfig: makeEnv({ dataDir }),
         toolHost: makeToolHost(),
         createToolContext: makeToolContext,
       },

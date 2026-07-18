@@ -50,6 +50,13 @@ export type VoiceClientEvent =
   | { sequence: number; type: 'error'; code: string; message: string }
   | { sequence: number; type: 'closed'; reason: string };
 
+/** Distributive omit — plain Omit collapses union keys and drops event-specific fields. */
+export type VoiceClientEventInput = VoiceClientEvent extends infer Event
+  ? Event extends { sequence: number }
+    ? Omit<Event, 'sequence'>
+    : never
+  : never;
+
 export interface VoiceCapabilities {
   agentRealtime: {
     status: 'ready' | 'not-configured' | 'disabled';
