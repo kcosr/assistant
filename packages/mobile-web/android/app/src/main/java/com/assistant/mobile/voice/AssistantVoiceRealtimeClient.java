@@ -57,7 +57,9 @@ final class AssistantVoiceRealtimeClient {
     private final OkHttpClient httpClient;
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
-    private final AtomicBoolean terminal = new AtomicBoolean(false);
+    /** True while a call is fully torn down / not reusable until the next start resets it. */
+    private final AtomicBoolean terminal = new AtomicBoolean(true);
+    private static final AtomicBoolean FACTORY_INITIALIZED = new AtomicBoolean(false);
 
     private Listener listener;
     private PeerConnectionFactory factory;
@@ -92,6 +94,13 @@ final class AssistantVoiceRealtimeClient {
     ) {
         executor.execute(() -> {
             try {
+                // Previous stop() leaves terminal=true and may leave WebRTC resources half-torn.
+                // Always fully clean and re-arm before starting a new call on the same client.
+                cleanupMedia("restart_cleanup", false, false);
+                terminal.set(false);
+                sessionId = "";
+                this.conversationId = "";
+                eventCursor = 0L;
                 startLocked(
                     assistantBaseUrl,
                     conversationId,
@@ -129,11 +138,26 @@ final class AssistantVoiceRealtimeClient {
     }
 
     void stop(String reason) {
-        executor.execute(() -> teardown(reason == null ? "client_stop" : reason, true));
+        stop(reason, true);
+    }
+
+    /**
+     * @param notifyListener when false, suppresses {@link Listener#onClosed} so a recovery
+     *     restart can tear down media without the service treating the close as end-of-call.
+     */
+    void stop(String reason, boolean notifyListener) {
+        executor.execute(
+            () ->
+                cleanupMedia(
+                    reason == null ? "client_stop" : reason,
+                    true,
+                    notifyListener
+                )
+        );
     }
 
     void release() {
-        stop("release");
+        executor.execute(() -> cleanupMedia("release", true, false));
         executor.shutdownNow();
     }
 
@@ -146,7 +170,8 @@ final class AssistantVoiceRealtimeClient {
         AssistantVoiceAudioRouter audioRouter
     ) throws Exception {
         if (terminal.get()) {
-            return;
+            // Should not happen after start() re-arms terminal=false; treat as hard failure.
+            throw new IllegalStateException("realtime_client_terminal");
         }
         notifyConnecting();
         this.assistantBaseUrl = AssistantVoiceUrlUtils.normalizeBaseUrl(
@@ -156,6 +181,8 @@ final class AssistantVoiceRealtimeClient {
         this.muted = muteOnStart;
 
         if (audioRouter != null) {
+            // Drop any stale focus/mode from a previous call before re-requesting.
+            audioRouter.releaseAll(0L);
             boolean focusGranted = audioRouter.requestRealtimeFocus(ownerGeneration);
             if (!focusGranted) {
                 throw new IllegalStateException("audio_focus_denied");
@@ -276,10 +303,13 @@ final class AssistantVoiceRealtimeClient {
         if (factory != null) {
             return;
         }
-        PeerConnectionFactory.initialize(
-            PeerConnectionFactory.InitializationOptions.builder(appContext)
-                .createInitializationOptions()
-        );
+        // PeerConnectionFactory.initialize must run only once per process.
+        if (FACTORY_INITIALIZED.compareAndSet(false, true)) {
+            PeerConnectionFactory.initialize(
+                PeerConnectionFactory.InitializationOptions.builder(appContext)
+                    .createInitializationOptions()
+            );
+        }
         audioDeviceModule =
             JavaAudioDeviceModule.builder(appContext)
                 .setUseHardwareAcousticEchoCanceler(true)
@@ -374,21 +404,39 @@ final class AssistantVoiceRealtimeClient {
     }
 
     private void teardown(String reason, boolean notifyServer) {
-        if (!terminal.compareAndSet(false, true) && notifyServer) {
-            // already terminal
-        }
+        cleanupMedia(reason, notifyServer, true);
+    }
+
+    /**
+     * Releases WebRTC + session resources so a later start() can succeed.
+     *
+     * @param notifyServer close the assistant voice session over HTTP when appropriate
+     * @param notifyListener fire onClosed once when leaving an active call
+     */
+    private void cleanupMedia(String reason, boolean notifyServer, boolean notifyListener) {
+        boolean wasActive = terminal.compareAndSet(false, true);
+        // Always force terminal so a partially-started call cannot leave the client "open".
         terminal.set(true);
         mainHandler.removeCallbacks(heartbeatRunnable);
         mainHandler.removeCallbacks(eventsPollRunnable);
-        if (notifyServer && !sessionId.isEmpty()) {
+
+        String closingSessionId = sessionId;
+        if (notifyServer && !closingSessionId.isEmpty()) {
             try {
                 postJson(
-                    AssistantVoiceUrlUtils.assistantVoiceSessionCloseUrl(assistantBaseUrl, sessionId),
+                    AssistantVoiceUrlUtils.assistantVoiceSessionCloseUrl(
+                        assistantBaseUrl,
+                        closingSessionId
+                    ),
                     new JSONObject()
                 );
             } catch (Exception ignored) {
             }
         }
+        sessionId = "";
+        conversationId = "";
+        eventCursor = 0L;
+
         try {
             if (localAudioTrack != null) {
                 localAudioTrack.setEnabled(false);
@@ -426,11 +474,15 @@ final class AssistantVoiceRealtimeClient {
         } catch (Exception ignored) {
         }
         factory = null;
-        notifyClosed(reason);
+
+        if (notifyListener && wasActive) {
+            notifyClosed(reason == null ? "closed" : reason);
+        }
     }
 
     private void fail(String message) {
-        teardown(message, true);
+        // Always notify failure; cleanup may already have been terminal during restart races.
+        cleanupMedia(message, true, false);
         Listener current = listener;
         if (current != null) {
             mainHandler.post(() -> current.onFailed(message));

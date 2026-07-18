@@ -536,6 +536,18 @@ public final class AssistantVoiceRuntimeServiceTest {
             )
         );
         assertEquals(
+            android.media.session.PlaybackState.STATE_PLAYING,
+            AssistantVoiceRuntimeService.resolveMediaSessionPlaybackState(
+                AssistantVoiceRuntimeService.STATE_REALTIME_ACTIVE
+            )
+        );
+        assertEquals(
+            android.media.session.PlaybackState.STATE_BUFFERING,
+            AssistantVoiceRuntimeService.resolveMediaSessionPlaybackState(
+                AssistantVoiceRuntimeService.STATE_REALTIME_CONNECTING
+            )
+        );
+        assertEquals(
             android.media.session.PlaybackState.STATE_PAUSED,
             AssistantVoiceRuntimeService.resolveMediaSessionPlaybackState(
                 AssistantVoiceRuntimeService.STATE_IDLE
@@ -578,10 +590,71 @@ public final class AssistantVoiceRuntimeServiceTest {
             )
         );
         assertEquals(
+            true,
+            AssistantVoiceRuntimeService.shouldStopForMediaButtonToggle(
+                AssistantVoiceRuntimeService.STATE_REALTIME_ACTIVE,
+                false
+            )
+        );
+        assertEquals(
+            true,
+            AssistantVoiceRuntimeService.shouldStopForMediaButtonToggle(
+                AssistantVoiceRuntimeService.STATE_REALTIME_CONNECTING,
+                false
+            )
+        );
+        assertEquals(
             false,
             AssistantVoiceRuntimeService.shouldStopForMediaButtonToggle(
                 AssistantVoiceRuntimeService.STATE_IDLE,
                 false
+            )
+        );
+    }
+
+    @Test
+    @Config(sdk = Build.VERSION_CODES.N)
+    public void shouldStartRealtimeFromMediaButtonWhenRuntimeModeIsRealtime() {
+        assertEquals(
+            true,
+            AssistantVoiceRuntimeService.shouldStartRealtimeFromMediaButton(
+                AssistantVoiceConfig.RUNTIME_MODE_REALTIME
+            )
+        );
+        assertEquals(
+            false,
+            AssistantVoiceRuntimeService.shouldStartRealtimeFromMediaButton(
+                AssistantVoiceConfig.RUNTIME_MODE_THREAD
+            )
+        );
+        assertEquals(
+            false,
+            AssistantVoiceRuntimeService.shouldStartRealtimeFromMediaButton("")
+        );
+    }
+
+    @Test
+    @Config(sdk = Build.VERSION_CODES.N)
+    public void shouldStopRealtimeFromMediaButtonForActiveStateOrRealtimeOwner() {
+        assertEquals(
+            true,
+            AssistantVoiceRuntimeService.shouldStopRealtimeFromMediaButton(
+                AssistantVoiceRuntimeService.STATE_REALTIME_ACTIVE,
+                AssistantVoiceControllerPolicy.OWNER_THREAD
+            )
+        );
+        assertEquals(
+            true,
+            AssistantVoiceRuntimeService.shouldStopRealtimeFromMediaButton(
+                AssistantVoiceRuntimeService.STATE_IDLE,
+                AssistantVoiceControllerPolicy.OWNER_REALTIME
+            )
+        );
+        assertEquals(
+            false,
+            AssistantVoiceRuntimeService.shouldStopRealtimeFromMediaButton(
+                AssistantVoiceRuntimeService.STATE_IDLE,
+                AssistantVoiceControllerPolicy.OWNER_THREAD
             )
         );
     }

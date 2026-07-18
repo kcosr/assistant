@@ -391,6 +391,8 @@ public final class AssistantVoiceInteractionRulesTest {
         assertTrue(AssistantVoiceInteractionRules.shouldShowNotificationStopAction(false, true));
         assertTrue(AssistantVoiceInteractionRules.shouldShowNotificationStopAction(true, true));
         assertFalse(AssistantVoiceInteractionRules.shouldShowNotificationStopAction(false, false));
+        assertTrue(AssistantVoiceInteractionRules.shouldShowNotificationStopAction(false, false, true));
+        assertFalse(AssistantVoiceInteractionRules.shouldShowNotificationStopAction(false, false, false));
     }
 
     @Test
@@ -436,6 +438,28 @@ public final class AssistantVoiceInteractionRulesTest {
             false,
             false,
             false
+        ));
+    }
+
+    @Test
+    public void showsNotificationSpeakActionInRealtimeModeWithoutThreadSession() {
+        assertTrue(AssistantVoiceInteractionRules.shouldShowNotificationSpeakAction(
+            true,
+            "",
+            false,
+            false,
+            false,
+            true,
+            false
+        ));
+        assertFalse(AssistantVoiceInteractionRules.shouldShowNotificationSpeakAction(
+            true,
+            "",
+            false,
+            false,
+            false,
+            true,
+            true
         ));
     }
 }

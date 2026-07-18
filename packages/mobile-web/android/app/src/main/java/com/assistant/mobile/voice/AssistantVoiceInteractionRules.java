@@ -103,7 +103,15 @@ final class AssistantVoiceInteractionRules {
         boolean promptPlaybackActive,
         boolean listeningActive
     ) {
-        return promptPlaybackActive || listeningActive;
+        return shouldShowNotificationStopAction(promptPlaybackActive, listeningActive, false);
+    }
+
+    static boolean shouldShowNotificationStopAction(
+        boolean promptPlaybackActive,
+        boolean listeningActive,
+        boolean realtimeActive
+    ) {
+        return promptPlaybackActive || listeningActive || realtimeActive;
     }
 
     static boolean shouldShowNotificationSpeakAction(
@@ -113,11 +121,34 @@ final class AssistantVoiceInteractionRules {
         boolean listeningActive,
         boolean runtimeConnected
     ) {
+        return shouldShowNotificationSpeakAction(
+            voiceEnabled,
+            preferredVoiceSessionId,
+            promptPlaybackActive,
+            listeningActive,
+            runtimeConnected,
+            false,
+            false
+        );
+    }
+
+    static boolean shouldShowNotificationSpeakAction(
+        boolean voiceEnabled,
+        String preferredVoiceSessionId,
+        boolean promptPlaybackActive,
+        boolean listeningActive,
+        boolean runtimeConnected,
+        boolean realtimeMode,
+        boolean realtimeActive
+    ) {
+        if (!voiceEnabled || promptPlaybackActive || listeningActive || realtimeActive) {
+            return false;
+        }
+        if (realtimeMode) {
+            // Realtime does not require a preferred Thread session id.
+            return true;
+        }
         String sessionId = preferredVoiceSessionId == null ? "" : preferredVoiceSessionId.trim();
-        return voiceEnabled
-            && !sessionId.isEmpty()
-            && !promptPlaybackActive
-            && !listeningActive
-            && runtimeConnected;
+        return !sessionId.isEmpty() && runtimeConnected;
     }
 }

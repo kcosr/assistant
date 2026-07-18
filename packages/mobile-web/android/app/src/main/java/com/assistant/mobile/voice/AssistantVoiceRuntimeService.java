@@ -419,7 +419,7 @@ public final class AssistantVoiceRuntimeService extends Service {
         }
         if (ACTION_STOP_CURRENT_INTERACTION.equals(action)) {
             recordVoiceEvent("service_action_stop_current_interaction", null);
-            stopCurrentInteraction(isPromptPlaybackActive(), "manual_stop");
+            handleUserStopRequest("notification_stop");
             return START_STICKY;
         }
         if (ACTION_START_MANUAL_LISTEN.equals(action)) {
@@ -427,7 +427,7 @@ public final class AssistantVoiceRuntimeService extends Service {
             JSONObject details = AssistantVoiceEventLog.details();
             AssistantVoiceEventLog.put(details, "sessionId", safe(sessionId));
             recordVoiceEvent("service_action_start_manual_listen", details);
-            startManualListen(sessionId);
+            handleUserStartRequest(sessionId, "notification_speak");
             return START_STICKY;
         }
         if (ACTION_RETARGET_ACTIVE_RECOGNITION.equals(action)) {
@@ -653,7 +653,7 @@ public final class AssistantVoiceRuntimeService extends Service {
                         Log.d(TAG, "MediaSession onPlay ignored: media buttons disabled");
                         return;
                     }
-                    startManualListen("");
+                    handleMediaButtonStart("media_session_play");
                 });
             }
 
@@ -692,14 +692,17 @@ public final class AssistantVoiceRuntimeService extends Service {
     }
 
     private void handleMediaButtonKeyCode(int keyCode) {
+        boolean activeInteraction = hasActiveInteraction() || isRealtimeMediaInteractionActive();
         Log.d(
             TAG,
             "handleMediaButtonKeyCode keyCode="
                 + KeyEvent.keyCodeToString(keyCode)
                 + " runtimeState="
                 + runtimeState
+                + " runtimeMode="
+                + (config == null ? "" : config.voiceRuntimeMode)
                 + " hasActiveInteraction="
-                + hasActiveInteraction()
+                + activeInteraction
         );
         switch (keyCode) {
             case KeyEvent.KEYCODE_MEDIA_PLAY:
@@ -707,10 +710,10 @@ public final class AssistantVoiceRuntimeService extends Service {
             case KeyEvent.KEYCODE_MEDIA_STOP:
             case KeyEvent.KEYCODE_HEADSETHOOK:
             case KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE:
-                if (shouldToggleMediaButtonToStop(runtimeState, hasActiveInteraction())) {
+                if (shouldToggleMediaButtonToStop(runtimeState, activeInteraction)) {
                     handleMediaSessionStop();
                 } else {
-                    startManualListen("");
+                    handleMediaButtonStart("media_button");
                 }
                 return;
             default:
@@ -718,21 +721,68 @@ public final class AssistantVoiceRuntimeService extends Service {
         }
     }
 
+    private void handleMediaButtonStart(String reason) {
+        if (config == null || !config.mediaButtonsEnabled) {
+            Log.d(TAG, "handleMediaButtonStart ignored: media buttons disabled");
+            return;
+        }
+        handleUserStartRequest("", reason);
+    }
+
     private void handleMediaSessionStop() {
-        if (!config.mediaButtonsEnabled) {
+        if (config == null || !config.mediaButtonsEnabled) {
             Log.d(TAG, "handleMediaSessionStop ignored: media buttons disabled");
             return;
         }
+        handleUserStopRequest("media_button");
+    }
+
+    /**
+     * Shared start entry for headset media buttons and the notification Speak action.
+     * Realtime mode starts a Realtime call; Thread mode starts bounded STT listen.
+     */
+    private void handleUserStartRequest(String sessionId, String reason) {
+        if (config == null || !config.isEnabled()) {
+            Log.d(TAG, "handleUserStartRequest ignored: voice disabled reason=" + safe(reason));
+            return;
+        }
+        if (shouldStartRealtimeFromMediaButton(config.voiceRuntimeMode)) {
+            Log.d(TAG, "handleUserStartRequest realtime reason=" + safe(reason));
+            startRealtimeCall(reason);
+            return;
+        }
+        Log.d(TAG, "handleUserStartRequest thread reason=" + safe(reason));
+        startManualListen(sessionId == null ? "" : sessionId);
+    }
+
+    /**
+     * Shared stop entry for headset media buttons and the notification Stop action.
+     */
+    private void handleUserStopRequest(String reason) {
         Log.d(
             TAG,
-            "handleMediaSessionStop runtimeState="
+            "handleUserStopRequest reason="
+                + safe(reason)
+                + " runtimeState="
                 + runtimeState
+                + " runtimeMode="
+                + (config == null ? "" : config.voiceRuntimeMode)
+                + " liveOwner="
+                + liveOwner
                 + " promptPlaybackActive="
                 + isPromptPlaybackActive()
                 + " activeSttRequestId="
                 + !activeSttRequestId.isEmpty()
         );
+        if (hasActiveRealtimeInteraction(runtimeState, liveOwner)) {
+            stopRealtimeCall(reason);
+            return;
+        }
         stopCurrentInteraction(isPromptPlaybackActive(), "manual_stop");
+    }
+
+    private boolean isRealtimeMediaInteractionActive() {
+        return hasActiveRealtimeInteraction(runtimeState, liveOwner);
     }
 
     static boolean shouldHandleMediaButtonKeyEvent(KeyEvent event) {
@@ -741,10 +791,45 @@ public final class AssistantVoiceRuntimeService extends Service {
             && event.getRepeatCount() == 0;
     }
 
+    static boolean isRealtimeRuntimeMode(String voiceRuntimeMode) {
+        return AssistantVoiceConfig.RUNTIME_MODE_REALTIME.equals(trim(voiceRuntimeMode));
+    }
+
+    static boolean isRealtimeActiveState(String state) {
+        String normalized = trim(state);
+        return STATE_REALTIME_ACTIVE.equals(normalized)
+            || STATE_REALTIME_CONNECTING.equals(normalized);
+    }
+
+    /**
+     * Headset/media start uses Realtime when the user selected Realtime runtime mode.
+     * Thread mode continues to start bounded STT listen.
+     */
+    static boolean shouldStartRealtimeFromMediaButton(String voiceRuntimeMode) {
+        return isRealtimeRuntimeMode(voiceRuntimeMode);
+    }
+
+    /**
+     * True while a Realtime call is connecting/active or ownership is still Realtime
+     * (covers brief transition windows where state lags owner).
+     */
+    static boolean hasActiveRealtimeInteraction(String state, String liveOwner) {
+        return isRealtimeActiveState(state)
+            || AssistantVoiceControllerPolicy.OWNER_REALTIME.equals(trim(liveOwner));
+    }
+
+    /** @deprecated Prefer {@link #hasActiveRealtimeInteraction(String, String)}. */
+    static boolean shouldStopRealtimeFromMediaButton(String state, String liveOwner) {
+        return hasActiveRealtimeInteraction(state, liveOwner);
+    }
+
     static boolean shouldStopForMediaButtonToggle(String state, boolean hasActiveInteraction) {
+        // Callers should OR realtime activity into hasActiveInteraction; state checks cover
+        // Thread listening/speaking and Realtime connecting/active when the flag lags.
         return hasActiveInteraction
             || STATE_LISTENING.equals(trim(state))
-            || STATE_SPEAKING.equals(trim(state));
+            || STATE_SPEAKING.equals(trim(state))
+            || isRealtimeActiveState(state);
     }
 
     static boolean shouldToggleMediaButtonToStop(String state, boolean hasActiveInteraction) {
@@ -775,12 +860,16 @@ public final class AssistantVoiceRuntimeService extends Service {
         }
         boolean enabled = config.isEnabled() && config.mediaButtonsEnabled && !destroyed;
         int mediaPlaybackState = resolveMediaSessionPlaybackState(runtimeState);
+        boolean playingForSpeed =
+            STATE_SPEAKING.equals(runtimeState)
+                || STATE_LISTENING.equals(runtimeState)
+                || STATE_REALTIME_ACTIVE.equals(runtimeState);
         PlaybackState.Builder playbackState = new PlaybackState.Builder()
             .setActions(enabled ? MEDIA_SESSION_PLAYBACK_ACTIONS : 0L)
             .setState(
                 mediaPlaybackState,
                 PlaybackState.PLAYBACK_POSITION_UNKNOWN,
-                STATE_SPEAKING.equals(runtimeState) || STATE_LISTENING.equals(runtimeState) ? 1.0f : 0.0f
+                playingForSpeed ? 1.0f : 0.0f
             );
         mediaSession.setPlaybackState(playbackState.build());
         mediaSession.setActive(enabled);
@@ -858,16 +947,20 @@ public final class AssistantVoiceRuntimeService extends Service {
             PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT
         );
 
+        boolean realtimeActive = isRealtimeMediaInteractionActive();
         boolean showSpeakAction = AssistantVoiceInteractionRules.shouldShowNotificationSpeakAction(
             config.allowsNotificationSpeak(),
             config.preferredVoiceSessionId,
             isPromptPlaybackActive(),
             !activeSttRequestId.isEmpty(),
-            isRuntimeConnected()
+            isRuntimeConnected(),
+            isRealtimeRuntimeMode(config.voiceRuntimeMode),
+            realtimeActive
         );
         boolean showStopAction = AssistantVoiceInteractionRules.shouldShowNotificationStopAction(
             isPromptPlaybackActive(),
-            !activeSttRequestId.isEmpty()
+            !activeSttRequestId.isEmpty(),
+            realtimeActive
         );
         String notificationSessionTitle = resolveNotificationSessionTitle();
 
@@ -1097,7 +1190,10 @@ public final class AssistantVoiceRuntimeService extends Service {
         switch (trim(state)) {
             case STATE_LISTENING:
             case STATE_SPEAKING:
+            case STATE_REALTIME_ACTIVE:
                 return PlaybackState.STATE_PLAYING;
+            case STATE_REALTIME_CONNECTING:
+                return PlaybackState.STATE_BUFFERING;
             case STATE_DISABLED:
                 return PlaybackState.STATE_STOPPED;
             case STATE_ERROR:
@@ -1935,18 +2031,29 @@ public final class AssistantVoiceRuntimeService extends Service {
             emitRuntimeError("Enable native voice before starting Realtime");
             return;
         }
+        if (STATE_REALTIME_ACTIVE.equals(runtimeState)
+            || STATE_REALTIME_CONNECTING.equals(runtimeState)) {
+            Log.d(TAG, "startRealtimeCall ignored already active state=" + runtimeState);
+            return;
+        }
+        // If a previous call left liveOwner stuck without an active connection (failed restart),
+        // recover by forcing a clean Thread owner before pre-empting again. Suppress onClosed so
+        // the async teardown of the old client cannot tear down the new call.
+        if (AssistantVoiceControllerPolicy.OWNER_REALTIME.equals(liveOwner)) {
+            Log.d(TAG, "startRealtimeCall recovering stale realtime owner before restart");
+            if (realtimeClient != null) {
+                realtimeClient.stop("stale_owner_recover", false);
+            }
+            releaseRealtimeWakeLock();
+            stopRealtimeOwner("stale_owner_recover");
+        }
         if (realtimeClient == null) {
             emitRuntimeError("Realtime client unavailable");
             return;
         }
-        if (AssistantVoiceControllerPolicy.OWNER_REALTIME.equals(liveOwner)
-            && (STATE_REALTIME_ACTIVE.equals(runtimeState)
-                || STATE_REALTIME_CONNECTING.equals(runtimeState))) {
-            Log.d(TAG, "startRealtimeCall ignored already active");
-            return;
-        }
         prepareRealtimeOwnerPreempt(reason);
         realtimeMuted = config.realtimeMuteOnStart;
+        updateState(STATE_REALTIME_CONNECTING, null);
         realtimeClient.start(
             config.assistantBaseUrl,
             config.realtimeConversationId,
@@ -1962,6 +2069,8 @@ public final class AssistantVoiceRuntimeService extends Service {
             realtimeClient.stop(reason);
         }
         releaseRealtimeWakeLock();
+        // Owner fence returns to Thread immediately; client async teardown must not leave us
+        // stuck in REALTIME_ACTIVE so the next start is ignored.
         stopRealtimeOwner(reason);
         updateState(resolveInactiveState(), null);
     }
