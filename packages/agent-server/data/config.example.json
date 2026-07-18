@@ -11,16 +11,24 @@
       "displayName": "Lists Manager",
       "description": "Manages your personal lists - reading, shopping, movies, and more.",
       "systemPrompt": "You are a lists manager. Help the user create and manage personal lists for any purpose - reading lists, shopping lists, movie watchlists, recipe collections, and more.\n\nYou can:\n- Create new lists with names, descriptions, and tags\n- Add items to lists (with optional URLs and notes)\n- Search across lists or within a specific list\n- Move items between lists\n- Update or delete lists and items\n\nWhen the user asks you to save a URL to a list, use the url_fetch_fetch tool with mode \"metadata\" to retrieve the page title before adding the item. If the fetch fails or returns no title, derive a title from the URL or ask the user what they'd like to call it.\n\nWhen displaying multiple items (from a list or search results), format them as a markdown table with minimal relevant columns (e.g., title and URL, or title and notes). Keep it concise.",
-      "toolAllowlist": ["lists_*", "url_fetch_fetch"]
+      "toolAllowlist": [
+        "lists_*",
+        "url_fetch_fetch"
+      ]
     },
     {
       "agentId": "notes",
       "displayName": "Notes",
       "description": "Manages your personal notes - capture thoughts, meeting notes, and documents.",
       "systemPrompt": "You are a notes assistant. Help the user capture and organize their thoughts, meeting notes, ideas, and documents.\n\nYou can:\n- Create new notes with titles, content, and tags\n- Read and search existing notes\n- Append to existing notes\n- Update or delete notes\n\nBefore making changes to existing notes, use notes_preview_write to show the user a diff of what will change. Ask for confirmation before proceeding with the write.\n\nWhen the user asks you to save a URL in a note, use the url_fetch_fetch tool with mode \"metadata\" to retrieve the page title and description. Include this information in the note.\n\nWhen listing notes, format them as a markdown table showing title, tags, and last updated date.",
-      "toolAllowlist": ["notes_*", "url_fetch_fetch"],
+      "toolAllowlist": [
+        "notes_*",
+        "url_fetch_fetch"
+      ],
       "toolExposure": "skills",
-      "skillAllowlist": ["notes"]
+      "skillAllowlist": [
+        "notes"
+      ]
     },
     {
       "agentId": "general",
@@ -29,13 +37,19 @@
       "systemPrompt": "You are a helpful assistant.",
       "sessionWorkingDir": {
         "mode": "prompt",
-        "roots": ["/path/to/workspaces"]
+        "roots": [
+          "/path/to/workspaces"
+        ]
       },
-      "toolAllowlist": ["*"],
+      "toolAllowlist": [
+        "*"
+      ],
       "skills": [
         {
           "root": "./dist/skills",
-          "available": ["*"],
+          "available": [
+            "*"
+          ],
           "inline": []
         }
       ]
@@ -46,11 +60,23 @@
       "description": "Claude Code CLI agent.",
       "chat": {
         "provider": "claude-cli",
-        "models": ["opus", "sonnet", "haiku"],
-        "thinking": ["none", "low", "medium", "high", "xhigh"],
+        "models": [
+          "opus",
+          "sonnet",
+          "haiku"
+        ],
+        "thinking": [
+          "none",
+          "low",
+          "medium",
+          "high",
+          "xhigh"
+        ],
         "config": {
           "workdir": "/path/to/workspace",
-          "extraArgs": ["--dangerously-skip-permissions"],
+          "extraArgs": [
+            "--dangerously-skip-permissions"
+          ],
           "wrapper": {
             "path": "/home/kevin/devtools/container/run.sh",
             "env": {
@@ -68,7 +94,10 @@
       "description": "OpenAI Codex CLI agent.",
       "chat": {
         "provider": "codex-cli",
-        "models": ["gpt-5.2-codex", "gpt-5.2"],
+        "models": [
+          "gpt-5.2-codex",
+          "gpt-5.2"
+        ],
         "thinking": [
           "off",
           "low",
@@ -177,17 +206,39 @@
     }
   ],
   "profiles": [
-    { "id": "default", "label": "Global" },
-    { "id": "work", "label": "Work" },
-    { "id": "oss", "label": "Open Source" },
-    { "id": "personal", "label": "Personal" }
+    {
+      "id": "default",
+      "label": "Global"
+    },
+    {
+      "id": "work",
+      "label": "Work"
+    },
+    {
+      "id": "oss",
+      "label": "Open Source"
+    },
+    {
+      "id": "personal",
+      "label": "Personal"
+    }
   ],
   "plugins": {
-    "hello": { "enabled": false },
-    "chat": { "enabled": true },
-    "ws-echo": { "enabled": false },
-    "terminal": { "enabled": false },
-    "files": { "enabled": false },
+    "hello": {
+      "enabled": false
+    },
+    "chat": {
+      "enabled": true
+    },
+    "ws-echo": {
+      "enabled": false
+    },
+    "terminal": {
+      "enabled": false
+    },
+    "files": {
+      "enabled": false
+    },
     "diff": {
       "enabled": false,
       "workspaceRoot": "/var/lib/assistant/coding-workspaces",
@@ -200,17 +251,37 @@
         }
       ]
     },
-    "lists": { "enabled": true },
-    "notes": { "enabled": true },
-    "search": { "enabled": true },
+    "lists": {
+      "enabled": true
+    },
+    "notes": {
+      "enabled": true
+    },
+    "search": {
+      "enabled": true
+    },
     "time-tracker": {
       "enabled": false,
-      "instances": ["work", { "id": "personal", "label": "Personal" }]
+      "instances": [
+        "work",
+        {
+          "id": "personal",
+          "label": "Personal"
+        }
+      ]
     },
-    "scheduled-sessions": { "enabled": true },
-    "agents": { "enabled": true },
-    "sessions": { "enabled": true },
-    "url-fetch": { "enabled": true },
+    "scheduled-sessions": {
+      "enabled": true
+    },
+    "agents": {
+      "enabled": true
+    },
+    "sessions": {
+      "enabled": true
+    },
+    "url-fetch": {
+      "enabled": true
+    },
     "links": {
       "enabled": true,
       "spotify": {
@@ -218,5 +289,12 @@
       }
     }
   },
-  "mcpServers": []
+  "mcpServers": [],
+  "voice": {
+    "realtime": {
+      "toolAllowlist": [
+        "lists_*"
+      ]
+    }
+  }
 }

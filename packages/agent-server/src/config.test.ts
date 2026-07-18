@@ -74,6 +74,8 @@ describe('loadConfig', () => {
     expect(agent.skillDenylist).toEqual(['lists-private']);
     expect(agent.capabilityAllowlist).toEqual(['lists.*']);
     expect(agent.capabilityDenylist).toEqual(['lists.write']);
+    // voice section is optional; omit => undefined (realtime tools default to none at runtime)
+    expect(config.voice).toBeUndefined();
 
     const listsPlugin = config.plugins['lists'];
     const notesPlugin = config.plugins['notes'];
@@ -1077,6 +1079,34 @@ describe('loadConfig', () => {
         },
       },
     });
+  });
+
+  it('loads voice.realtime tool allowlist and denylist', async () => {
+    const filePath = createTempFile('config-voice-realtime');
+    const configJson = {
+      agents: [],
+      voice: {
+        realtime: {
+          toolAllowlist: ['lists_*'],
+          toolDenylist: ['lists_show', 'lists_aql_*'],
+          instructions: ' Be brief. ',
+        },
+      },
+    };
+
+    await fs.writeFile(filePath, JSON.stringify(configJson), 'utf8');
+
+    const config = loadConfig(filePath);
+    expect(config.voice?.realtime?.toolAllowlist).toEqual(['lists_*']);
+    expect(config.voice?.realtime?.toolDenylist).toEqual(['lists_show', 'lists_aql_*']);
+    expect(config.voice?.realtime?.instructions).toBe('Be brief.');
+  });
+
+  it('treats missing voice section as undefined (no realtime tools by default)', async () => {
+    const filePath = createTempFile('config-voice-missing');
+    await fs.writeFile(filePath, JSON.stringify({ agents: [] }), 'utf8');
+    const config = loadConfig(filePath);
+    expect(config.voice).toBeUndefined();
   });
 
   it('substitutes env vars in MCP server command and args', async () => {

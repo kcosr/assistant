@@ -169,6 +169,7 @@ export async function startServer(
     await scheduledSessionService.initialize();
   }
 
+  const voiceRealtime = appConfig?.voice?.realtime;
   const voiceService = new VoiceService(
     {
       envConfig: config,
@@ -186,6 +187,10 @@ export async function startServer(
         ...(scheduledSessionService ? { scheduledSessionService } : {}),
         ...(searchService ? { searchService } : {}),
       }),
+      // Explicit opt-in: missing voice.realtime.toolAllowlist => no realtime tools.
+      ...(voiceRealtime?.toolAllowlist ? { toolAllowlist: voiceRealtime.toolAllowlist } : {}),
+      ...(voiceRealtime?.toolDenylist ? { toolDenylist: voiceRealtime.toolDenylist } : {}),
+      ...(voiceRealtime?.instructions ? { instructions: voiceRealtime.instructions } : {}),
     },
     config.dataDir,
   );

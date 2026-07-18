@@ -4,9 +4,8 @@ import { ToolError } from '../tools';
 
 import {
   buildRealtimeInstructions,
-  buildRealtimeListsTools,
-  isRealtimeListsTool,
-  pluginToolNameForRealtime,
+  buildRealtimeToolsFromHost,
+  isToolAllowedForVoiceRealtime,
 } from './listsTools';
 import {
   hangupOpenAiRealtimeCall,
@@ -27,6 +26,13 @@ export interface VoiceServiceOptions {
   createToolContext: (sessionId: string) => ToolContext;
   model?: string;
   voice?: string;
+  /**
+   * Realtime tool globs. Missing/empty allowlist => no tools (explicit opt-in).
+   */
+  toolAllowlist?: string[];
+  toolDenylist?: string[];
+  /** Optional instructions override from app config. */
+  instructions?: string;
 }
 
 interface LiveRealtimeCall {
@@ -42,6 +48,9 @@ export class VoiceService {
   private readonly liveCalls = new Map<VoiceSessionId, LiveRealtimeCall>();
   private readonly model: string;
   private readonly voice: string;
+  private readonly toolAllowlist: string[] | undefined;
+  private readonly toolDenylist: string[] | undefined;
+  private readonly instructionsOverride: string | undefined;
 
   constructor(
     private readonly options: VoiceServiceOptions,
@@ -58,6 +67,9 @@ export class VoiceService {
       process.env['OPENAI_REALTIME_VOICE']?.trim() ||
       options.envConfig.ttsVoice ||
       'marin';
+    this.toolAllowlist = options.toolAllowlist;
+    this.toolDenylist = options.toolDenylist;
+    this.instructionsOverride = options.instructions;
   }
 
   async init(): Promise<void> {
@@ -133,14 +145,18 @@ export class VoiceService {
     });
 
     const contextBlock = this.store.recentJournalText(conversation);
-    const tools = buildRealtimeListsTools();
+    const tools = await buildRealtimeToolsFromHost({
+      listTools: () => this.options.toolHost.listTools(),
+      toolAllowlist: this.toolAllowlist,
+      toolDenylist: this.toolDenylist,
+    });
     const negotiated = await negotiateOpenAiRealtimeCall({
       apiKey,
       offerSdp: input.offerSdp,
       session: {
         model: this.model,
         voice: this.voice,
-        instructions: buildRealtimeInstructions(contextBlock),
+        instructions: buildRealtimeInstructions(contextBlock, this.instructionsOverride),
         tools,
       },
     });
@@ -324,7 +340,7 @@ export class VoiceService {
       status: 'started',
     });
 
-    if (!isRealtimeListsTool(name)) {
+    if (!isToolAllowedForVoiceRealtime(name, this.toolAllowlist, this.toolDenylist)) {
       const denied = { error: `Tool not allowed in realtime: ${name}` };
       live.sideband.send({
         type: 'conversation.item.create',
@@ -361,11 +377,10 @@ export class VoiceService {
       payload: args,
     });
 
-    const toolName = pluginToolNameForRealtime(name);
     const ctx = this.options.createToolContext(`voice:${live.conversationId}`);
     let output: unknown;
     try {
-      output = await this.options.toolHost.callTool(toolName, JSON.stringify(args), ctx);
+      output = await this.options.toolHost.callTool(name, JSON.stringify(args), ctx);
       await this.store.appendJournal(live.conversationId, {
         kind: 'tool_result',
         toolName: name,

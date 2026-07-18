@@ -1,218 +1,106 @@
+import type { Tool } from '../tools';
+import { matchesGlobPattern } from '../tools/scoping';
+
 import type { RealtimeFunctionTool } from './types';
 
-/** Canonical lists plugin ops exposed to Realtime (title-lookup friendly). */
-export const REALTIME_LISTS_TOOL_NAMES = [
-  'lists_list',
-  'lists_get',
-  'lists_items_list',
-  'lists_items_search',
-  'lists_item_get',
-  'lists_item_add',
-  'lists_item_update',
-  'lists_item_remove',
-  'lists_item_tags_add',
-  'lists_item_tags_remove',
-] as const;
+/**
+ * Explicit opt-in filter for realtime voice tools.
+ *
+ * Unlike text agents ({@link filterToolsForAgent}), a missing or empty allowlist
+ * yields no tools — never the full registry.
+ */
+export function filterToolsForVoiceRealtime<T extends { name: string }>(
+  tools: readonly T[],
+  allowlist: string[] | undefined,
+  denylist: string[] | undefined,
+): T[] {
+  if (!allowlist || allowlist.length === 0) {
+    return [];
+  }
 
-export type RealtimeListsToolName = (typeof REALTIME_LISTS_TOOL_NAMES)[number];
+  let filtered = tools.filter((tool) =>
+    allowlist.some((pattern) => matchesGlobPattern(tool.name, pattern)),
+  );
 
-const TOOL_TO_PLUGIN_OP: Record<RealtimeListsToolName, string> = {
-  lists_list: 'lists_list',
-  lists_get: 'lists_get',
-  lists_items_list: 'lists_items_list',
-  lists_items_search: 'lists_items_search',
-  lists_item_get: 'lists_item_get',
-  lists_item_add: 'lists_item_add',
-  lists_item_update: 'lists_item_update',
-  lists_item_remove: 'lists_item_remove',
-  lists_item_tags_add: 'lists_item_tags_add',
-  lists_item_tags_remove: 'lists_item_tags_remove',
-};
+  if (denylist && denylist.length > 0) {
+    filtered = filtered.filter(
+      (tool) => !denylist.some((pattern) => matchesGlobPattern(tool.name, pattern)),
+    );
+  }
 
-export function isRealtimeListsTool(name: string): name is RealtimeListsToolName {
-  return (REALTIME_LISTS_TOOL_NAMES as readonly string[]).includes(name);
+  return filtered;
 }
 
-export function pluginToolNameForRealtime(name: RealtimeListsToolName): string {
-  return TOOL_TO_PLUGIN_OP[name];
+export function isToolAllowedForVoiceRealtime(
+  name: string,
+  allowlist: string[] | undefined,
+  denylist: string[] | undefined,
+): boolean {
+  if (!allowlist || allowlist.length === 0) {
+    return false;
+  }
+  const allowed = allowlist.some((pattern) => matchesGlobPattern(name, pattern));
+  if (!allowed) {
+    return false;
+  }
+  if (denylist && denylist.length > 0) {
+    if (denylist.some((pattern) => matchesGlobPattern(name, pattern))) {
+      return false;
+    }
+  }
+  return true;
 }
 
-export function buildRealtimeListsTools(): RealtimeFunctionTool[] {
-  const instance = {
-    type: 'string',
-    description: 'Lists plugin instance id (default "default").',
+function normalizeParameters(parameters: unknown): Record<string, unknown> {
+  if (parameters && typeof parameters === 'object' && !Array.isArray(parameters)) {
+    return parameters as Record<string, unknown>;
+  }
+  return {
+    type: 'object',
+    properties: {},
+    additionalProperties: false,
   };
-  return [
-    {
-      type: 'function',
-      name: 'lists_list',
-      description: 'List all lists, optionally filtered by tags.',
-      parameters: {
-        type: 'object',
-        properties: {
-          instance_id: instance,
-          tags: { type: 'array', items: { type: 'string' } },
-        },
-        additionalProperties: false,
-      },
-    },
-    {
-      type: 'function',
-      name: 'lists_get',
-      description: 'Get a list by id.',
-      parameters: {
-        type: 'object',
-        properties: {
-          instance_id: instance,
-          id: { type: 'string', description: 'List id.' },
-        },
-        required: ['id'],
-        additionalProperties: false,
-      },
-    },
-    {
-      type: 'function',
-      name: 'lists_items_list',
-      description: 'List items in a list.',
-      parameters: {
-        type: 'object',
-        properties: {
-          instance_id: instance,
-          listId: { type: 'string' },
-        },
-        required: ['listId'],
-        additionalProperties: false,
-      },
-    },
-    {
-      type: 'function',
-      name: 'lists_items_search',
-      description: 'Search list items by query and optional list/tags filters.',
-      parameters: {
-        type: 'object',
-        properties: {
-          instance_id: instance,
-          query: { type: 'string' },
-          listId: { type: 'string' },
-          tags: { type: 'array', items: { type: 'string' } },
-        },
-        additionalProperties: false,
-      },
-    },
-    {
-      type: 'function',
-      name: 'lists_item_get',
-      description: 'Get one list item by id.',
-      parameters: {
-        type: 'object',
-        properties: {
-          instance_id: instance,
-          listId: { type: 'string' },
-          id: { type: 'string' },
-        },
-        required: ['listId', 'id'],
-        additionalProperties: false,
-      },
-    },
-    {
-      type: 'function',
-      name: 'lists_item_add',
-      description: 'Add an item to a list. Prefer list title lookup when id is unknown.',
-      parameters: {
-        type: 'object',
-        properties: {
-          instance_id: instance,
-          listId: { type: 'string' },
-          listTitle: { type: 'string', description: 'Optional list title lookup if listId unknown.' },
-          title: { type: 'string' },
-          notes: { type: 'string' },
-          tags: { type: 'array', items: { type: 'string' } },
-        },
-        required: ['title'],
-        additionalProperties: false,
-      },
-    },
-    {
-      type: 'function',
-      name: 'lists_item_update',
-      description:
-        'Update a list item. Prefer lookupTitle when the item id is unknown from conversation.',
-      parameters: {
-        type: 'object',
-        properties: {
-          instance_id: instance,
-          listId: { type: 'string' },
-          id: { type: 'string' },
-          lookupTitle: { type: 'string' },
-          title: { type: 'string' },
-          notes: { type: 'string' },
-          completed: { type: 'boolean' },
-          tags: { type: 'array', items: { type: 'string' } },
-        },
-        additionalProperties: false,
-      },
-    },
-    {
-      type: 'function',
-      name: 'lists_item_remove',
-      description: 'Remove a list item by id or title.',
-      parameters: {
-        type: 'object',
-        properties: {
-          instance_id: instance,
-          listId: { type: 'string' },
-          id: { type: 'string' },
-          title: { type: 'string' },
-        },
-        additionalProperties: false,
-      },
-    },
-    {
-      type: 'function',
-      name: 'lists_item_tags_add',
-      description: 'Add tags to a list item.',
-      parameters: {
-        type: 'object',
-        properties: {
-          instance_id: instance,
-          listId: { type: 'string' },
-          id: { type: 'string' },
-          lookupTitle: { type: 'string' },
-          tags: { type: 'array', items: { type: 'string' } },
-        },
-        required: ['tags'],
-        additionalProperties: false,
-      },
-    },
-    {
-      type: 'function',
-      name: 'lists_item_tags_remove',
-      description: 'Remove tags from a list item.',
-      parameters: {
-        type: 'object',
-        properties: {
-          instance_id: instance,
-          listId: { type: 'string' },
-          id: { type: 'string' },
-          lookupTitle: { type: 'string' },
-          tags: { type: 'array', items: { type: 'string' } },
-        },
-        required: ['tags'],
-        additionalProperties: false,
-      },
-    },
-  ];
 }
 
-export function buildRealtimeInstructions(contextBlock: string): string {
-  return [
-    'You are the Assistant realtime voice agent.',
-    'Speak concisely. Prefer short confirmations after list mutations.',
-    'You may only use the provided lists tools. Never invent tool names.',
-    'Prefer title lookup fields when the user refers to items by name.',
-    'Do not claim you can control Thread voice, notifications, or coding agents.',
+/** Map host tool descriptors into OpenAI Realtime function tool shape. */
+export function toRealtimeFunctionTools(tools: readonly Tool[]): RealtimeFunctionTool[] {
+  return tools.map((tool) => ({
+    type: 'function',
+    name: tool.name,
+    description: tool.description?.trim() || tool.name,
+    parameters: normalizeParameters(tool.parameters),
+  }));
+}
+
+export async function buildRealtimeToolsFromHost(options: {
+  listTools: () => Promise<Tool[]>;
+  toolAllowlist: string[] | undefined;
+  toolDenylist: string[] | undefined;
+}): Promise<RealtimeFunctionTool[]> {
+  const all = await options.listTools();
+  const filtered = filterToolsForVoiceRealtime(all, options.toolAllowlist, options.toolDenylist);
+  return toRealtimeFunctionTools(filtered);
+}
+
+export function buildRealtimeInstructions(
+  contextBlock: string,
+  instructionsOverride?: string,
+): string {
+  const base =
+    typeof instructionsOverride === 'string' && instructionsOverride.trim().length > 0
+      ? instructionsOverride.trim()
+      : [
+          'You are the Assistant realtime voice agent.',
+          'Speak concisely. Prefer short confirmations after mutations.',
+          'You may only use the provided tools. Never invent tool names.',
+          'Prefer title or name lookup fields when the user refers to items by name.',
+          'Do not claim you can control Thread voice, notifications, or coding agents unless those tools are provided.',
+        ].join('\n');
+
+  const context =
     contextBlock.trim().length > 0
       ? `Recent conversation context:\n${contextBlock.trim()}`
-      : 'No prior conversation context.',
-  ].join('\n');
+      : 'No prior conversation context.';
+
+  return `${base}\n${context}`;
 }
