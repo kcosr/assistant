@@ -1,4 +1,8 @@
 import { normalizeAudioMode, type AudioMode } from './audioMode';
+import {
+  normalizeVoiceRuntimeMode,
+  type VoiceRuntimeMode,
+} from './voiceRuntimeMode';
 
 export const DEFAULT_VOICE_ADAPTER_BASE_URL = 'https://assistant/agent-voice-adapter';
 export const DEFAULT_RECOGNITION_START_TIMEOUT_MS = 30_000;
@@ -17,6 +21,11 @@ export const MIN_TTS_GAIN_PERCENT = MIN_TTS_GAIN * 100;
 export const MAX_TTS_GAIN_PERCENT = MAX_TTS_GAIN * 100;
 
 export interface VoiceSettings {
+  /** Exclusive native owner preference: Thread FIFO vs Realtime duplex. */
+  voiceRuntimeMode: VoiceRuntimeMode;
+  realtimeConversationId: string;
+  realtimeMuteOnStart: boolean;
+  realtimeListsInstanceId: string;
   audioMode: AudioMode;
   autoListenEnabled: boolean;
   standaloneNotificationPlaybackEnabled: boolean;
@@ -142,6 +151,10 @@ export function createDefaultVoiceSettings(options?: {
 }): VoiceSettings {
   const isAndroid = options?.isCapacitorAndroid === true;
   return {
+    voiceRuntimeMode: 'thread',
+    realtimeConversationId: '',
+    realtimeMuteOnStart: false,
+    realtimeListsInstanceId: 'default',
     audioMode: isAndroid ? 'tool' : 'off',
     autoListenEnabled: isAndroid,
     standaloneNotificationPlaybackEnabled: isAndroid,
@@ -172,6 +185,18 @@ export function normalizeVoiceSettings(
 
   const record = value as Record<string, unknown>;
   return {
+    voiceRuntimeMode: normalizeVoiceRuntimeMode(
+      typeof record['voiceRuntimeMode'] === 'string'
+        ? record['voiceRuntimeMode']
+        : defaults.voiceRuntimeMode,
+    ),
+    realtimeConversationId: normalizeOptionalString(record['realtimeConversationId']),
+    realtimeMuteOnStart:
+      typeof record['realtimeMuteOnStart'] === 'boolean'
+        ? record['realtimeMuteOnStart']
+        : defaults.realtimeMuteOnStart,
+    realtimeListsInstanceId:
+      normalizeOptionalString(record['realtimeListsInstanceId']) || defaults.realtimeListsInstanceId,
     audioMode: normalizeAudioMode(
       typeof record['audioMode'] === 'string' ? record['audioMode'] : defaults.audioMode,
     ),
@@ -225,6 +250,10 @@ export function normalizeVoiceSettings(
 
 export function areVoiceSettingsEqual(left: VoiceSettings, right: VoiceSettings): boolean {
   return (
+    left.voiceRuntimeMode === right.voiceRuntimeMode &&
+    left.realtimeConversationId === right.realtimeConversationId &&
+    left.realtimeMuteOnStart === right.realtimeMuteOnStart &&
+    left.realtimeListsInstanceId === right.realtimeListsInstanceId &&
     left.audioMode === right.audioMode &&
     left.autoListenEnabled === right.autoListenEnabled &&
     left.standaloneNotificationPlaybackEnabled === right.standaloneNotificationPlaybackEnabled &&

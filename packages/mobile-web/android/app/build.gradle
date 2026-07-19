@@ -53,6 +53,7 @@ dependencies {
     implementation "androidx.core:core-splashscreen:$coreSplashScreenVersion"
     implementation "androidx.media:media:$androidxMediaVersion"
     implementation "com.squareup.okhttp3:okhttp:$okhttpVersion"
+    implementation "io.getstream:stream-webrtc-android:$streamWebRtcVersion"
     implementation project(':capacitor-android')
     testImplementation "junit:junit:$junitVersion"
     testImplementation "org.json:json:20240303"

@@ -92,6 +92,10 @@ describe('createInputRuntime', () => {
       initialBriefModeEnabled: false,
       speechFeaturesEnabled: false,
       initialVoiceSettings: {
+        voiceRuntimeMode: 'thread',
+        realtimeConversationId: '',
+        realtimeMuteOnStart: false,
+        realtimeListsInstanceId: 'default',
         audioMode: 'tool',
         autoListenEnabled: true,
         standaloneNotificationPlaybackEnabled: true,

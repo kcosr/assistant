@@ -21,6 +21,9 @@ final class AssistantVoiceConfig {
     static final String AUDIO_MODE_TOOL = "tool";
     static final String AUDIO_MODE_RESPONSE = "response";
     static final String DEFAULT_AUDIO_MODE = AUDIO_MODE_TOOL;
+    static final String RUNTIME_MODE_THREAD = "thread";
+    static final String RUNTIME_MODE_REALTIME = "realtime";
+    static final String DEFAULT_RUNTIME_MODE = RUNTIME_MODE_THREAD;
     static final int DEFAULT_RECOGNITION_START_TIMEOUT_MS = 30000;
     static final int DEFAULT_RECOGNITION_COMPLETION_TIMEOUT_MS = 60000;
     static final int DEFAULT_RECOGNITION_END_SILENCE_MS = 1200;
@@ -39,9 +42,12 @@ final class AssistantVoiceConfig {
     static final boolean DEFAULT_TTS_PREFERRED_SESSION_ONLY = false;
     static final boolean DEFAULT_STANDALONE_NOTIFICATION_PLAYBACK_ENABLED = true;
     static final boolean DEFAULT_NOTIFICATION_TITLE_PLAYBACK_ENABLED = false;
+    static final boolean DEFAULT_REALTIME_MUTE_ON_START = false;
+    static final String DEFAULT_REALTIME_LISTS_INSTANCE_ID = "default";
 
     private static final String PREFS_NAME = "assistant_voice_runtime";
     private static final String KEY_AUDIO_MODE = "audio_mode";
+    private static final String KEY_RUNTIME_MODE = "voice_runtime_mode";
     private static final String KEY_AUTO_LISTEN_ENABLED = "auto_listen_enabled";
     private static final String KEY_RECOGNITION_START_TIMEOUT_MS = "recognition_start_timeout_ms";
     private static final String KEY_RECOGNITION_COMPLETION_TIMEOUT_MS = "recognition_completion_timeout_ms";
@@ -67,12 +73,16 @@ final class AssistantVoiceConfig {
         "standalone_notification_playback_enabled";
     private static final String KEY_NOTIFICATION_TITLE_PLAYBACK_ENABLED =
         "notification_title_playback_enabled";
+    private static final String KEY_REALTIME_CONVERSATION_ID = "realtime_conversation_id";
+    private static final String KEY_REALTIME_MUTE_ON_START = "realtime_mute_on_start";
+    private static final String KEY_REALTIME_LISTS_INSTANCE_ID = "realtime_lists_instance_id";
     private static final String KEY_RUNTIME_STATE = "runtime_state";
     private static final String KEY_RUNTIME_ERROR = "runtime_error";
     private static final String KEY_RUNTIME_ACTIVE_SESSION_ID = "runtime_active_session_id";
     private static final String KEY_RUNTIME_ACTIVE_DISPLAY_TITLE = "runtime_active_display_title";
 
     static final String EXTRA_AUDIO_MODE = "audioMode";
+    static final String EXTRA_RUNTIME_MODE = "voiceRuntimeMode";
     static final String EXTRA_AUTO_LISTEN_ENABLED = "autoListenEnabled";
     static final String EXTRA_SELECTED_MIC_DEVICE_ID = "selectedMicDeviceId";
     static final String EXTRA_RECOGNITION_START_TIMEOUT_MS = "recognitionStartTimeoutMs";
@@ -97,8 +107,12 @@ final class AssistantVoiceConfig {
         "standaloneNotificationPlaybackEnabled";
     static final String EXTRA_NOTIFICATION_TITLE_PLAYBACK_ENABLED =
         "notificationTitlePlaybackEnabled";
+    static final String EXTRA_REALTIME_CONVERSATION_ID = "realtimeConversationId";
+    static final String EXTRA_REALTIME_MUTE_ON_START = "realtimeMuteOnStart";
+    static final String EXTRA_REALTIME_LISTS_INSTANCE_ID = "realtimeListsInstanceId";
 
     final String audioMode;
+    final String voiceRuntimeMode;
     final boolean autoListenEnabled;
     final String selectedMicDeviceId;
     final int recognitionStartTimeoutMs;
@@ -122,9 +136,13 @@ final class AssistantVoiceConfig {
     final boolean ttsPreferredSessionOnly;
     final boolean standaloneNotificationPlaybackEnabled;
     final boolean notificationTitlePlaybackEnabled;
+    final String realtimeConversationId;
+    final boolean realtimeMuteOnStart;
+    final String realtimeListsInstanceId;
 
     AssistantVoiceConfig(
         String audioMode,
+        String voiceRuntimeMode,
         boolean autoListenEnabled,
         String selectedMicDeviceId,
         int recognitionStartTimeoutMs,
@@ -147,9 +165,13 @@ final class AssistantVoiceConfig {
         boolean mediaButtonsEnabled,
         boolean ttsPreferredSessionOnly,
         boolean standaloneNotificationPlaybackEnabled,
-        boolean notificationTitlePlaybackEnabled
+        boolean notificationTitlePlaybackEnabled,
+        String realtimeConversationId,
+        boolean realtimeMuteOnStart,
+        String realtimeListsInstanceId
     ) {
         this.audioMode = normalizeAudioMode(audioMode);
+        this.voiceRuntimeMode = AssistantVoiceControllerPolicy.normalizeRuntimeMode(voiceRuntimeMode);
         this.autoListenEnabled = autoListenEnabled;
         this.selectedMicDeviceId = normalizeOptional(selectedMicDeviceId);
         this.recognitionStartTimeoutMs = normalizePositiveInt(
@@ -194,12 +216,19 @@ final class AssistantVoiceConfig {
         this.ttsPreferredSessionOnly = ttsPreferredSessionOnly;
         this.standaloneNotificationPlaybackEnabled = standaloneNotificationPlaybackEnabled;
         this.notificationTitlePlaybackEnabled = notificationTitlePlaybackEnabled;
+        this.realtimeConversationId = normalizeOptional(realtimeConversationId);
+        this.realtimeMuteOnStart = realtimeMuteOnStart;
+        String listsInstance = normalizeOptional(realtimeListsInstanceId);
+        this.realtimeListsInstanceId = listsInstance.isEmpty()
+            ? DEFAULT_REALTIME_LISTS_INSTANCE_ID
+            : listsInstance;
     }
 
     static AssistantVoiceConfig load(Context context) {
         SharedPreferences prefs = prefs(context);
         return new AssistantVoiceConfig(
             prefs.getString(KEY_AUDIO_MODE, DEFAULT_AUDIO_MODE),
+            prefs.getString(KEY_RUNTIME_MODE, DEFAULT_RUNTIME_MODE),
             prefs.getBoolean(KEY_AUTO_LISTEN_ENABLED, true),
             prefs.getString(KEY_SELECTED_MIC_DEVICE_ID, null),
             prefs.getInt(KEY_RECOGNITION_START_TIMEOUT_MS, DEFAULT_RECOGNITION_START_TIMEOUT_MS),
@@ -234,7 +263,10 @@ final class AssistantVoiceConfig {
             prefs.getBoolean(
                 KEY_NOTIFICATION_TITLE_PLAYBACK_ENABLED,
                 DEFAULT_NOTIFICATION_TITLE_PLAYBACK_ENABLED
-            )
+            ),
+            prefs.getString(KEY_REALTIME_CONVERSATION_ID, null),
+            prefs.getBoolean(KEY_REALTIME_MUTE_ON_START, DEFAULT_REALTIME_MUTE_ON_START),
+            prefs.getString(KEY_REALTIME_LISTS_INSTANCE_ID, DEFAULT_REALTIME_LISTS_INSTANCE_ID)
         );
     }
 
@@ -242,6 +274,7 @@ final class AssistantVoiceConfig {
         prefs(context)
             .edit()
             .putString(KEY_AUDIO_MODE, config.audioMode)
+            .putString(KEY_RUNTIME_MODE, config.voiceRuntimeMode)
             .putBoolean(KEY_AUTO_LISTEN_ENABLED, config.autoListenEnabled)
             .putString(KEY_SELECTED_MIC_DEVICE_ID, emptyToNull(config.selectedMicDeviceId))
             .putInt(KEY_RECOGNITION_START_TIMEOUT_MS, config.recognitionStartTimeoutMs)
@@ -274,6 +307,9 @@ final class AssistantVoiceConfig {
                 KEY_NOTIFICATION_TITLE_PLAYBACK_ENABLED,
                 config.notificationTitlePlaybackEnabled
             )
+            .putString(KEY_REALTIME_CONVERSATION_ID, config.realtimeConversationId)
+            .putBoolean(KEY_REALTIME_MUTE_ON_START, config.realtimeMuteOnStart)
+            .putString(KEY_REALTIME_LISTS_INSTANCE_ID, config.realtimeListsInstanceId)
             .apply();
     }
 
@@ -285,6 +321,9 @@ final class AssistantVoiceConfig {
             intent.hasExtra(EXTRA_AUDIO_MODE)
                 ? intent.getStringExtra(EXTRA_AUDIO_MODE)
                 : fallback.audioMode,
+            intent.hasExtra(EXTRA_RUNTIME_MODE)
+                ? intent.getStringExtra(EXTRA_RUNTIME_MODE)
+                : fallback.voiceRuntimeMode,
             intent.getBooleanExtra(EXTRA_AUTO_LISTEN_ENABLED, fallback.autoListenEnabled),
             intent.hasExtra(EXTRA_SELECTED_MIC_DEVICE_ID)
                 ? intent.getStringExtra(EXTRA_SELECTED_MIC_DEVICE_ID)
@@ -350,12 +389,20 @@ final class AssistantVoiceConfig {
             intent.getBooleanExtra(
                 EXTRA_NOTIFICATION_TITLE_PLAYBACK_ENABLED,
                 fallback.notificationTitlePlaybackEnabled
-            )
+            ),
+            intent.hasExtra(EXTRA_REALTIME_CONVERSATION_ID)
+                ? intent.getStringExtra(EXTRA_REALTIME_CONVERSATION_ID)
+                : fallback.realtimeConversationId,
+            intent.getBooleanExtra(EXTRA_REALTIME_MUTE_ON_START, fallback.realtimeMuteOnStart),
+            intent.hasExtra(EXTRA_REALTIME_LISTS_INSTANCE_ID)
+                ? intent.getStringExtra(EXTRA_REALTIME_LISTS_INSTANCE_ID)
+                : fallback.realtimeListsInstanceId
         );
     }
 
     Intent applyToIntent(Intent intent) {
         intent.putExtra(EXTRA_AUDIO_MODE, audioMode);
+        intent.putExtra(EXTRA_RUNTIME_MODE, voiceRuntimeMode);
         intent.putExtra(EXTRA_AUTO_LISTEN_ENABLED, autoListenEnabled);
         intent.putExtra(EXTRA_SELECTED_MIC_DEVICE_ID, emptyToNull(selectedMicDeviceId));
         intent.putExtra(EXTRA_RECOGNITION_START_TIMEOUT_MS, recognitionStartTimeoutMs);
@@ -384,6 +431,9 @@ final class AssistantVoiceConfig {
             EXTRA_NOTIFICATION_TITLE_PLAYBACK_ENABLED,
             notificationTitlePlaybackEnabled
         );
+        intent.putExtra(EXTRA_REALTIME_CONVERSATION_ID, emptyToNull(realtimeConversationId));
+        intent.putExtra(EXTRA_REALTIME_MUTE_ON_START, realtimeMuteOnStart);
+        intent.putExtra(EXTRA_REALTIME_LISTS_INSTANCE_ID, emptyToNull(realtimeListsInstanceId));
         return intent;
     }
 
@@ -518,6 +568,10 @@ final class AssistantVoiceConfig {
         return AUDIO_MODE_RESPONSE.equals(audioMode);
     }
 
+    boolean isRealtimeRuntimeMode() {
+        return AssistantVoiceControllerPolicy.isRealtimeRuntimeMode(voiceRuntimeMode);
+    }
+
     boolean allowsNotificationPlay() {
         return !AUDIO_MODE_OFF.equals(audioMode);
     }
@@ -529,6 +583,7 @@ final class AssistantVoiceConfig {
     AssistantVoiceConfig withSelection(String panelId, String sessionId) {
         return new AssistantVoiceConfig(
             audioMode,
+            voiceRuntimeMode,
             autoListenEnabled,
             selectedMicDeviceId,
             recognitionStartTimeoutMs,
@@ -551,13 +606,20 @@ final class AssistantVoiceConfig {
             mediaButtonsEnabled,
             ttsPreferredSessionOnly,
             standaloneNotificationPlaybackEnabled,
-            notificationTitlePlaybackEnabled
+            notificationTitlePlaybackEnabled,
+
+            realtimeConversationId,
+
+            realtimeMuteOnStart,
+
+            realtimeListsInstanceId
         );
     }
 
     AssistantVoiceConfig withAssistantBaseUrl(String url) {
         return new AssistantVoiceConfig(
             audioMode,
+            voiceRuntimeMode,
             autoListenEnabled,
             selectedMicDeviceId,
             recognitionStartTimeoutMs,
@@ -580,7 +642,13 @@ final class AssistantVoiceConfig {
             mediaButtonsEnabled,
             ttsPreferredSessionOnly,
             standaloneNotificationPlaybackEnabled,
-            notificationTitlePlaybackEnabled
+            notificationTitlePlaybackEnabled,
+
+            realtimeConversationId,
+
+            realtimeMuteOnStart,
+
+            realtimeListsInstanceId
         );
     }
 
@@ -594,6 +662,7 @@ final class AssistantVoiceConfig {
         }
         AssistantVoiceConfig config = (AssistantVoiceConfig) other;
         return Objects.equals(audioMode, config.audioMode)
+            && Objects.equals(voiceRuntimeMode, config.voiceRuntimeMode)
             && autoListenEnabled == config.autoListenEnabled
             && Objects.equals(selectedMicDeviceId, config.selectedMicDeviceId)
             && recognitionStartTimeoutMs == config.recognitionStartTimeoutMs
@@ -616,13 +685,17 @@ final class AssistantVoiceConfig {
             && mediaButtonsEnabled == config.mediaButtonsEnabled
             && ttsPreferredSessionOnly == config.ttsPreferredSessionOnly
             && standaloneNotificationPlaybackEnabled == config.standaloneNotificationPlaybackEnabled
-            && notificationTitlePlaybackEnabled == config.notificationTitlePlaybackEnabled;
+            && notificationTitlePlaybackEnabled == config.notificationTitlePlaybackEnabled
+            && Objects.equals(realtimeConversationId, config.realtimeConversationId)
+            && realtimeMuteOnStart == config.realtimeMuteOnStart
+            && Objects.equals(realtimeListsInstanceId, config.realtimeListsInstanceId);
     }
 
     @Override
     public int hashCode() {
         return Objects.hash(
             audioMode,
+            voiceRuntimeMode,
             autoListenEnabled,
             selectedMicDeviceId,
             recognitionStartTimeoutMs,
@@ -645,7 +718,13 @@ final class AssistantVoiceConfig {
             mediaButtonsEnabled,
             ttsPreferredSessionOnly,
             standaloneNotificationPlaybackEnabled,
-            notificationTitlePlaybackEnabled
+            notificationTitlePlaybackEnabled,
+
+            realtimeConversationId,
+
+            realtimeMuteOnStart,
+
+            realtimeListsInstanceId
         );
     }
 
@@ -655,6 +734,7 @@ final class AssistantVoiceConfig {
         }
         return new AssistantVoiceConfig(
             settings.optString("audioMode", audioMode),
+            settings.optString("voiceRuntimeMode", voiceRuntimeMode),
             settings.optBoolean("autoListenEnabled", autoListenEnabled),
             settings.optString("selectedMicDeviceId", selectedMicDeviceId),
             settings.optInt("recognitionStartTimeoutMs", recognitionStartTimeoutMs),
@@ -686,13 +766,17 @@ final class AssistantVoiceConfig {
             settings.optBoolean(
                 "notificationTitlePlaybackEnabled",
                 notificationTitlePlaybackEnabled
-            )
+            ),
+            settings.optString("realtimeConversationId", realtimeConversationId),
+            settings.optBoolean("realtimeMuteOnStart", realtimeMuteOnStart),
+            settings.optString("realtimeListsInstanceId", realtimeListsInstanceId)
         );
     }
 
     AssistantVoiceConfig withInputContext(boolean enabled, String contextLine) {
         return new AssistantVoiceConfig(
             audioMode,
+            voiceRuntimeMode,
             autoListenEnabled,
             selectedMicDeviceId,
             recognitionStartTimeoutMs,
@@ -715,13 +799,20 @@ final class AssistantVoiceConfig {
             mediaButtonsEnabled,
             ttsPreferredSessionOnly,
             standaloneNotificationPlaybackEnabled,
-            notificationTitlePlaybackEnabled
+            notificationTitlePlaybackEnabled,
+
+            realtimeConversationId,
+
+            realtimeMuteOnStart,
+
+            realtimeListsInstanceId
         );
     }
 
     AssistantVoiceConfig withWatchedSessionIds(List<String> sessionIds) {
         return new AssistantVoiceConfig(
             audioMode,
+            voiceRuntimeMode,
             autoListenEnabled,
             selectedMicDeviceId,
             recognitionStartTimeoutMs,
@@ -744,13 +835,20 @@ final class AssistantVoiceConfig {
             mediaButtonsEnabled,
             ttsPreferredSessionOnly,
             standaloneNotificationPlaybackEnabled,
-            notificationTitlePlaybackEnabled
+            notificationTitlePlaybackEnabled,
+
+            realtimeConversationId,
+
+            realtimeMuteOnStart,
+
+            realtimeListsInstanceId
         );
     }
 
     AssistantVoiceConfig withPreferredVoiceSessionId(String sessionId) {
         return new AssistantVoiceConfig(
             audioMode,
+            voiceRuntimeMode,
             autoListenEnabled,
             selectedMicDeviceId,
             recognitionStartTimeoutMs,
@@ -773,13 +871,20 @@ final class AssistantVoiceConfig {
             mediaButtonsEnabled,
             ttsPreferredSessionOnly,
             standaloneNotificationPlaybackEnabled,
-            notificationTitlePlaybackEnabled
+            notificationTitlePlaybackEnabled,
+
+            realtimeConversationId,
+
+            realtimeMuteOnStart,
+
+            realtimeListsInstanceId
         );
     }
 
     AssistantVoiceConfig withSessionTitles(JSONObject titles) {
         return new AssistantVoiceConfig(
             audioMode,
+            voiceRuntimeMode,
             autoListenEnabled,
             selectedMicDeviceId,
             recognitionStartTimeoutMs,
@@ -802,13 +907,20 @@ final class AssistantVoiceConfig {
             mediaButtonsEnabled,
             ttsPreferredSessionOnly,
             standaloneNotificationPlaybackEnabled,
-            notificationTitlePlaybackEnabled
+            notificationTitlePlaybackEnabled,
+
+            realtimeConversationId,
+
+            realtimeMuteOnStart,
+
+            realtimeListsInstanceId
         );
     }
 
     AssistantVoiceConfig withMediaButtonsEnabled(boolean enabled) {
         return new AssistantVoiceConfig(
             audioMode,
+            voiceRuntimeMode,
             autoListenEnabled,
             selectedMicDeviceId,
             recognitionStartTimeoutMs,
@@ -831,13 +943,20 @@ final class AssistantVoiceConfig {
             enabled,
             ttsPreferredSessionOnly,
             standaloneNotificationPlaybackEnabled,
-            notificationTitlePlaybackEnabled
+            notificationTitlePlaybackEnabled,
+
+            realtimeConversationId,
+
+            realtimeMuteOnStart,
+
+            realtimeListsInstanceId
         );
     }
 
     AssistantVoiceConfig withAudioMode(String mode) {
         return new AssistantVoiceConfig(
             mode,
+            voiceRuntimeMode,
             autoListenEnabled,
             selectedMicDeviceId,
             recognitionStartTimeoutMs,
@@ -860,7 +979,13 @@ final class AssistantVoiceConfig {
             mediaButtonsEnabled,
             ttsPreferredSessionOnly,
             standaloneNotificationPlaybackEnabled,
-            notificationTitlePlaybackEnabled
+            notificationTitlePlaybackEnabled,
+
+            realtimeConversationId,
+
+            realtimeMuteOnStart,
+
+            realtimeListsInstanceId
         );
     }
 

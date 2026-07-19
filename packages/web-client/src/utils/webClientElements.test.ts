@@ -26,6 +26,7 @@ describe('getWebClientElements', () => {
     expect(elements?.voiceSettingsButton.id).toBe('voice-settings-button');
     expect(elements?.voiceSettingsModal.id).toBe('voice-settings-modal');
     expect(elements?.voiceSettingsCloseButton.id).toBe('voice-settings-close-button');
+    expect(elements?.voiceRuntimeModeSelect?.id).toBe('voice-runtime-mode-select');
     expect(elements?.audioModeSelect?.id).toBe('audio-mode-select');
     expect(elements?.autoListenCheckbox?.id).toBe('auto-listen-checkbox');
     expect(elements?.standaloneNotificationPlaybackCheckbox?.id).toBe(

@@ -31,6 +31,7 @@ import {
 } from './history/historyProvider';
 import { PiSessionWriter } from './history/piSessionWriter';
 import { AttachmentStore } from './attachments/store';
+import { VoiceService } from './voice/service';
 
 export {
   buildSystemPrompt,
@@ -168,6 +169,33 @@ export async function startServer(
     await scheduledSessionService.initialize();
   }
 
+  const voiceRealtime = appConfig?.voice?.realtime;
+  const voiceService = new VoiceService(
+    {
+      envConfig: config,
+      toolHost,
+      createToolContext: (sessionId) => ({
+        sessionId,
+        signal: new AbortController().signal,
+        eventStore: chatEventStore,
+        sessionHub,
+        sessionIndex,
+        agentRegistry: registry,
+        envConfig: config,
+        baseToolHost: toolHost,
+        ...(historyProvider ? { historyProvider } : {}),
+        ...(scheduledSessionService ? { scheduledSessionService } : {}),
+        ...(searchService ? { searchService } : {}),
+      }),
+      // Explicit opt-in: missing voice.realtime.toolAllowlist => no realtime tools.
+      ...(voiceRealtime?.toolAllowlist ? { toolAllowlist: voiceRealtime.toolAllowlist } : {}),
+      ...(voiceRealtime?.toolDenylist ? { toolDenylist: voiceRealtime.toolDenylist } : {}),
+      ...(voiceRealtime?.instructions ? { instructions: voiceRealtime.instructions } : {}),
+    },
+    config.dataDir,
+  );
+  await voiceService.init();
+
   const httpServer = createHttpServer({
     config,
     sessionIndex,
@@ -179,6 +207,7 @@ export async function startServer(
     ...(scheduledSessionService ? { scheduledSessionService } : {}),
     historyProvider,
     ...(pluginRegistry ? { pluginRegistry } : {}),
+    voiceService,
   });
 
   const wss = new WebSocketServer({
@@ -244,6 +273,7 @@ export async function startServer(
       gitVersioningService.shutdown();
     }
     scheduledSessionService?.shutdown();
+    voiceService.shutdown();
   };
 
   process.once('SIGINT', shutdownHandler);

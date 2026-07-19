@@ -97,6 +97,28 @@ public final class AssistantVoicePlugin extends Plugin {
     }
 
     @PluginMethod
+    public void startRealtime(PluginCall call) {
+        Context context = getContext();
+        context.startForegroundService(AssistantVoiceRuntimeService.startRealtimeIntent(context));
+        call.resolve(buildStatePayload());
+    }
+
+    @PluginMethod
+    public void stopRealtime(PluginCall call) {
+        Context context = getContext();
+        context.startService(AssistantVoiceRuntimeService.stopRealtimeIntent(context));
+        call.resolve(buildStatePayload());
+    }
+
+    @PluginMethod
+    public void setRealtimeMuted(PluginCall call) {
+        boolean muted = call.getBoolean("muted", false);
+        Context context = getContext();
+        context.startService(AssistantVoiceRuntimeService.setRealtimeMutedIntent(context, muted));
+        call.resolve(buildStatePayload());
+    }
+
+    @PluginMethod
     public void setVoiceSettings(PluginCall call) {
         AssistantVoiceConfig current = AssistantVoiceConfig.load(getContext());
         AssistantVoiceConfig updated = extractVoiceSettingsConfig(call, current);
@@ -452,6 +474,10 @@ public final class AssistantVoicePlugin extends Plugin {
         inputContext.put("contextLine", current.inputContextLine);
 
         JSObject voiceSettings = new JSObject();
+        voiceSettings.put("voiceRuntimeMode", current.voiceRuntimeMode);
+        voiceSettings.put("realtimeConversationId", current.realtimeConversationId);
+        voiceSettings.put("realtimeMuteOnStart", current.realtimeMuteOnStart);
+        voiceSettings.put("realtimeListsInstanceId", current.realtimeListsInstanceId);
         voiceSettings.put("audioMode", current.audioMode);
         voiceSettings.put("autoListenEnabled", current.autoListenEnabled);
         voiceSettings.put("voiceAdapterBaseUrl", current.voiceAdapterBaseUrl);

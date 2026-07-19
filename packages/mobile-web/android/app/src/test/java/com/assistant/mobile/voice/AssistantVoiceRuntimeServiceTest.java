@@ -536,6 +536,18 @@ public final class AssistantVoiceRuntimeServiceTest {
             )
         );
         assertEquals(
+            android.media.session.PlaybackState.STATE_PLAYING,
+            AssistantVoiceRuntimeService.resolveMediaSessionPlaybackState(
+                AssistantVoiceRuntimeService.STATE_REALTIME_ACTIVE
+            )
+        );
+        assertEquals(
+            android.media.session.PlaybackState.STATE_BUFFERING,
+            AssistantVoiceRuntimeService.resolveMediaSessionPlaybackState(
+                AssistantVoiceRuntimeService.STATE_REALTIME_CONNECTING
+            )
+        );
+        assertEquals(
             android.media.session.PlaybackState.STATE_PAUSED,
             AssistantVoiceRuntimeService.resolveMediaSessionPlaybackState(
                 AssistantVoiceRuntimeService.STATE_IDLE
@@ -578,12 +590,125 @@ public final class AssistantVoiceRuntimeServiceTest {
             )
         );
         assertEquals(
+            true,
+            AssistantVoiceRuntimeService.shouldStopForMediaButtonToggle(
+                AssistantVoiceRuntimeService.STATE_REALTIME_ACTIVE,
+                false
+            )
+        );
+        assertEquals(
+            true,
+            AssistantVoiceRuntimeService.shouldStopForMediaButtonToggle(
+                AssistantVoiceRuntimeService.STATE_REALTIME_CONNECTING,
+                false
+            )
+        );
+        assertEquals(
             false,
             AssistantVoiceRuntimeService.shouldStopForMediaButtonToggle(
                 AssistantVoiceRuntimeService.STATE_IDLE,
                 false
             )
         );
+    }
+
+    @Test
+    @Config(sdk = Build.VERSION_CODES.N)
+    public void shouldStartRealtimeFromMediaButtonWhenRuntimeModeIsRealtime() {
+        assertEquals(
+            true,
+            AssistantVoiceRuntimeService.shouldStartRealtimeFromMediaButton(
+                AssistantVoiceConfig.RUNTIME_MODE_REALTIME
+            )
+        );
+        assertEquals(
+            false,
+            AssistantVoiceRuntimeService.shouldStartRealtimeFromMediaButton(
+                AssistantVoiceConfig.RUNTIME_MODE_THREAD
+            )
+        );
+        assertEquals(
+            false,
+            AssistantVoiceRuntimeService.shouldStartRealtimeFromMediaButton("")
+        );
+    }
+
+    @Test
+    @Config(sdk = Build.VERSION_CODES.N)
+    public void shouldStopRealtimeFromMediaButtonForActiveStateOrRealtimeOwner() {
+        assertEquals(
+            true,
+            AssistantVoiceRuntimeService.shouldStopRealtimeFromMediaButton(
+                AssistantVoiceRuntimeService.STATE_REALTIME_ACTIVE,
+                AssistantVoiceControllerPolicy.OWNER_THREAD
+            )
+        );
+        assertEquals(
+            true,
+            AssistantVoiceRuntimeService.shouldStopRealtimeFromMediaButton(
+                AssistantVoiceRuntimeService.STATE_IDLE,
+                AssistantVoiceControllerPolicy.OWNER_REALTIME
+            )
+        );
+        assertEquals(
+            false,
+            AssistantVoiceRuntimeService.shouldStopRealtimeFromMediaButton(
+                AssistantVoiceRuntimeService.STATE_IDLE,
+                AssistantVoiceControllerPolicy.OWNER_THREAD
+            )
+        );
+    }
+
+    @Test
+    @Config(sdk = Build.VERSION_CODES.N)
+    public void shouldAcceptStateUpdateWhileRealtimeOwnerBlocksThreadStates() {
+        assertEquals(
+            true,
+            AssistantVoiceRuntimeService.shouldAcceptStateUpdateWhileRealtimeOwner(
+                false,
+                AssistantVoiceRuntimeService.STATE_IDLE
+            )
+        );
+        assertEquals(
+            false,
+            AssistantVoiceRuntimeService.shouldAcceptStateUpdateWhileRealtimeOwner(
+                true,
+                AssistantVoiceRuntimeService.STATE_IDLE
+            )
+        );
+        assertEquals(
+            false,
+            AssistantVoiceRuntimeService.shouldAcceptStateUpdateWhileRealtimeOwner(
+                true,
+                AssistantVoiceRuntimeService.STATE_CONNECTING
+            )
+        );
+        assertEquals(
+            true,
+            AssistantVoiceRuntimeService.shouldAcceptStateUpdateWhileRealtimeOwner(
+                true,
+                AssistantVoiceRuntimeService.STATE_REALTIME_ACTIVE
+            )
+        );
+        assertEquals(
+            true,
+            AssistantVoiceRuntimeService.shouldAcceptStateUpdateWhileRealtimeOwner(
+                true,
+                AssistantVoiceRuntimeService.STATE_ERROR
+            )
+        );
+    }
+
+    @Test
+    @Config(sdk = Build.VERSION_CODES.N)
+    public void isRealtimeCloseSuccessfulOnlyForUserOrAgentStops() {
+        assertEquals(true, AssistantVoiceRuntimeService.isRealtimeCloseSuccessful(null));
+        assertEquals(true, AssistantVoiceRuntimeService.isRealtimeCloseSuccessful("intent_stop"));
+        assertEquals(true, AssistantVoiceRuntimeService.isRealtimeCloseSuccessful("user_request"));
+        assertEquals(true, AssistantVoiceRuntimeService.isRealtimeCloseSuccessful("agent_end"));
+        assertEquals(false, AssistantVoiceRuntimeService.isRealtimeCloseSuccessful("sideband_closed"));
+        assertEquals(false, AssistantVoiceRuntimeService.isRealtimeCloseSuccessful("realtime_failed"));
+        assertEquals(false, AssistantVoiceRuntimeService.isRealtimeCloseSuccessful("ice_failed"));
     }
 
     @Test
@@ -955,25 +1080,108 @@ public final class AssistantVoiceRuntimeServiceTest {
 
     @Test
     @Config(sdk = Build.VERSION_CODES.N)
-    public void buildAdapterTtsRequestBodyTreatsClientIdAsOptional() {
-        assertFalse(
-            AssistantVoiceRuntimeService.buildAdapterTtsRequestBody("", "request-1", "hello", "")
-                .has("clientId")
+    public void controllerPolicyMatchesRealtimePreemptRules() {
+        assertTrue(
+            AssistantVoiceControllerPolicy.shouldPauseThreadAdmission(
+                AssistantVoiceControllerPolicy.OWNER_REALTIME
+            )
         );
+        assertFalse(
+            AssistantVoiceControllerPolicy.shouldAcceptThreadAdmission(true, true)
+        );
+        assertTrue(
+            AssistantVoiceControllerPolicy.shouldAcceptThreadAdmission(false, true)
+        );
+    }
+
+    @Test
+    @Config(sdk = Build.VERSION_CODES.N)
+    public void shouldWaitForAdapterClientIdentityBeforeDirectTtsPlayback() {
+        AssistantVoiceQueueItem ttsItem = new AssistantVoiceQueueItem(
+            "notification-1",
+            "voice_speak",
+            "test",
+            "event-1",
+            "session-1",
+            "Session 1",
+            "Session 1",
+            "hello",
+            "speak",
+            null,
+            false,
+            false
+        );
+        AssistantVoiceQueueItem listenOnlyItem = new AssistantVoiceQueueItem(
+            "notification-2",
+            "voice_ask",
+            "test",
+            "event-2",
+            "session-1",
+            "Session 1",
+            "Session 1",
+            "",
+            "listen_only",
+            null,
+            false,
+            true
+        );
+
+        assertTrue(
+            AssistantVoiceRuntimeService.shouldWaitForAdapterClientIdentity(true, "", ttsItem)
+        );
+        assertTrue(
+            AssistantVoiceRuntimeService.shouldWaitForAdapterClientIdentity(
+                true,
+                "   ",
+                ttsItem
+            )
+        );
+        assertFalse(
+            AssistantVoiceRuntimeService.shouldWaitForAdapterClientIdentity(
+                true,
+                "client-1",
+                ttsItem
+            )
+        );
+        assertFalse(
+            AssistantVoiceRuntimeService.shouldWaitForAdapterClientIdentity(false, "", ttsItem)
+        );
+        assertFalse(
+            AssistantVoiceRuntimeService.shouldWaitForAdapterClientIdentity(
+                true,
+                "",
+                listenOnlyItem
+            )
+        );
+    }
+
+    @Test
+    @Config(sdk = Build.VERSION_CODES.N)
+    public void buildAdapterTtsRequestBodyIncludesDirectMediaClientId() {
         assertEquals(
             "request-1",
-            AssistantVoiceRuntimeService.buildAdapterTtsRequestBody("", "request-1", "hello", "")
+            AssistantVoiceRuntimeService.buildAdapterTtsRequestBody(
+                "client-1",
+                "request-1",
+                "hello",
+                ""
+            )
                 .optString("requestId")
         );
         assertEquals(
             "hello",
-            AssistantVoiceRuntimeService.buildAdapterTtsRequestBody("", "request-1", "hello", "")
+            AssistantVoiceRuntimeService.buildAdapterTtsRequestBody(
+                "client-1",
+                "request-1",
+                "hello",
+                ""
+            )
                 .optString("text")
         );
         assertEquals(
             "session-1",
             AssistantVoiceRuntimeService.buildAdapterTtsRequestBody(
-                "",
+                "client-1",
                 "request-1",
                 "hello",
                 " session-1 "
@@ -1106,6 +1314,7 @@ public final class AssistantVoiceRuntimeServiceTest {
     ) {
         return new AssistantVoiceConfig(
             audioMode,
+            AssistantVoiceConfig.DEFAULT_RUNTIME_MODE,
             true,
             "",
             AssistantVoiceConfig.DEFAULT_RECOGNITION_START_TIMEOUT_MS,
@@ -1128,7 +1337,10 @@ public final class AssistantVoiceRuntimeServiceTest {
             false,
             false,
             true,
-            false
+            false,
+            "",
+            false,
+            AssistantVoiceConfig.DEFAULT_REALTIME_LISTS_INSTANCE_ID
         );
     }
 

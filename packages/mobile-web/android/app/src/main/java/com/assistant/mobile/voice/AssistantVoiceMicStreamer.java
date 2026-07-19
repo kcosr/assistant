@@ -72,10 +72,20 @@ final class AssistantVoiceMicStreamer {
     private Long activeSequence = null;
     private long nextSequence = 1L;
     private Integer preferredDeviceId = null;
+    private AssistantVoiceAudioRouter audioRouter;
+    private long routerOwnerGeneration = 0L;
 
     AssistantVoiceMicStreamer(Context context) {
         this.context = context.getApplicationContext();
         this.audioManager = (AudioManager) this.context.getSystemService(Context.AUDIO_SERVICE);
+    }
+
+    void setAudioRouter(AssistantVoiceAudioRouter router) {
+        audioRouter = router;
+    }
+
+    void setRouterOwnerGeneration(long generation) {
+        routerOwnerGeneration = generation;
     }
 
     void setPreferredDeviceId(String deviceId) {
@@ -294,6 +304,10 @@ final class AssistantVoiceMicStreamer {
     }
 
     private void startScoRouting() {
+        if (audioRouter != null) {
+            audioRouter.enterCommunicationMode(routerOwnerGeneration);
+            return;
+        }
         try {
             audioManager.setMode(AudioManager.MODE_IN_COMMUNICATION);
             audioManager.setBluetoothScoOn(true);
@@ -304,6 +318,10 @@ final class AssistantVoiceMicStreamer {
     }
 
     private void stopScoRouting() {
+        if (audioRouter != null) {
+            audioRouter.leaveCommunicationMode(routerOwnerGeneration);
+            return;
+        }
         if (audioManager == null) {
             return;
         }

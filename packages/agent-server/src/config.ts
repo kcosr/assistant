@@ -800,6 +800,38 @@ export const AttachmentsConfigSchema = z.object({
 
 export type AttachmentsConfig = z.infer<typeof AttachmentsConfigSchema>;
 
+/**
+ * Realtime voice agent tool exposure. Unlike text agents, missing/empty
+ * toolAllowlist means no tools (explicit opt-in only).
+ */
+export const VoiceRealtimeConfigSchema = z.object({
+  toolAllowlist: GlobPatternListSchema,
+  toolDenylist: GlobPatternListSchema,
+  /**
+   * Optional instructions override. When omitted, the server uses a default
+   * concise realtime prompt plus recent conversation context.
+   */
+  instructions: z.string().optional().nullable().transform((value) => {
+    if (typeof value !== 'string') {
+      return undefined;
+    }
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : undefined;
+  }),
+});
+
+export type VoiceRealtimeConfig = z.infer<typeof VoiceRealtimeConfigSchema>;
+
+export const VoiceConfigSchema = z
+  .object({
+    realtime: VoiceRealtimeConfigSchema.optional().nullable().transform((value) => value ?? undefined),
+  })
+  .optional()
+  .nullable()
+  .transform((value) => value ?? undefined);
+
+export type VoiceConfig = z.infer<typeof VoiceConfigSchema>;
+
 export const AppConfigSchema = z
   .object({
     agents: z
@@ -817,6 +849,7 @@ export const AppConfigSchema = z
       .transform((value) => value ?? []),
     sessions: SessionsConfigSchema.optional(),
     attachments: AttachmentsConfigSchema.default({}),
+    voice: VoiceConfigSchema,
   })
   .superRefine((value, ctx) => {
     const profileIds = new Set<string>();

@@ -185,6 +185,7 @@ public final class AssistantVoiceConfigTest {
     private static AssistantVoiceConfig createConfigWithAudioMode(String audioMode) {
         return new AssistantVoiceConfig(
             audioMode,
+            AssistantVoiceConfig.DEFAULT_RUNTIME_MODE,
             true,
             "",
             AssistantVoiceConfig.DEFAULT_RECOGNITION_START_TIMEOUT_MS,
@@ -207,7 +208,10 @@ public final class AssistantVoiceConfigTest {
             false,
             false,
             true,
-            false
+            false,
+            "",
+            false,
+            AssistantVoiceConfig.DEFAULT_REALTIME_LISTS_INSTANCE_ID
         );
     }
 
@@ -289,6 +293,7 @@ public final class AssistantVoiceConfigTest {
     ) {
         return new AssistantVoiceConfig(
             AssistantVoiceConfig.AUDIO_MODE_TOOL,
+            AssistantVoiceConfig.DEFAULT_RUNTIME_MODE,
             true,
             "",
             AssistantVoiceConfig.DEFAULT_RECOGNITION_START_TIMEOUT_MS,
@@ -311,7 +316,10 @@ public final class AssistantVoiceConfigTest {
             mediaButtonsEnabled,
             false,
             true,
-            false
+            false,
+            "",
+            false,
+            AssistantVoiceConfig.DEFAULT_REALTIME_LISTS_INSTANCE_ID
         );
     }
 

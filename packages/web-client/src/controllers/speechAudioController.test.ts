@@ -109,6 +109,10 @@ function createVoiceSettingsInputs(): {
 
 function createInitialVoiceSettings(overrides?: Partial<VoiceSettings>): VoiceSettings {
   return {
+    voiceRuntimeMode: 'thread',
+    realtimeConversationId: '',
+    realtimeMuteOnStart: false,
+    realtimeListsInstanceId: 'default',
     audioMode: 'off',
     autoListenEnabled: false,
     standaloneNotificationPlaybackEnabled: false,

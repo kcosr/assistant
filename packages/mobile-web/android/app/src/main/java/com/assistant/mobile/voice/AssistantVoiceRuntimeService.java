@@ -14,6 +14,7 @@ import android.os.Build;
 import android.os.Handler;
 import android.os.IBinder;
 import android.os.Looper;
+import android.os.PowerManager;
 import android.util.Base64;
 import android.util.Log;
 import android.view.KeyEvent;
@@ -67,6 +68,12 @@ public final class AssistantVoiceRuntimeService extends Service {
     static final String ACTION_NOTIFICATION_SPEAKER = "com.assistant.mobile.voice.NOTIFICATION_SPEAKER";
     static final String ACTION_NOTIFICATION_MIC = "com.assistant.mobile.voice.NOTIFICATION_MIC";
     static final String ACTION_NOTIFICATION_DISMISS = "com.assistant.mobile.voice.NOTIFICATION_DISMISS";
+    static final String ACTION_START_REALTIME = "com.assistant.mobile.voice.START_REALTIME";
+    static final String ACTION_STOP_REALTIME = "com.assistant.mobile.voice.STOP_REALTIME";
+    static final String ACTION_SET_REALTIME_MUTED = "com.assistant.mobile.voice.SET_REALTIME_MUTED";
+    static final String EXTRA_REALTIME_MUTED = "realtimeMuted";
+    public static final String STATE_REALTIME_CONNECTING = "realtime_connecting";
+    public static final String STATE_REALTIME_ACTIVE = "realtime_active";
     static final String EXTRA_MANUAL_LISTEN_SESSION_ID = "manualListenSessionId";
     static final String EXTRA_PLAY_TEXT_SESSION_ID = "playTextSessionId";
     static final String EXTRA_PLAY_TEXT_TEXT = "playTextText";
@@ -136,7 +143,21 @@ public final class AssistantVoiceRuntimeService extends Service {
         .build();
     private AssistantVoicePcmPlayer player;
     private AssistantVoiceMicStreamer micStreamer;
+    private AssistantVoiceAudioRouter audioRouter;
+    private AssistantVoiceRealtimeClient realtimeClient;
+    private PowerManager.WakeLock realtimeWakeLock;
     private MediaSession mediaSession;
+    private String realtimeSessionId = "";
+    private String realtimeConversationId = "";
+    private boolean realtimeMuted = false;
+    /** Monotonic controller generation; advanced on exclusive-owner transitions. */
+    private long controllerGeneration = 1L;
+    /** Generation stamped onto the currently admitted Thread media interaction. */
+    private long activeMediaGeneration = 0L;
+    /** Live exclusive owner: thread or realtime (realtime media lands in a later phase). */
+    private String liveOwner = AssistantVoiceControllerPolicy.OWNER_THREAD;
+    /** When true, automatic Thread queue admission is paused (Realtime live owner). */
+    private boolean threadAdmissionPaused = false;
 
     private final Runnable reconnectRunnable = this::connectAdapterSocketIfNeeded;
     private final Runnable assistantReconnectRunnable = this::connectAssistantSocketIfNeeded;
@@ -298,8 +319,120 @@ public final class AssistantVoiceRuntimeService extends Service {
     @Override
     public void onCreate() {
         super.onCreate();
+        audioRouter = new AssistantVoiceAudioRouter(this);
         micStreamer = new AssistantVoiceMicStreamer(this);
+        micStreamer.setAudioRouter(audioRouter);
         player = new AssistantVoicePcmPlayer(this);
+        player.setAudioRouter(audioRouter);
+        realtimeClient = new AssistantVoiceRealtimeClient(this, httpClient);
+        realtimeClient.setListener(new AssistantVoiceRealtimeClient.Listener() {
+            @Override
+            public void onConnecting(long ownerGeneration) {
+                mainHandler.post(() -> {
+                    if (!isRealtimeCallbackCurrent(ownerGeneration)) {
+                        return;
+                    }
+                    updateState(STATE_REALTIME_CONNECTING, null);
+                });
+            }
+
+            @Override
+            public void onConnected(String sessionId, String conversationId, long ownerGeneration) {
+                mainHandler.post(() -> {
+                    if (!isRealtimeCallbackCurrent(ownerGeneration)) {
+                        Log.d(
+                            TAG,
+                            "onConnected ignored stale generation="
+                                + ownerGeneration
+                                + " current="
+                                + controllerGeneration
+                        );
+                        return;
+                    }
+                    realtimeSessionId = sessionId == null ? "" : sessionId;
+                    realtimeConversationId = conversationId == null ? "" : conversationId;
+                    if (!realtimeConversationId.isEmpty() && config != null) {
+                        try {
+                            JSONObject patch = new JSONObject();
+                            patch.put("realtimeConversationId", realtimeConversationId);
+                            config = config.withVoiceSettings(patch);
+                            AssistantVoiceConfig.save(AssistantVoiceRuntimeService.this, config);
+                        } catch (Exception ignored) {
+                        }
+                    }
+                    // Arming cue on ready (connected), not at preempt.
+                    if (player != null && config != null && config.recognitionCueEnabled) {
+                        player.playRecognitionCue(
+                            "__realtime_arming__:" + controllerGeneration,
+                            AssistantVoicePcmPlayer.RecognitionCueType.ARMING
+                        );
+                    }
+                    acquireRealtimeWakeLock();
+                    updateState(STATE_REALTIME_ACTIVE, null);
+                });
+            }
+
+            @Override
+            public void onFailed(String message, long ownerGeneration) {
+                mainHandler.post(() -> {
+                    // Generation match only — never let a superseded call tear down a newer one.
+                    if (!isRealtimeCallbackCurrent(ownerGeneration)) {
+                        Log.d(
+                            TAG,
+                            "onFailed ignored stale generation="
+                                + ownerGeneration
+                                + " current="
+                                + controllerGeneration
+                        );
+                        return;
+                    }
+                    releaseRealtimeWakeLock();
+                    stopRealtimeOwner("realtime_failed", false);
+                    updateState(STATE_ERROR, message);
+                    emitRuntimeError(message == null ? "Realtime failed" : message);
+                });
+            }
+
+            @Override
+            public void onClosed(String reason, long ownerGeneration) {
+                mainHandler.post(() -> {
+                    // Generation match only. Intentional stop already advanced the generation and
+                    // ran stopRealtimeOwner; late closes from that generation must not run again
+                    // against a newer Realtime call.
+                    if (!isRealtimeCallbackCurrent(ownerGeneration)) {
+                        Log.d(
+                            TAG,
+                            "onClosed ignored stale generation="
+                                + ownerGeneration
+                                + " current="
+                                + controllerGeneration
+                                + " reason="
+                                + safe(reason)
+                        );
+                        return;
+                    }
+                    releaseRealtimeWakeLock();
+                    stopRealtimeOwner(
+                        reason == null ? "realtime_closed" : reason,
+                        isRealtimeCloseSuccessful(reason)
+                    );
+                    if (!STATE_ERROR.equals(runtimeState)) {
+                        updateState(resolveInactiveState(), null);
+                    }
+                });
+            }
+
+            @Override
+            public void onTranscript(String role, String text, boolean isFinal) {
+                // Native authority owns speech; transcript events are available for future UI sheets.
+                Log.d(TAG, "realtime transcript role=" + role + " final=" + isFinal + " len=" + (text == null ? 0 : text.length()));
+            }
+
+            @Override
+            public void onTool(String name, String status, String detail) {
+                Log.d(TAG, "realtime tool name=" + name + " status=" + status + " detail=" + safe(detail));
+            }
+        });
         config = AssistantVoiceConfig.load(this);
         micStreamer.setPreferredDeviceId(config.selectedMicDeviceId);
         player.setTtsGain(config.ttsGain);
@@ -335,7 +468,7 @@ public final class AssistantVoiceRuntimeService extends Service {
         }
         if (ACTION_STOP_CURRENT_INTERACTION.equals(action)) {
             recordVoiceEvent("service_action_stop_current_interaction", null);
-            stopCurrentInteraction(isPromptPlaybackActive(), "manual_stop");
+            handleUserStopRequest("notification_stop");
             return START_STICKY;
         }
         if (ACTION_START_MANUAL_LISTEN.equals(action)) {
@@ -343,7 +476,7 @@ public final class AssistantVoiceRuntimeService extends Service {
             JSONObject details = AssistantVoiceEventLog.details();
             AssistantVoiceEventLog.put(details, "sessionId", safe(sessionId));
             recordVoiceEvent("service_action_start_manual_listen", details);
-            startManualListen(sessionId);
+            handleUserStartRequest(sessionId, "notification_speak");
             return START_STICKY;
         }
         if (ACTION_RETARGET_ACTIVE_RECOGNITION.equals(action)) {
@@ -390,8 +523,35 @@ public final class AssistantVoiceRuntimeService extends Service {
             applyConfig(updated);
             return START_STICKY;
         }
+        if (ACTION_START_REALTIME.equals(action)) {
+            startRealtimeCall("intent_start");
+            return START_STICKY;
+        }
+        if (ACTION_STOP_REALTIME.equals(action)) {
+            stopRealtimeCall("intent_stop");
+            return START_STICKY;
+        }
+        if (ACTION_SET_REALTIME_MUTED.equals(action)) {
+            boolean muted = intent != null && intent.getBooleanExtra(EXTRA_REALTIME_MUTED, false);
+            setRealtimeMuted(muted);
+            return START_STICKY;
+        }
 
         return START_STICKY;
+    }
+
+    public static Intent startRealtimeIntent(Context context) {
+        return new Intent(context, AssistantVoiceRuntimeService.class).setAction(ACTION_START_REALTIME);
+    }
+
+    public static Intent stopRealtimeIntent(Context context) {
+        return new Intent(context, AssistantVoiceRuntimeService.class).setAction(ACTION_STOP_REALTIME);
+    }
+
+    public static Intent setRealtimeMutedIntent(Context context, boolean muted) {
+        return new Intent(context, AssistantVoiceRuntimeService.class)
+            .setAction(ACTION_SET_REALTIME_MUTED)
+            .putExtra(EXTRA_REALTIME_MUTED, muted);
     }
 
     @Override
@@ -406,6 +566,14 @@ public final class AssistantVoiceRuntimeService extends Service {
         player.release();
         if (micStreamer != null) {
             micStreamer.release();
+        }
+        if (realtimeClient != null) {
+            realtimeClient.release();
+            realtimeClient = null;
+        }
+        releaseRealtimeWakeLock();
+        if (audioRouter != null) {
+            audioRouter.shutdown();
         }
         networkExecutor.shutdownNow();
         httpClient.dispatcher().cancelAll();
@@ -437,8 +605,24 @@ public final class AssistantVoiceRuntimeService extends Service {
         boolean selectedSessionChanged =
             !previous.selectedSessionId.equals(updated.selectedSessionId);
         boolean audioModeChanged = !previous.audioMode.equals(updated.audioMode);
+        boolean runtimeModeChanged = !previous.voiceRuntimeMode.equals(updated.voiceRuntimeMode);
         boolean adapterUrlChanged = !previous.voiceAdapterBaseUrl.equals(updated.voiceAdapterBaseUrl);
         boolean assistantUrlChanged = !previous.assistantBaseUrl.equals(updated.assistantBaseUrl);
+
+        // Leaving Realtime preference (or an active Realtime owner) must fully stop the call —
+        // owner fence alone leaves WebRTC/media live and the next mic press can race.
+        if (
+            AssistantVoiceControllerPolicy.shouldStopRealtimeForConfig(
+                previous.voiceRuntimeMode,
+                updated.voiceRuntimeMode,
+                liveOwner
+            )
+            || (AssistantVoiceControllerPolicy.isRealtimeRuntimeMode(previous.voiceRuntimeMode)
+                && !AssistantVoiceControllerPolicy.isRealtimeRuntimeMode(updated.voiceRuntimeMode)
+                && isRealtimeActiveState(runtimeState))
+        ) {
+            stopRealtimeCall("config_runtime_mode");
+        }
 
         if (!updated.isEnabled()) {
             clearQueuedVoiceItems();
@@ -448,6 +632,16 @@ public final class AssistantVoiceRuntimeService extends Service {
             syncMediaSession();
             updateState(STATE_DISABLED, null);
             return;
+        }
+
+        if (runtimeModeChanged) {
+            Log.d(
+                TAG,
+                "applyConfig voiceRuntimeMode "
+                    + safe(previous.voiceRuntimeMode)
+                    + " -> "
+                    + safe(updated.voiceRuntimeMode)
+            );
         }
 
         boolean switchedToManualMode =
@@ -512,7 +706,7 @@ public final class AssistantVoiceRuntimeService extends Service {
                         Log.d(TAG, "MediaSession onPlay ignored: media buttons disabled");
                         return;
                     }
-                    startManualListen("");
+                    handleMediaButtonStart("media_session_play");
                 });
             }
 
@@ -551,14 +745,17 @@ public final class AssistantVoiceRuntimeService extends Service {
     }
 
     private void handleMediaButtonKeyCode(int keyCode) {
+        boolean activeInteraction = hasActiveInteraction() || isRealtimeMediaInteractionActive();
         Log.d(
             TAG,
             "handleMediaButtonKeyCode keyCode="
                 + KeyEvent.keyCodeToString(keyCode)
                 + " runtimeState="
                 + runtimeState
+                + " runtimeMode="
+                + (config == null ? "" : config.voiceRuntimeMode)
                 + " hasActiveInteraction="
-                + hasActiveInteraction()
+                + activeInteraction
         );
         switch (keyCode) {
             case KeyEvent.KEYCODE_MEDIA_PLAY:
@@ -566,10 +763,10 @@ public final class AssistantVoiceRuntimeService extends Service {
             case KeyEvent.KEYCODE_MEDIA_STOP:
             case KeyEvent.KEYCODE_HEADSETHOOK:
             case KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE:
-                if (shouldToggleMediaButtonToStop(runtimeState, hasActiveInteraction())) {
+                if (shouldToggleMediaButtonToStop(runtimeState, activeInteraction)) {
                     handleMediaSessionStop();
                 } else {
-                    startManualListen("");
+                    handleMediaButtonStart("media_button");
                 }
                 return;
             default:
@@ -577,21 +774,68 @@ public final class AssistantVoiceRuntimeService extends Service {
         }
     }
 
+    private void handleMediaButtonStart(String reason) {
+        if (config == null || !config.mediaButtonsEnabled) {
+            Log.d(TAG, "handleMediaButtonStart ignored: media buttons disabled");
+            return;
+        }
+        handleUserStartRequest("", reason);
+    }
+
     private void handleMediaSessionStop() {
-        if (!config.mediaButtonsEnabled) {
+        if (config == null || !config.mediaButtonsEnabled) {
             Log.d(TAG, "handleMediaSessionStop ignored: media buttons disabled");
             return;
         }
+        handleUserStopRequest("media_button");
+    }
+
+    /**
+     * Shared start entry for headset media buttons and the notification Speak action.
+     * Realtime mode starts a Realtime call; Thread mode starts bounded STT listen.
+     */
+    private void handleUserStartRequest(String sessionId, String reason) {
+        if (config == null || !config.isEnabled()) {
+            Log.d(TAG, "handleUserStartRequest ignored: voice disabled reason=" + safe(reason));
+            return;
+        }
+        if (shouldStartRealtimeFromMediaButton(config.voiceRuntimeMode)) {
+            Log.d(TAG, "handleUserStartRequest realtime reason=" + safe(reason));
+            startRealtimeCall(reason);
+            return;
+        }
+        Log.d(TAG, "handleUserStartRequest thread reason=" + safe(reason));
+        startManualListen(sessionId == null ? "" : sessionId);
+    }
+
+    /**
+     * Shared stop entry for headset media buttons and the notification Stop action.
+     */
+    private void handleUserStopRequest(String reason) {
         Log.d(
             TAG,
-            "handleMediaSessionStop runtimeState="
+            "handleUserStopRequest reason="
+                + safe(reason)
+                + " runtimeState="
                 + runtimeState
+                + " runtimeMode="
+                + (config == null ? "" : config.voiceRuntimeMode)
+                + " liveOwner="
+                + liveOwner
                 + " promptPlaybackActive="
                 + isPromptPlaybackActive()
                 + " activeSttRequestId="
                 + !activeSttRequestId.isEmpty()
         );
+        if (hasActiveRealtimeInteraction(runtimeState, liveOwner)) {
+            stopRealtimeCall(reason);
+            return;
+        }
         stopCurrentInteraction(isPromptPlaybackActive(), "manual_stop");
+    }
+
+    private boolean isRealtimeMediaInteractionActive() {
+        return hasActiveRealtimeInteraction(runtimeState, liveOwner);
     }
 
     static boolean shouldHandleMediaButtonKeyEvent(KeyEvent event) {
@@ -600,10 +844,62 @@ public final class AssistantVoiceRuntimeService extends Service {
             && event.getRepeatCount() == 0;
     }
 
+    static boolean isRealtimeRuntimeMode(String voiceRuntimeMode) {
+        return AssistantVoiceConfig.RUNTIME_MODE_REALTIME.equals(trim(voiceRuntimeMode));
+    }
+
+    static boolean isRealtimeActiveState(String state) {
+        String normalized = trim(state);
+        return STATE_REALTIME_ACTIVE.equals(normalized)
+            || STATE_REALTIME_CONNECTING.equals(normalized);
+    }
+
+    /**
+     * Headset/media start uses Realtime when the user selected Realtime runtime mode.
+     * Thread mode continues to start bounded STT listen.
+     */
+    static boolean shouldStartRealtimeFromMediaButton(String voiceRuntimeMode) {
+        return isRealtimeRuntimeMode(voiceRuntimeMode);
+    }
+
+    /**
+     * True while a Realtime call is connecting/active or ownership is still Realtime
+     * (covers brief transition windows where state lags owner).
+     */
+    static boolean hasActiveRealtimeInteraction(String state, String liveOwner) {
+        return isRealtimeActiveState(state)
+            || AssistantVoiceControllerPolicy.OWNER_REALTIME.equals(trim(liveOwner));
+    }
+
+    /**
+     * While Realtime is the exclusive owner, only Realtime/error/disabled states may be applied.
+     * Thread socket reconnect handlers must not force IDLE/CONNECTING mid-call.
+     */
+    static boolean shouldAcceptStateUpdateWhileRealtimeOwner(
+        boolean realtimeOwnerActive,
+        String nextState
+    ) {
+        if (!realtimeOwnerActive) {
+            return true;
+        }
+        String normalized = trim(nextState);
+        return isRealtimeActiveState(normalized)
+            || STATE_ERROR.equals(normalized)
+            || STATE_DISABLED.equals(normalized);
+    }
+
+    /** @deprecated Prefer {@link #hasActiveRealtimeInteraction(String, String)}. */
+    static boolean shouldStopRealtimeFromMediaButton(String state, String liveOwner) {
+        return hasActiveRealtimeInteraction(state, liveOwner);
+    }
+
     static boolean shouldStopForMediaButtonToggle(String state, boolean hasActiveInteraction) {
+        // Callers should OR realtime activity into hasActiveInteraction; state checks cover
+        // Thread listening/speaking and Realtime connecting/active when the flag lags.
         return hasActiveInteraction
             || STATE_LISTENING.equals(trim(state))
-            || STATE_SPEAKING.equals(trim(state));
+            || STATE_SPEAKING.equals(trim(state))
+            || isRealtimeActiveState(state);
     }
 
     static boolean shouldToggleMediaButtonToStop(String state, boolean hasActiveInteraction) {
@@ -634,12 +930,16 @@ public final class AssistantVoiceRuntimeService extends Service {
         }
         boolean enabled = config.isEnabled() && config.mediaButtonsEnabled && !destroyed;
         int mediaPlaybackState = resolveMediaSessionPlaybackState(runtimeState);
+        boolean playingForSpeed =
+            STATE_SPEAKING.equals(runtimeState)
+                || STATE_LISTENING.equals(runtimeState)
+                || STATE_REALTIME_ACTIVE.equals(runtimeState);
         PlaybackState.Builder playbackState = new PlaybackState.Builder()
             .setActions(enabled ? MEDIA_SESSION_PLAYBACK_ACTIONS : 0L)
             .setState(
                 mediaPlaybackState,
                 PlaybackState.PLAYBACK_POSITION_UNKNOWN,
-                STATE_SPEAKING.equals(runtimeState) || STATE_LISTENING.equals(runtimeState) ? 1.0f : 0.0f
+                playingForSpeed ? 1.0f : 0.0f
             );
         mediaSession.setPlaybackState(playbackState.build());
         mediaSession.setActive(enabled);
@@ -717,16 +1017,20 @@ public final class AssistantVoiceRuntimeService extends Service {
             PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT
         );
 
+        boolean realtimeActive = isRealtimeMediaInteractionActive();
         boolean showSpeakAction = AssistantVoiceInteractionRules.shouldShowNotificationSpeakAction(
             config.allowsNotificationSpeak(),
             config.preferredVoiceSessionId,
             isPromptPlaybackActive(),
             !activeSttRequestId.isEmpty(),
-            isRuntimeConnected()
+            isRuntimeConnected(),
+            isRealtimeRuntimeMode(config.voiceRuntimeMode),
+            realtimeActive
         );
         boolean showStopAction = AssistantVoiceInteractionRules.shouldShowNotificationStopAction(
             isPromptPlaybackActive(),
-            !activeSttRequestId.isEmpty()
+            !activeSttRequestId.isEmpty(),
+            realtimeActive
         );
         String notificationSessionTitle = resolveNotificationSessionTitle();
 
@@ -956,7 +1260,10 @@ public final class AssistantVoiceRuntimeService extends Service {
         switch (trim(state)) {
             case STATE_LISTENING:
             case STATE_SPEAKING:
+            case STATE_REALTIME_ACTIVE:
                 return PlaybackState.STATE_PLAYING;
+            case STATE_REALTIME_CONNECTING:
+                return PlaybackState.STATE_BUFFERING;
             case STATE_DISABLED:
                 return PlaybackState.STATE_STOPPED;
             case STATE_ERROR:
@@ -1578,6 +1885,12 @@ public final class AssistantVoiceRuntimeService extends Service {
             Log.d(TAG, "enqueueQueueItem dropped invalid item=" + describeQueueItem(item));
             return;
         }
+        if (threadAdmissionPaused && !front) {
+            // Automatic admission is paused while Realtime owns media; manual front-of-queue
+            // recovery is still allowed when Thread is live again (front used after resume).
+            Log.d(TAG, "enqueueQueueItem dropped admission_paused " + describeQueueItem(item));
+            return;
+        }
         if (shouldDedupManualAutoListenQueueItem(item, activeQueueItem)) {
             Log.d(TAG, "enqueueQueueItem deduped active manual auto-listen item=" + describeQueueItem(item));
             return;
@@ -1644,7 +1957,258 @@ public final class AssistantVoiceRuntimeService extends Service {
         queuedVoiceItems.clear();
     }
 
+    /**
+     * Stops the active Thread interaction and clears the local FIFO only.
+     * Durable notifications are intentionally retained for later manual recovery.
+     */
+    void stopAndClearQueue(String reason) {
+        Log.d(TAG, "stopAndClearQueue reason=" + safe(reason));
+        clearQueuedVoiceItems();
+        clearPendingManualPreemptState("stop_and_clear:" + safe(reason));
+        stopCurrentInteraction(false, "stop_and_clear_queue:" + safe(reason));
+    }
+
+    void pauseThreadAdmission() {
+        threadAdmissionPaused = true;
+        Log.d(TAG, "pauseThreadAdmission generation=" + controllerGeneration);
+    }
+
+    void resumeThreadAdmission() {
+        threadAdmissionPaused = false;
+        Log.d(TAG, "resumeThreadAdmission generation=" + controllerGeneration);
+        drainVoiceQueueIfPossible();
+    }
+
+    boolean isThreadAdmissionPaused() {
+        return threadAdmissionPaused;
+    }
+
+    long controllerGeneration() {
+        return controllerGeneration;
+    }
+
+    String liveOwner() {
+        return liveOwner;
+    }
+
+    /**
+     * Waits for Thread media to become idle after stop. Phase 1 is synchronous: stop releases
+     * local player/mic immediately; adapter ACKs for stale generations are ignored via fencing.
+     */
+    boolean awaitMediaQuiescence() {
+        if (hasActiveInteraction()) {
+            stopCurrentInteraction(false, "await_media_quiescence");
+        }
+        if (audioRouter != null) {
+            audioRouter.releaseAll(activeMediaGeneration == 0L ? controllerGeneration : activeMediaGeneration);
+        }
+        activeMediaGeneration = 0L;
+        if (player != null) {
+            player.setRouterOwnerGeneration(controllerGeneration);
+        }
+        if (micStreamer != null) {
+            micStreamer.setRouterOwnerGeneration(controllerGeneration);
+        }
+        return !hasActiveInteraction();
+    }
+
+    long advanceControllerGeneration(String reason) {
+        controllerGeneration = AssistantVoiceControllerPolicy.nextGeneration(controllerGeneration);
+        activeMediaGeneration = 0L;
+        if (player != null) {
+            player.setRouterOwnerGeneration(controllerGeneration);
+        }
+        if (micStreamer != null) {
+            micStreamer.setRouterOwnerGeneration(controllerGeneration);
+        }
+        Log.d(
+            TAG,
+            "advanceControllerGeneration reason=" + safe(reason) + " generation=" + controllerGeneration
+        );
+        return controllerGeneration;
+    }
+
+    boolean isCurrentMediaGeneration(long generation) {
+        return AssistantVoiceControllerPolicy.isCurrentGeneration(activeMediaGeneration, generation)
+            || (activeMediaGeneration == 0L
+                && AssistantVoiceControllerPolicy.isCurrentGeneration(controllerGeneration, generation));
+    }
+
+    private long admitThreadMediaGeneration() {
+        activeMediaGeneration = controllerGeneration;
+        if (player != null) {
+            player.setRouterOwnerGeneration(activeMediaGeneration);
+        }
+        if (micStreamer != null) {
+            micStreamer.setRouterOwnerGeneration(activeMediaGeneration);
+        }
+        liveOwner = AssistantVoiceControllerPolicy.OWNER_THREAD;
+        return activeMediaGeneration;
+    }
+
+    /**
+     * Preempts Thread (stop + clear FIFO + pause admission) and advances generation so Realtime
+     * media can own the audio path. Arming cue plays later on connected+ready.
+     */
+    void prepareRealtimeOwnerPreempt(String reason) {
+        stopAndClearQueue(reason);
+        awaitMediaQuiescence();
+        pauseThreadAdmission();
+        liveOwner = AssistantVoiceControllerPolicy.OWNER_REALTIME;
+        advanceControllerGeneration("prepare_realtime:" + safe(reason));
+        if (player != null) {
+            player.setPreferVoiceCommunicationCueFocus(true);
+        }
+    }
+
+    void stopRealtimeOwner(String reason) {
+        stopRealtimeOwner(reason, isRealtimeCloseSuccessful(reason));
+    }
+
+    void stopRealtimeOwner(String reason, boolean success) {
+        if (!AssistantVoiceControllerPolicy.OWNER_REALTIME.equals(liveOwner)) {
+            return;
+        }
+        Log.d(TAG, "stopRealtimeOwner reason=" + safe(reason) + " success=" + success);
+        if (audioRouter != null) {
+            audioRouter.releaseAll(controllerGeneration);
+        }
+        if (player != null) {
+            player.setPreferVoiceCommunicationCueFocus(false);
+            if (config != null && config.recognitionCueEnabled) {
+                player.playRecognitionCue(
+                    "__realtime_completion__:" + controllerGeneration,
+                    success
+                        ? AssistantVoicePcmPlayer.RecognitionCueType.SUCCESS_COMPLETION
+                        : AssistantVoicePcmPlayer.RecognitionCueType.FAILURE_COMPLETION
+                );
+            }
+        }
+        liveOwner = AssistantVoiceControllerPolicy.OWNER_THREAD;
+        realtimeSessionId = "";
+        advanceControllerGeneration("stop_realtime:" + safe(reason));
+        resumeThreadAdmission();
+    }
+
+    /**
+     * Explicit success/failure for completion cues. Avoid free-text substring sniffing so provider
+     * drops like {@code sideband_closed} are not mislabeled as success.
+     */
+    static boolean isRealtimeCloseSuccessful(String reason) {
+        String normalized = trim(reason);
+        if (normalized.isEmpty()) {
+            return true;
+        }
+        if (normalized.startsWith("intent_")
+            || normalized.startsWith("config_")
+            || "client_stop".equals(normalized)
+            || "user_stop".equals(normalized)
+            || "manual_stop".equals(normalized)
+            || "stale_owner_recover".equals(normalized)
+            || "agent_end".equals(normalized)
+            || "user_request".equals(normalized)
+            || "done".equals(normalized)) {
+            return true;
+        }
+        return false;
+    }
+
+    private boolean isRealtimeCallbackCurrent(long ownerGeneration) {
+        return AssistantVoiceControllerPolicy.OWNER_REALTIME.equals(liveOwner)
+            && AssistantVoiceControllerPolicy.isCurrentGeneration(controllerGeneration, ownerGeneration);
+    }
+
+    private void startRealtimeCall(String reason) {
+        if (config == null || !config.isEnabled()) {
+            emitRuntimeError("Enable native voice before starting Realtime");
+            return;
+        }
+        if (STATE_REALTIME_ACTIVE.equals(runtimeState)
+            || STATE_REALTIME_CONNECTING.equals(runtimeState)) {
+            Log.d(TAG, "startRealtimeCall ignored already active state=" + runtimeState);
+            return;
+        }
+        // If a previous call left liveOwner stuck without an active connection (failed restart),
+        // recover by forcing a clean Thread owner before pre-empting again. Suppress onClosed so
+        // the async teardown of the old client cannot tear down the new call.
+        if (AssistantVoiceControllerPolicy.OWNER_REALTIME.equals(liveOwner)) {
+            Log.d(TAG, "startRealtimeCall recovering stale realtime owner before restart");
+            if (realtimeClient != null) {
+                realtimeClient.stop("stale_owner_recover", false);
+            }
+            releaseRealtimeWakeLock();
+            stopRealtimeOwner("stale_owner_recover");
+        }
+        if (realtimeClient == null) {
+            emitRuntimeError("Realtime client unavailable");
+            return;
+        }
+        prepareRealtimeOwnerPreempt(reason);
+        realtimeMuted = config.realtimeMuteOnStart;
+        updateState(STATE_REALTIME_CONNECTING, null);
+        realtimeClient.start(
+            config.assistantBaseUrl,
+            config.realtimeConversationId,
+            config.realtimeListsInstanceId,
+            config.realtimeMuteOnStart,
+            controllerGeneration,
+            audioRouter
+        );
+    }
+
+    private void stopRealtimeCall(String reason) {
+        if (realtimeClient != null) {
+            realtimeClient.stop(reason);
+        }
+        releaseRealtimeWakeLock();
+        // Owner fence returns to Thread immediately; client async teardown must not leave us
+        // stuck in REALTIME_ACTIVE so the next start is ignored.
+        stopRealtimeOwner(reason, isRealtimeCloseSuccessful(reason));
+        updateState(resolveInactiveState(), null);
+    }
+
+    private void setRealtimeMuted(boolean muted) {
+        realtimeMuted = muted;
+        if (realtimeClient != null) {
+            realtimeClient.setMuted(muted);
+        }
+        refreshNotification();
+    }
+
+    @SuppressWarnings("deprecation")
+    private void acquireRealtimeWakeLock() {
+        if (realtimeWakeLock != null && realtimeWakeLock.isHeld()) {
+            return;
+        }
+        PowerManager powerManager = (PowerManager) getSystemService(POWER_SERVICE);
+        if (powerManager == null) {
+            return;
+        }
+        realtimeWakeLock = powerManager.newWakeLock(
+            PowerManager.PARTIAL_WAKE_LOCK,
+            "assistant:voice-realtime"
+        );
+        realtimeWakeLock.setReferenceCounted(false);
+        // No fixed timeout: long background calls must not lose the lock after 1h.
+        // Released generation-scoped in releaseRealtimeWakeLock()/stop paths.
+        realtimeWakeLock.acquire();
+    }
+
+    private void releaseRealtimeWakeLock() {
+        if (realtimeWakeLock != null && realtimeWakeLock.isHeld()) {
+            try {
+                realtimeWakeLock.release();
+            } catch (Exception ignored) {
+            }
+        }
+        realtimeWakeLock = null;
+    }
+
     private void drainVoiceQueueIfPossible() {
+        if (threadAdmissionPaused) {
+            Log.d(TAG, "drainVoiceQueueIfPossible blocked reason=admission_paused " + describeRuntimeState());
+            return;
+        }
         String blockedReason = explainQueueDrainBlock();
         if (!blockedReason.isEmpty()) {
             Log.d(TAG, "drainVoiceQueueIfPossible blocked reason=" + blockedReason + " " + describeRuntimeState());
@@ -1863,6 +2427,7 @@ public final class AssistantVoiceRuntimeService extends Service {
                 Log.d(TAG, "adapter client_identity clientIdPresent=" + !adapterClientId.isEmpty());
                 if (!hasActiveInteraction()) {
                     updateState(STATE_IDLE, null);
+                    drainVoiceQueueIfPossible();
                 }
                 return;
             }
@@ -1927,6 +2492,15 @@ public final class AssistantVoiceRuntimeService extends Service {
                 "ignoring media_tts_end requestId=" + requestId
                     + " active=" + activeTtsRequestId
                     + " pendingPreemptStop=" + pendingManualPreemptStopRequestId
+            );
+            return;
+        }
+        if (threadAdmissionPaused && !matchesManualPreemptStop && activeMediaGeneration != controllerGeneration) {
+            Log.d(
+                TAG,
+                "ignoring media_tts_end stale generation requestId=" + requestId
+                    + " mediaGeneration=" + activeMediaGeneration
+                    + " controllerGeneration=" + controllerGeneration
             );
             return;
         }
@@ -2215,6 +2789,7 @@ public final class AssistantVoiceRuntimeService extends Service {
         AssistantVoiceEventLog.put(details, "queueItem", describeQueueItem(item));
         AssistantVoiceEventLog.put(details, "textLength", trim(item.spokenText).length());
         recordVoiceEvent("tts_begin", details);
+        admitThreadMediaGeneration();
         activeQueueItem = item;
         activeVoiceSessionId = item.sessionId;
         activePromptToolName = item.executionMode;
@@ -2434,6 +3009,7 @@ public final class AssistantVoiceRuntimeService extends Service {
         }
 
         String requestId = UUID.randomUUID().toString();
+        admitThreadMediaGeneration();
         activeVoiceSessionId = sessionId.trim();
         activePromptToolName = "manual_listen".equals(reason) ? "voice_manual" : activePromptToolName;
         activeSttRequestId = requestId;
@@ -3228,6 +3804,21 @@ public final class AssistantVoiceRuntimeService extends Service {
         if (normalizedState.isEmpty()) {
             normalizedState = STATE_DISABLED;
         }
+        // While Realtime owns media, ignore Thread-path idle/connecting/speaking/listening
+        // stomps from adapter/assistant socket lifecycle (reconnects during a live call).
+        if (!shouldAcceptStateUpdateWhileRealtimeOwner(
+            AssistantVoiceControllerPolicy.OWNER_REALTIME.equals(liveOwner),
+            normalizedState
+        )) {
+            Log.d(
+                TAG,
+                "updateState ignored while realtime owner previous="
+                    + previousState
+                    + " next="
+                    + normalizedState
+            );
+            return;
+        }
         if (runtimeState.equals(normalizedState) && normalizedError.isEmpty()) {
             return;
         }
@@ -3666,15 +4257,40 @@ public final class AssistantVoiceRuntimeService extends Service {
         if (!config.isEnabled()) {
             return "voice_mode_disabled";
         }
+        if (threadAdmissionPaused) {
+            return "admission_paused";
+        }
         if (!isRuntimeConnected()) {
             return "runtime_not_connected";
+        }
+        AssistantVoiceQueueItem next = queuedVoiceItems.get(0);
+        if (shouldWaitForAdapterClientIdentity(adapterSocketConnected, adapterClientId, next)) {
+            return "adapter_client_identity_missing";
         }
         return "";
     }
 
+    static boolean shouldWaitForAdapterClientIdentity(
+        boolean adapterSocketConnected,
+        String adapterClientId,
+        AssistantVoiceQueueItem item
+    ) {
+        return adapterSocketConnected
+            && item != null
+            && !item.isListenOnly()
+            && item.hasSpeech()
+            && trim(adapterClientId).isEmpty();
+    }
+
     private String describeRuntimeState() {
         return "state=" + safe(runtimeState)
+            + " liveOwner=" + safe(liveOwner)
+            + " generation=" + controllerGeneration
+            + " mediaGeneration=" + activeMediaGeneration
+            + " admissionPaused=" + threadAdmissionPaused
+            + " runtimeMode=" + safe(config == null ? "" : config.voiceRuntimeMode)
             + " adapterSocketConnected=" + adapterSocketConnected
+            + " adapterClientIdPresent=" + !adapterClientId.isEmpty()
             + " assistantSocketConnected=" + assistantSocketConnected
             + " activeTtsRequestId=" + safe(activeTtsRequestId)
             + " pendingManualPreemptStopRequestId=" + safe(pendingManualPreemptStopRequestId)

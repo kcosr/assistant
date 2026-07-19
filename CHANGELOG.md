@@ -8,6 +8,9 @@
 
 ### Added
 
+- Added Android Realtime voice end-to-end: server `/api/voice/*` (conversation/session, OpenAI SDP negotiate, sideband lists tools, events), Android WebRTC Realtime client with exclusive-owner preemption, wake lock, start/stop/mute plugin APIs, config tool allowlist/denylist globs, `realtime_end_session` hangup, headset media-button start/stop, and web settings/FAB controls. Uses server-side `OPENAI_API_KEY` only. ([#113](https://github.com/kcosr/assistant/pull/113))
+- Added Android native voice foundations for exclusive Thread vs Realtime ownership: generation-fenced controller helpers, shared audio router (focus/mode/SCO), Thread queue stop/clear/pause-admission hooks, and a `voiceRuntimeMode` preference. ([#113](https://github.com/kcosr/assistant/pull/113))
+- Wait for the agent-voice-adapter client identity before starting direct TTS playback from the Android voice queue, and drain the queue once the identity arrives. ([#113](https://github.com/kcosr/assistant/pull/113))
 - Added a virtual Pinned list view for list items tagged `pinned`, including first-class list picker placement, source-item actions, tag-chip rendering, and pin/unpin menu icon states. ([#111](https://github.com/kcosr/assistant/pull/111))
 - Added an Electron desktop package with native backend proxying, WebSocket forwarding, variant-aware backend defaults, and packaged-app asset routing. ([#108](https://github.com/kcosr/assistant/pull/108))
 - Added native Android voice replay for assistant turns and text/markdown attachments, using the existing local voice queue with front-of-queue, non-interrupting playback. ([#106](https://github.com/kcosr/assistant/pull/106))
@@ -43,6 +46,7 @@
 
 ### Fixed
 
+- Fixed Android Realtime ownership and lease lifecycle: Thread path no longer stomps Realtime runtime state, Realtime callbacks are generation-fenced, WebRTC release completes dispose/server close, server reaps live sessions after missed heartbeats, hangup uses a success close token, and the Realtime wake lock is not capped at one hour. ([#113](https://github.com/kcosr/assistant/pull/113))
 - Fixed the Lists header pinned tag chip to show only the pin icon while preserving accessible labeling. ([#112](https://github.com/kcosr/assistant/pull/112))
 - Fixed Electron desktop HTML links and time-tracker XLSX export clicks so they open in the system browser/download path instead of being captured inside the Electron webview. ([#108](https://github.com/kcosr/assistant/pull/108))
 - Fixed the time tracker entry list refresh so relative Today/Week/Month presets resolve to the current date before listing newly added entries. ([#107](https://github.com/kcosr/assistant/pull/107))
