@@ -41,6 +41,7 @@ final class AssistantVoiceAudioRouter {
     private FocusKind focusKind = FocusKind.NONE;
     private boolean communicationModeActive = false;
     private boolean scoStarted = false;
+    private boolean speakerphoneEnabled = false;
     private AudioFocusRequest playbackFocusRequest;
     private AudioFocusRequest captureFocusRequest;
     private AudioFocusRequest realtimeFocusRequest;
@@ -73,6 +74,12 @@ final class AssistantVoiceAudioRouter {
     boolean isCommunicationModeActive() {
         synchronized (lock) {
             return communicationModeActive;
+        }
+    }
+
+    boolean isSpeakerphoneEnabled() {
+        synchronized (lock) {
+            return speakerphoneEnabled;
         }
     }
 
@@ -151,24 +158,137 @@ final class AssistantVoiceAudioRouter {
     }
 
     void enterCommunicationMode(long ownerGeneration) {
+        enterCommunicationMode(ownerGeneration, false);
+    }
+
+    /**
+     * @param preferSpeakerphone when true and no Bluetooth SCO headset is in use, force
+     *     speakerphone so Realtime is audible at arm's length (not quiet earpiece).
+     */
+    void enterCommunicationMode(long ownerGeneration, boolean preferSpeakerphone) {
         synchronized (lock) {
             if (ownerGeneration != 0L) {
                 activeOwnerGeneration = ownerGeneration;
             }
-            if (audioManager == null || communicationModeActive) {
-                communicationModeActive = audioManager != null || communicationModeActive;
+            if (audioManager == null) {
+                return;
+            }
+            if (communicationModeActive) {
+                // Keep SCO and speakerphone mutually exclusive if this is re-entered mid-call.
+                applySpeakerphoneLocked(preferSpeakerphone && !scoStarted);
                 return;
             }
             try {
                 audioManager.setMode(AudioManager.MODE_IN_COMMUNICATION);
-                audioManager.setBluetoothScoOn(true);
-                audioManager.startBluetoothSco();
-                scoStarted = true;
+                boolean useSco = shouldStartBluetoothScoLocked();
+                if (useSco) {
+                    Log.d(TAG, "enterCommunicationMode route=sco gen=" + ownerGeneration);
+                    audioManager.setBluetoothScoOn(true);
+                    audioManager.startBluetoothSco();
+                    scoStarted = true;
+                    applySpeakerphoneLocked(false);
+                } else {
+                    Log.d(
+                        TAG,
+                        "enterCommunicationMode route=speakerphone prefer="
+                            + preferSpeakerphone
+                            + " gen="
+                            + ownerGeneration
+                    );
+                    scoStarted = false;
+                    applySpeakerphoneLocked(preferSpeakerphone);
+                }
                 communicationModeActive = true;
             } catch (Exception error) {
                 Log.w(TAG, "failed to enter communication mode", error);
             }
         }
+    }
+
+    /**
+     * Only SCO/HFP (and BLE headset) devices can carry voice-call audio. A2DP is media-only and
+     * must not suppress speakerphone or trigger a non-functional SCO session.
+     */
+    private boolean shouldStartBluetoothScoLocked() {
+        if (audioManager == null) {
+            return false;
+        }
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {
+            return false;
+        }
+        try {
+            for (android.media.AudioDeviceInfo device
+                : audioManager.getDevices(AudioManager.GET_DEVICES_OUTPUTS)) {
+                int type = device.getType();
+                if (type == android.media.AudioDeviceInfo.TYPE_BLUETOOTH_SCO
+                    || type == android.media.AudioDeviceInfo.TYPE_BLE_HEADSET) {
+                    return true;
+                }
+            }
+        } catch (Exception error) {
+            Log.w(TAG, "failed to inspect audio devices for SCO", error);
+        }
+        return false;
+    }
+
+    private void applySpeakerphoneLocked(boolean enabled) {
+        if (audioManager == null) {
+            return;
+        }
+        try {
+            // Prefer setCommunicationDevice(BUILTIN_SPEAKER) on API 31+: setSpeakerphoneOn is
+            // deprecated and can lose to an A2DP media route while still leaving voice quiet.
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                if (enabled) {
+                    android.media.AudioDeviceInfo speaker = findBuiltinSpeakerLocked();
+                    if (speaker != null) {
+                        boolean ok = audioManager.setCommunicationDevice(speaker);
+                        if (!ok) {
+                            Log.w(TAG, "setCommunicationDevice(BUILTIN_SPEAKER) returned false");
+                        }
+                    } else {
+                        Log.w(TAG, "no BUILTIN_SPEAKER for communication; falling back");
+                    }
+                    // Keep legacy flag in sync for OEM paths that still honor it.
+                    audioManager.setSpeakerphoneOn(true);
+                } else {
+                    audioManager.clearCommunicationDevice();
+                    audioManager.setSpeakerphoneOn(false);
+                }
+            } else {
+                audioManager.setSpeakerphoneOn(enabled);
+            }
+            speakerphoneEnabled = enabled;
+        } catch (Exception error) {
+            Log.w(TAG, "failed to set speakerphone=" + enabled, error);
+        }
+    }
+
+    private android.media.AudioDeviceInfo findBuiltinSpeakerLocked() {
+        if (audioManager == null || Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
+            return null;
+        }
+        try {
+            for (android.media.AudioDeviceInfo device
+                : audioManager.getAvailableCommunicationDevices()) {
+                if (device.getType() == android.media.AudioDeviceInfo.TYPE_BUILTIN_SPEAKER) {
+                    return device;
+                }
+            }
+        } catch (Exception error) {
+            Log.w(TAG, "failed to list available communication devices", error);
+        }
+        try {
+            for (android.media.AudioDeviceInfo device
+                : audioManager.getDevices(AudioManager.GET_DEVICES_OUTPUTS)) {
+                if (device.getType() == android.media.AudioDeviceInfo.TYPE_BUILTIN_SPEAKER) {
+                    return device;
+                }
+            }
+        } catch (Exception error) {
+            Log.w(TAG, "failed to list output devices for builtin speaker", error);
+        }
+        return null;
     }
 
     void leaveCommunicationMode(long ownerGeneration) {
@@ -325,9 +445,10 @@ final class AssistantVoiceAudioRouter {
         if (audioManager == null) {
             communicationModeActive = false;
             scoStarted = false;
+            speakerphoneEnabled = false;
             return;
         }
-        if (!communicationModeActive && !scoStarted) {
+        if (!communicationModeActive && !scoStarted && !speakerphoneEnabled) {
             return;
         }
         try {
@@ -335,11 +456,22 @@ final class AssistantVoiceAudioRouter {
                 audioManager.stopBluetoothSco();
                 audioManager.setBluetoothScoOn(false);
             }
+            if (speakerphoneEnabled) {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                    try {
+                        audioManager.clearCommunicationDevice();
+                    } catch (Exception clearError) {
+                        Log.w(TAG, "clearCommunicationDevice failed", clearError);
+                    }
+                }
+                audioManager.setSpeakerphoneOn(false);
+            }
             audioManager.setMode(AudioManager.MODE_NORMAL);
         } catch (Exception error) {
             Log.w(TAG, "failed to leave communication mode", error);
         }
         scoStarted = false;
+        speakerphoneEnabled = false;
         communicationModeActive = false;
     }
 }

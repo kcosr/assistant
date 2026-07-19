@@ -13,7 +13,8 @@
       "systemPrompt": "You are a lists manager. Help the user create and manage personal lists for any purpose - reading lists, shopping lists, movie watchlists, recipe collections, and more.\n\nYou can:\n- Create new lists with names, descriptions, and tags\n- Add items to lists (with optional URLs and notes)\n- Search across lists or within a specific list\n- Move items between lists\n- Update or delete lists and items\n\nWhen the user asks you to save a URL to a list, use the url_fetch_fetch tool with mode \"metadata\" to retrieve the page title before adding the item. If the fetch fails or returns no title, derive a title from the URL or ask the user what they'd like to call it.\n\nWhen displaying multiple items (from a list or search results), format them as a markdown table with minimal relevant columns (e.g., title and URL, or title and notes). Keep it concise.",
       "toolAllowlist": [
         "lists_*",
-        "url_fetch_fetch"
+        "url_fetch_fetch",
+        "web_search"
       ]
     },
     {
@@ -293,7 +294,8 @@
   "voice": {
     "realtime": {
       "toolAllowlist": [
-        "lists_*"
+        "lists_*",
+        "web_search"
       ]
     }
   }

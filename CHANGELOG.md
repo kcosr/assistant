@@ -8,6 +8,8 @@
 
 ### Added
 
+- Added Realtime speakerphone preference (default on) so duplex voice uses the phone loudspeaker when no Bluetooth headset is connected, instead of the quiet earpiece. ([#114](https://github.com/kcosr/assistant/pull/114))
+- Added built-in `web_search` tool that runs local Grok CLI headless research (live web and public X) with optional `continue` resume, for text agents and Realtime allowlists. ([#114](https://github.com/kcosr/assistant/pull/114))
 - Added Android Realtime voice end-to-end: server `/api/voice/*` (conversation/session, OpenAI SDP negotiate, sideband lists tools, events), Android WebRTC Realtime client with exclusive-owner preemption, wake lock, start/stop/mute plugin APIs, config tool allowlist/denylist globs, `realtime_end_session` hangup, headset media-button start/stop, and web settings/FAB controls. Uses server-side `OPENAI_API_KEY` only. ([#113](https://github.com/kcosr/assistant/pull/113))
 - Added Android native voice foundations for exclusive Thread vs Realtime ownership: generation-fenced controller helpers, shared audio router (focus/mode/SCO), Thread queue stop/clear/pause-admission hooks, and a `voiceRuntimeMode` preference. ([#113](https://github.com/kcosr/assistant/pull/113))
 - Wait for the agent-voice-adapter client identity before starting direct TTS playback from the Android voice queue, and drain the queue once the identity arrives. ([#113](https://github.com/kcosr/assistant/pull/113))
@@ -46,6 +48,8 @@
 
 ### Fixed
 
+- Fixed Thread voice getting stuck on connecting after Realtime by recovering a stale Realtime owner fence so adapter/assistant sockets can return to idle.
+- Fixed Realtime speakerphone so A2DP-only Bluetooth devices no longer suppress loudspeaker (only SCO/BLE headsets trigger SCO routing), and force the built-in speaker via `setCommunicationDevice` on API 31+ so media-only BT speakers do not leave voice on the quiet earpiece.
 - Fixed Android Realtime ownership and lease lifecycle: Thread path no longer stomps Realtime runtime state, Realtime callbacks are generation-fenced, WebRTC release completes dispose/server close, server reaps live sessions after missed heartbeats, hangup uses a success close token, and the Realtime wake lock is not capped at one hour. ([#113](https://github.com/kcosr/assistant/pull/113))
 - Fixed the Lists header pinned tag chip to show only the pin icon while preserving accessible labeling. ([#112](https://github.com/kcosr/assistant/pull/112))
 - Fixed Electron desktop HTML links and time-tracker XLSX export clicks so they open in the system browser/download path instead of being captured inside the Electron webview. ([#108](https://github.com/kcosr/assistant/pull/108))

@@ -624,6 +624,11 @@ public final class AssistantVoiceRuntimeService extends Service {
             stopRealtimeCall("config_runtime_mode");
         }
 
+        // Thread mode must not keep a stale Realtime owner fence (blocks IDLE after sockets connect).
+        if (!AssistantVoiceControllerPolicy.isRealtimeRuntimeMode(updated.voiceRuntimeMode)) {
+            recoverStaleRealtimeOwnerIfNeeded("config_thread_mode");
+        }
+
         if (!updated.isEnabled()) {
             clearQueuedVoiceItems();
             stopCurrentInteraction(false, "voice_mode_disabled");
@@ -872,20 +877,30 @@ public final class AssistantVoiceRuntimeService extends Service {
     }
 
     /**
-     * While Realtime is the exclusive owner, only Realtime/error/disabled states may be applied.
-     * Thread socket reconnect handlers must not force IDLE/CONNECTING mid-call.
+     * While a Realtime call is live, Thread socket handlers must not force IDLE/CONNECTING.
+     * If {@code liveOwner} is stale REALTIME but UI is already a Thread state, allow recovery
+     * so Thread mode is not stuck on "connecting" forever.
      */
     static boolean shouldAcceptStateUpdateWhileRealtimeOwner(
         boolean realtimeOwnerActive,
+        String currentState,
         String nextState
     ) {
         if (!realtimeOwnerActive) {
             return true;
         }
-        String normalized = trim(nextState);
-        return isRealtimeActiveState(normalized)
-            || STATE_ERROR.equals(normalized)
-            || STATE_DISABLED.equals(normalized);
+        String next = trim(nextState);
+        if (isRealtimeActiveState(next)
+            || STATE_ERROR.equals(next)
+            || STATE_DISABLED.equals(next)) {
+            return true;
+        }
+        // Stale owner (not actually in a Realtime UI state): allow Thread recovery transitions.
+        if (!isRealtimeActiveState(currentState)) {
+            return true;
+        }
+        // Live Realtime call: reject Thread idle/connecting/speaking/listening stomps.
+        return false;
     }
 
     /** @deprecated Prefer {@link #hasActiveRealtimeInteraction(String, String)}. */
@@ -1291,9 +1306,38 @@ public final class AssistantVoiceRuntimeService extends Service {
             && expectedDescription.equals(channel.getDescription());
     }
 
+    /**
+     * If liveOwner is still Realtime but we are not in a Realtime call UI state (or preference is
+     * Thread), clear the owner fence so Thread sockets can reach IDLE again.
+     */
+    private void recoverStaleRealtimeOwnerIfNeeded(String reason) {
+        if (!AssistantVoiceControllerPolicy.OWNER_REALTIME.equals(liveOwner)) {
+            return;
+        }
+        if (isRealtimeActiveState(runtimeState)
+            && AssistantVoiceControllerPolicy.isRealtimeRuntimeMode(
+                config == null ? "" : config.voiceRuntimeMode
+            )) {
+            return;
+        }
+        Log.w(TAG, "recoverStaleRealtimeOwner reason=" + safe(reason) + " state=" + runtimeState);
+        if (realtimeClient != null && isRealtimeActiveState(runtimeState)) {
+            realtimeClient.stop(reason, false);
+        }
+        releaseRealtimeWakeLock();
+        stopRealtimeOwner(reason, true);
+        if (threadAdmissionPaused) {
+            resumeThreadAdmission();
+        }
+    }
+
     private void connectAdapterSocketIfNeeded() {
         if (destroyed || !config.isEnabled() || adapterSocket != null) {
             return;
+        }
+        if (config != null
+            && !AssistantVoiceControllerPolicy.isRealtimeRuntimeMode(config.voiceRuntimeMode)) {
+            recoverStaleRealtimeOwnerIfNeeded("adapter_connect");
         }
         mainHandler.removeCallbacks(reconnectRunnable);
         updateState(hasActiveInteraction() ? runtimeState : STATE_CONNECTING, null);
@@ -1372,6 +1416,10 @@ public final class AssistantVoiceRuntimeService extends Service {
     private void connectAssistantSocketIfNeeded() {
         if (destroyed || !config.isEnabled() || assistantSocket != null) {
             return;
+        }
+        if (config != null
+            && !AssistantVoiceControllerPolicy.isRealtimeRuntimeMode(config.voiceRuntimeMode)) {
+            recoverStaleRealtimeOwnerIfNeeded("assistant_connect");
         }
 
         mainHandler.removeCallbacks(assistantReconnectRunnable);
@@ -2146,13 +2194,16 @@ public final class AssistantVoiceRuntimeService extends Service {
         prepareRealtimeOwnerPreempt(reason);
         realtimeMuted = config.realtimeMuteOnStart;
         updateState(STATE_REALTIME_CONNECTING, null);
+        // Speakerphone preference is applied inside RealtimeClient via the audio router
+        // (call mode defaults to quiet earpiece without it).
         realtimeClient.start(
             config.assistantBaseUrl,
             config.realtimeConversationId,
             config.realtimeListsInstanceId,
             config.realtimeMuteOnStart,
             controllerGeneration,
-            audioRouter
+            audioRouter,
+            config.realtimeSpeakerphone
         );
     }
 
@@ -3804,10 +3855,11 @@ public final class AssistantVoiceRuntimeService extends Service {
         if (normalizedState.isEmpty()) {
             normalizedState = STATE_DISABLED;
         }
-        // While Realtime owns media, ignore Thread-path idle/connecting/speaking/listening
+        // While a Realtime call is live, ignore Thread-path idle/connecting/speaking/listening
         // stomps from adapter/assistant socket lifecycle (reconnects during a live call).
         if (!shouldAcceptStateUpdateWhileRealtimeOwner(
             AssistantVoiceControllerPolicy.OWNER_REALTIME.equals(liveOwner),
+            previousState,
             normalizedState
         )) {
             Log.d(
@@ -3816,6 +3868,8 @@ public final class AssistantVoiceRuntimeService extends Service {
                     + previousState
                     + " next="
                     + normalizedState
+                    + " liveOwner="
+                    + liveOwner
             );
             return;
         }

@@ -86,6 +86,43 @@ Realtime duplex voice reuses the same server-side OpenAI credential as TTS/chat:
 
 Capability probe: `GET /api/voice/capabilities` reports `agentRealtime.status` as `ready` or `not-configured`.
 
+#### Realtime tool allowlist (`config.json`)
+
+Realtime tool exposure is **explicit opt-in**. Configure under `voice.realtime`:
+
+```json
+{
+  "voice": {
+    "realtime": {
+      "toolAllowlist": ["lists_*", "web_search"],
+      "toolDenylist": []
+    }
+  }
+}
+```
+
+| Field | Description |
+| --- | --- |
+| `toolAllowlist` | Glob patterns for tool names available on Realtime sessions. Missing or empty ⇒ **no** host tools (hangup may still be built-in). |
+| `toolDenylist` | Optional globs removed after allowlist matching. |
+| `instructions` | Optional system-instruction override for the Realtime model. |
+
+Text agents use per-agent `toolAllowlist` / `toolDenylist` independently of this block.
+
+#### Built-in `web_search` tool
+
+`web_search` is a **built-in** tool (not a plugin). It runs the local Grok CLI headless for live public web and X research.
+
+| Item | Detail |
+| --- | --- |
+| Parameters | `query` (required natural-language question), `continue` (optional bool to resume prior Grok session for this conversation) |
+| Enable for text agents | Add `web_search` to the agent’s `toolAllowlist` |
+| Enable for Realtime | Add `web_search` to `voice.realtime.toolAllowlist` |
+| Host prerequisites | `grok` on `PATH` (or `ASSISTANT_GROK_BIN`); Grok auth (`~/.grok/auth.json` and/or `XAI_API_KEY`); do not lock off `bypassPermissions` in Grok requirements; avoid untrusted Grok MCP servers for the service user |
+| Not the same as | Plugin `search_*` tools (in-app notes/lists search) |
+
+Design: `docs/design/web-search-tool.md`.
+
 ### ElevenLabs TTS
 
 Used when `TTS_BACKEND=elevenlabs`.

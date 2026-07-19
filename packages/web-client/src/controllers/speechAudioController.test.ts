@@ -112,6 +112,7 @@ function createInitialVoiceSettings(overrides?: Partial<VoiceSettings>): VoiceSe
     voiceRuntimeMode: 'thread',
     realtimeConversationId: '',
     realtimeMuteOnStart: false,
+    realtimeSpeakerphone: true,
     realtimeListsInstanceId: 'default',
     audioMode: 'off',
     autoListenEnabled: false,

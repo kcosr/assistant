@@ -211,6 +211,7 @@ public final class AssistantVoiceConfigTest {
             false,
             "",
             false,
+            true,
             AssistantVoiceConfig.DEFAULT_REALTIME_LISTS_INSTANCE_ID
         );
     }
@@ -319,6 +320,7 @@ public final class AssistantVoiceConfigTest {
             false,
             "",
             false,
+            true,
             AssistantVoiceConfig.DEFAULT_REALTIME_LISTS_INSTANCE_ID
         );
     }

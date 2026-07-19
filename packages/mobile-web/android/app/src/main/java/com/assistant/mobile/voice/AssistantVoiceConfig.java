@@ -43,6 +43,8 @@ final class AssistantVoiceConfig {
     static final boolean DEFAULT_STANDALONE_NOTIFICATION_PLAYBACK_ENABLED = true;
     static final boolean DEFAULT_NOTIFICATION_TITLE_PLAYBACK_ENABLED = false;
     static final boolean DEFAULT_REALTIME_MUTE_ON_START = false;
+    /** Prefer loudspeaker for Realtime when no BT headset (avoids quiet earpiece). */
+    static final boolean DEFAULT_REALTIME_SPEAKERPHONE = true;
     static final String DEFAULT_REALTIME_LISTS_INSTANCE_ID = "default";
 
     private static final String PREFS_NAME = "assistant_voice_runtime";
@@ -75,6 +77,7 @@ final class AssistantVoiceConfig {
         "notification_title_playback_enabled";
     private static final String KEY_REALTIME_CONVERSATION_ID = "realtime_conversation_id";
     private static final String KEY_REALTIME_MUTE_ON_START = "realtime_mute_on_start";
+    private static final String KEY_REALTIME_SPEAKERPHONE = "realtime_speakerphone";
     private static final String KEY_REALTIME_LISTS_INSTANCE_ID = "realtime_lists_instance_id";
     private static final String KEY_RUNTIME_STATE = "runtime_state";
     private static final String KEY_RUNTIME_ERROR = "runtime_error";
@@ -109,6 +112,7 @@ final class AssistantVoiceConfig {
         "notificationTitlePlaybackEnabled";
     static final String EXTRA_REALTIME_CONVERSATION_ID = "realtimeConversationId";
     static final String EXTRA_REALTIME_MUTE_ON_START = "realtimeMuteOnStart";
+    static final String EXTRA_REALTIME_SPEAKERPHONE = "realtimeSpeakerphone";
     static final String EXTRA_REALTIME_LISTS_INSTANCE_ID = "realtimeListsInstanceId";
 
     final String audioMode;
@@ -138,6 +142,7 @@ final class AssistantVoiceConfig {
     final boolean notificationTitlePlaybackEnabled;
     final String realtimeConversationId;
     final boolean realtimeMuteOnStart;
+    final boolean realtimeSpeakerphone;
     final String realtimeListsInstanceId;
 
     AssistantVoiceConfig(
@@ -168,6 +173,7 @@ final class AssistantVoiceConfig {
         boolean notificationTitlePlaybackEnabled,
         String realtimeConversationId,
         boolean realtimeMuteOnStart,
+        boolean realtimeSpeakerphone,
         String realtimeListsInstanceId
     ) {
         this.audioMode = normalizeAudioMode(audioMode);
@@ -218,6 +224,7 @@ final class AssistantVoiceConfig {
         this.notificationTitlePlaybackEnabled = notificationTitlePlaybackEnabled;
         this.realtimeConversationId = normalizeOptional(realtimeConversationId);
         this.realtimeMuteOnStart = realtimeMuteOnStart;
+        this.realtimeSpeakerphone = realtimeSpeakerphone;
         String listsInstance = normalizeOptional(realtimeListsInstanceId);
         this.realtimeListsInstanceId = listsInstance.isEmpty()
             ? DEFAULT_REALTIME_LISTS_INSTANCE_ID
@@ -266,6 +273,7 @@ final class AssistantVoiceConfig {
             ),
             prefs.getString(KEY_REALTIME_CONVERSATION_ID, null),
             prefs.getBoolean(KEY_REALTIME_MUTE_ON_START, DEFAULT_REALTIME_MUTE_ON_START),
+            prefs.getBoolean(KEY_REALTIME_SPEAKERPHONE, DEFAULT_REALTIME_SPEAKERPHONE),
             prefs.getString(KEY_REALTIME_LISTS_INSTANCE_ID, DEFAULT_REALTIME_LISTS_INSTANCE_ID)
         );
     }
@@ -309,6 +317,7 @@ final class AssistantVoiceConfig {
             )
             .putString(KEY_REALTIME_CONVERSATION_ID, config.realtimeConversationId)
             .putBoolean(KEY_REALTIME_MUTE_ON_START, config.realtimeMuteOnStart)
+            .putBoolean(KEY_REALTIME_SPEAKERPHONE, config.realtimeSpeakerphone)
             .putString(KEY_REALTIME_LISTS_INSTANCE_ID, config.realtimeListsInstanceId)
             .apply();
     }
@@ -394,6 +403,7 @@ final class AssistantVoiceConfig {
                 ? intent.getStringExtra(EXTRA_REALTIME_CONVERSATION_ID)
                 : fallback.realtimeConversationId,
             intent.getBooleanExtra(EXTRA_REALTIME_MUTE_ON_START, fallback.realtimeMuteOnStart),
+            intent.getBooleanExtra(EXTRA_REALTIME_SPEAKERPHONE, fallback.realtimeSpeakerphone),
             intent.hasExtra(EXTRA_REALTIME_LISTS_INSTANCE_ID)
                 ? intent.getStringExtra(EXTRA_REALTIME_LISTS_INSTANCE_ID)
                 : fallback.realtimeListsInstanceId
@@ -433,6 +443,7 @@ final class AssistantVoiceConfig {
         );
         intent.putExtra(EXTRA_REALTIME_CONVERSATION_ID, emptyToNull(realtimeConversationId));
         intent.putExtra(EXTRA_REALTIME_MUTE_ON_START, realtimeMuteOnStart);
+        intent.putExtra(EXTRA_REALTIME_SPEAKERPHONE, realtimeSpeakerphone);
         intent.putExtra(EXTRA_REALTIME_LISTS_INSTANCE_ID, emptyToNull(realtimeListsInstanceId));
         return intent;
     }
@@ -612,6 +623,8 @@ final class AssistantVoiceConfig {
 
             realtimeMuteOnStart,
 
+            realtimeSpeakerphone,
+
             realtimeListsInstanceId
         );
     }
@@ -647,6 +660,8 @@ final class AssistantVoiceConfig {
             realtimeConversationId,
 
             realtimeMuteOnStart,
+
+            realtimeSpeakerphone,
 
             realtimeListsInstanceId
         );
@@ -688,6 +703,7 @@ final class AssistantVoiceConfig {
             && notificationTitlePlaybackEnabled == config.notificationTitlePlaybackEnabled
             && Objects.equals(realtimeConversationId, config.realtimeConversationId)
             && realtimeMuteOnStart == config.realtimeMuteOnStart
+            && realtimeSpeakerphone == config.realtimeSpeakerphone
             && Objects.equals(realtimeListsInstanceId, config.realtimeListsInstanceId);
     }
 
@@ -723,6 +739,8 @@ final class AssistantVoiceConfig {
             realtimeConversationId,
 
             realtimeMuteOnStart,
+
+            realtimeSpeakerphone,
 
             realtimeListsInstanceId
         );
@@ -769,6 +787,7 @@ final class AssistantVoiceConfig {
             ),
             settings.optString("realtimeConversationId", realtimeConversationId),
             settings.optBoolean("realtimeMuteOnStart", realtimeMuteOnStart),
+            settings.optBoolean("realtimeSpeakerphone", realtimeSpeakerphone),
             settings.optString("realtimeListsInstanceId", realtimeListsInstanceId)
         );
     }
@@ -804,6 +823,8 @@ final class AssistantVoiceConfig {
             realtimeConversationId,
 
             realtimeMuteOnStart,
+
+            realtimeSpeakerphone,
 
             realtimeListsInstanceId
         );
@@ -841,6 +862,8 @@ final class AssistantVoiceConfig {
 
             realtimeMuteOnStart,
 
+            realtimeSpeakerphone,
+
             realtimeListsInstanceId
         );
     }
@@ -876,6 +899,8 @@ final class AssistantVoiceConfig {
             realtimeConversationId,
 
             realtimeMuteOnStart,
+
+            realtimeSpeakerphone,
 
             realtimeListsInstanceId
         );
@@ -913,6 +938,8 @@ final class AssistantVoiceConfig {
 
             realtimeMuteOnStart,
 
+            realtimeSpeakerphone,
+
             realtimeListsInstanceId
         );
     }
@@ -949,6 +976,8 @@ final class AssistantVoiceConfig {
 
             realtimeMuteOnStart,
 
+            realtimeSpeakerphone,
+
             realtimeListsInstanceId
         );
     }
@@ -984,6 +1013,8 @@ final class AssistantVoiceConfig {
             realtimeConversationId,
 
             realtimeMuteOnStart,
+
+            realtimeSpeakerphone,
 
             realtimeListsInstanceId
         );

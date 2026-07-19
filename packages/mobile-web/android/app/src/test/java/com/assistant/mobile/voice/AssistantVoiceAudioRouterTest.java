@@ -55,6 +55,32 @@ public final class AssistantVoiceAudioRouterTest {
 
         assertEquals(AssistantVoiceAudioRouter.FocusKind.NONE, router.focusKind());
         assertFalse(router.isCommunicationModeActive());
+        assertFalse(router.isSpeakerphoneEnabled());
         assertEquals(0L, router.activeOwnerGeneration());
+    }
+
+    @Test
+    public void preferSpeakerphoneEnablesLoudspeakerWhenNoScoHeadset() {
+        AssistantVoiceAudioRouter router =
+            new AssistantVoiceAudioRouter(RuntimeEnvironment.getApplication());
+
+        router.enterCommunicationMode(5L, true);
+        assertTrue(router.isCommunicationModeActive());
+        // No BT SCO/BLE headset in Robolectric defaults → speakerphone preference applies.
+        assertTrue(router.isSpeakerphoneEnabled());
+
+        router.leaveCommunicationMode(5L);
+        assertFalse(router.isCommunicationModeActive());
+        assertFalse(router.isSpeakerphoneEnabled());
+    }
+
+    @Test
+    public void preferSpeakerphoneFalseLeavesSpeakerphoneOff() {
+        AssistantVoiceAudioRouter router =
+            new AssistantVoiceAudioRouter(RuntimeEnvironment.getApplication());
+
+        router.enterCommunicationMode(5L, false);
+        assertTrue(router.isCommunicationModeActive());
+        assertFalse(router.isSpeakerphoneEnabled());
     }
 }

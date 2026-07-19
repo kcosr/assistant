@@ -4051,10 +4051,15 @@ async function main(): Promise<void> {
     const realtimeMuteOnStartCheckbox = document.getElementById(
       'realtime-mute-on-start-checkbox',
     ) as HTMLInputElement | null;
+    const realtimeSpeakerphoneCheckbox = document.getElementById(
+      'realtime-speakerphone-checkbox',
+    ) as HTMLInputElement | null;
     const nextSettings = normalizeVoiceSettings({
       ...currentSettings,
       voiceRuntimeMode: voiceRuntimeModeSelectEl.value,
       realtimeMuteOnStart: realtimeMuteOnStartCheckbox?.checked ?? currentSettings.realtimeMuteOnStart,
+      realtimeSpeakerphone:
+        realtimeSpeakerphoneCheckbox?.checked ?? currentSettings.realtimeSpeakerphone,
       audioMode: audioModeSelectEl.value,
       autoListenEnabled: autoListenCheckboxEl.checked,
       standaloneNotificationPlaybackEnabled: standaloneNotificationPlaybackCheckboxEl.checked,
@@ -4093,6 +4098,9 @@ async function main(): Promise<void> {
   const realtimeMuteOnStartCheckboxEl = document.getElementById(
     'realtime-mute-on-start-checkbox',
   ) as HTMLInputElement | null;
+  const realtimeSpeakerphoneCheckboxEl = document.getElementById(
+    'realtime-speakerphone-checkbox',
+  ) as HTMLInputElement | null;
   const realtimeStartButtonEl = document.getElementById(
     'realtime-start-button',
   ) as HTMLButtonElement | null;
@@ -4120,6 +4128,7 @@ async function main(): Promise<void> {
   [
     voiceRuntimeModeSelectEl,
     realtimeMuteOnStartCheckboxEl,
+    realtimeSpeakerphoneCheckboxEl,
     audioModeSelectEl,
     autoListenCheckboxEl,
     standaloneNotificationPlaybackCheckboxEl,
@@ -4169,6 +4178,9 @@ async function main(): Promise<void> {
     voiceRuntimeModeSelectEl.value = settings.voiceRuntimeMode;
     if (realtimeMuteOnStartCheckboxEl) {
       realtimeMuteOnStartCheckboxEl.checked = settings.realtimeMuteOnStart;
+    }
+    if (realtimeSpeakerphoneCheckboxEl) {
+      realtimeSpeakerphoneCheckboxEl.checked = settings.realtimeSpeakerphone;
     }
     syncRealtimeControlsVisibility();
     audioModeSelectEl.value = settings.audioMode;
