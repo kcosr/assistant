@@ -129,15 +129,17 @@ Same tool and schema. Host may apply **different timeouts / max-turns** based on
 
 | | Realtime | Text agent |
 |--|----------|--------------|
-| Process timeout | **≤20s** (default 18s) | ~90–120s |
-| `--max-turns` | Low (e.g. 6) | Higher (e.g. 12–16) |
+| Process timeout | **Same as text** (~100s) | ~100s |
+| `--max-turns` | Low (e.g. 6) for shorter research loops | Higher (e.g. 12–16) |
 | Optional `--rules` brevity | Spoken 1–3 sentences default | Slightly longer OK |
+
+Realtime tool execution does **not** block spoken conversation (sideband tool calls can complete while the user continues talking), so a short Realtime-only wall-clock cap is unnecessary.
 
 Detection (v1): there is no `isRealtime` on `ToolContext` today. Use a **shared constant** for the Realtime session key prefix (`voice:`), exported from the voice module (or a tiny shared constant used by both `VoiceService` and the web_search handler). Unit-test both timeout branches. Optionally add an explicit `ToolContext` field later; do not invent parallel detection schemes.
 
 Realtime `ToolContext` may omit `toolCallId` / `requestId` / `turnId`; the handler must not require them.
 
-**Latency UX:** Realtime `executeToolCall` awaits the tool before continuing speech. Cap Realtime hard at ≤20s so the provider is less likely to desync. The calling model (not this tool) may say a short filler before the tool call; the tool itself returns a short speakable error on timeout (e.g. “Research timed out”). No streaming bridge in v1.
+**Latency UX:** Realtime can keep conversing while a tool runs; use the same process timeout as text. The tool still returns a short speakable error on timeout (e.g. “Research timed out”). No streaming bridge in v1.
 
 Do **not** add a `mode` parameter for the calling agent in v1.
 
@@ -312,7 +314,7 @@ Under `## [Unreleased]` → `### Added`:
 6. `continue: true` with no prior session returns a clear error.
 7. Tool description instructs natural-language questions; implementation does not invent multi-tool surface for web vs X.
 8. Subprocess uses argv-array spawn with `shell: false`; model-controlled `query` is never shell-interpolated.
-9. Realtime path uses ≤20s timeout and speakable timeout errors.
+9. Realtime path uses the same process timeout as text and speakable timeout errors.
 10. Unit tests cover the above with mocked Grok; optional live web/X when env flag set.
 11. Running config prepared for `assistant` + Realtime; no deploy/restart required for merge readiness.
 12. No naming collision with `search_*` in-app search plugin.
@@ -338,7 +340,7 @@ Under `## [Unreleased]` → `### Added`:
 | Enablement? | **Allowlists only** |
 | Strict `--tools` web-only? | **No** — omit `--tools`; denylist dangerous tools so X remains available |
 | Spawn? | **argv-array, `shell: false` only** |
-| Realtime timeout? | **≤20s** |
+| Realtime timeout? | **Same as text (~100s)** — tools do not block spoken turns |
 | Permission mode? | **`bypassPermissions` + denylist** (required for headless web_fetch/X) |
 | MCP? | **Deny MCP tools if supported; require trusted host Grok MCP config** |
 

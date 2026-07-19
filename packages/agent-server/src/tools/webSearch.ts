@@ -25,8 +25,10 @@ export const GROK_WEB_SEARCH_DISALLOWED_TOOLS = [
   'reference_to_video',
 ].join(',');
 
-const REALTIME_TIMEOUT_MS = 18_000;
+// Realtime does not block spoken turns while tools run, so use the same wall-clock
+// budget as text agents. (Earlier design assumed synchronous dead air; that was wrong.)
 const TEXT_TIMEOUT_MS = 100_000;
+const REALTIME_TIMEOUT_MS = TEXT_TIMEOUT_MS;
 const REALTIME_MAX_TURNS = 6;
 const TEXT_MAX_TURNS = 14;
 

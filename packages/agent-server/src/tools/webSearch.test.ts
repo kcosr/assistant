@@ -149,7 +149,7 @@ describe('executeWebSearch', () => {
       };
     });
     await executeWebSearch({ query: 'ping' }, makeCtx('voice:conv-1'));
-    expect(timeoutMs).toBe(18_000);
+    expect(timeoutMs).toBe(100_000);
     const mt = args.indexOf('--max-turns');
     expect(args[mt + 1]).toBe('6');
   });
