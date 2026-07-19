@@ -49,7 +49,7 @@
 ### Fixed
 
 - Fixed Thread voice getting stuck on connecting after Realtime by recovering a stale Realtime owner fence so adapter/assistant sockets can return to idle.
-- Fixed Realtime speakerphone so A2DP-only Bluetooth devices no longer suppress loudspeaker (only SCO/BLE headsets trigger SCO routing).
+- Fixed Realtime speakerphone so A2DP-only Bluetooth devices no longer suppress loudspeaker (only SCO/BLE headsets trigger SCO routing), and force the built-in speaker via `setCommunicationDevice` on API 31+ so media-only BT speakers do not leave voice on the quiet earpiece.
 - Fixed Android Realtime ownership and lease lifecycle: Thread path no longer stomps Realtime runtime state, Realtime callbacks are generation-fenced, WebRTC release completes dispose/server close, server reaps live sessions after missed heartbeats, hangup uses a success close token, and the Realtime wake lock is not capped at one hour. ([#113](https://github.com/kcosr/assistant/pull/113))
 - Fixed the Lists header pinned tag chip to show only the pin icon while preserving accessible labeling. ([#112](https://github.com/kcosr/assistant/pull/112))
 - Fixed Electron desktop HTML links and time-tracker XLSX export clicks so they open in the system browser/download path instead of being captured inside the Electron webview. ([#108](https://github.com/kcosr/assistant/pull/108))

@@ -182,11 +182,19 @@ final class AssistantVoiceAudioRouter {
                 audioManager.setMode(AudioManager.MODE_IN_COMMUNICATION);
                 boolean useSco = shouldStartBluetoothScoLocked();
                 if (useSco) {
+                    Log.d(TAG, "enterCommunicationMode route=sco gen=" + ownerGeneration);
                     audioManager.setBluetoothScoOn(true);
                     audioManager.startBluetoothSco();
                     scoStarted = true;
                     applySpeakerphoneLocked(false);
                 } else {
+                    Log.d(
+                        TAG,
+                        "enterCommunicationMode route=speakerphone prefer="
+                            + preferSpeakerphone
+                            + " gen="
+                            + ownerGeneration
+                    );
                     scoStarted = false;
                     applySpeakerphoneLocked(preferSpeakerphone);
                 }
@@ -228,11 +236,59 @@ final class AssistantVoiceAudioRouter {
             return;
         }
         try {
-            audioManager.setSpeakerphoneOn(enabled);
+            // Prefer setCommunicationDevice(BUILTIN_SPEAKER) on API 31+: setSpeakerphoneOn is
+            // deprecated and can lose to an A2DP media route while still leaving voice quiet.
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                if (enabled) {
+                    android.media.AudioDeviceInfo speaker = findBuiltinSpeakerLocked();
+                    if (speaker != null) {
+                        boolean ok = audioManager.setCommunicationDevice(speaker);
+                        if (!ok) {
+                            Log.w(TAG, "setCommunicationDevice(BUILTIN_SPEAKER) returned false");
+                        }
+                    } else {
+                        Log.w(TAG, "no BUILTIN_SPEAKER for communication; falling back");
+                    }
+                    // Keep legacy flag in sync for OEM paths that still honor it.
+                    audioManager.setSpeakerphoneOn(true);
+                } else {
+                    audioManager.clearCommunicationDevice();
+                    audioManager.setSpeakerphoneOn(false);
+                }
+            } else {
+                audioManager.setSpeakerphoneOn(enabled);
+            }
             speakerphoneEnabled = enabled;
         } catch (Exception error) {
             Log.w(TAG, "failed to set speakerphone=" + enabled, error);
         }
+    }
+
+    private android.media.AudioDeviceInfo findBuiltinSpeakerLocked() {
+        if (audioManager == null || Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
+            return null;
+        }
+        try {
+            for (android.media.AudioDeviceInfo device
+                : audioManager.getAvailableCommunicationDevices()) {
+                if (device.getType() == android.media.AudioDeviceInfo.TYPE_BUILTIN_SPEAKER) {
+                    return device;
+                }
+            }
+        } catch (Exception error) {
+            Log.w(TAG, "failed to list available communication devices", error);
+        }
+        try {
+            for (android.media.AudioDeviceInfo device
+                : audioManager.getDevices(AudioManager.GET_DEVICES_OUTPUTS)) {
+                if (device.getType() == android.media.AudioDeviceInfo.TYPE_BUILTIN_SPEAKER) {
+                    return device;
+                }
+            }
+        } catch (Exception error) {
+            Log.w(TAG, "failed to list output devices for builtin speaker", error);
+        }
+        return null;
     }
 
     void leaveCommunicationMode(long ownerGeneration) {
@@ -401,6 +457,13 @@ final class AssistantVoiceAudioRouter {
                 audioManager.setBluetoothScoOn(false);
             }
             if (speakerphoneEnabled) {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                    try {
+                        audioManager.clearCommunicationDevice();
+                    } catch (Exception clearError) {
+                        Log.w(TAG, "clearCommunicationDevice failed", clearError);
+                    }
+                }
                 audioManager.setSpeakerphoneOn(false);
             }
             audioManager.setMode(AudioManager.MODE_NORMAL);
