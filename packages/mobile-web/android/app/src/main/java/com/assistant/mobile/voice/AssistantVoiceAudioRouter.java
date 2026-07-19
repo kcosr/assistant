@@ -41,6 +41,7 @@ final class AssistantVoiceAudioRouter {
     private FocusKind focusKind = FocusKind.NONE;
     private boolean communicationModeActive = false;
     private boolean scoStarted = false;
+    private boolean speakerphoneEnabled = false;
     private AudioFocusRequest playbackFocusRequest;
     private AudioFocusRequest captureFocusRequest;
     private AudioFocusRequest realtimeFocusRequest;
@@ -151,23 +152,76 @@ final class AssistantVoiceAudioRouter {
     }
 
     void enterCommunicationMode(long ownerGeneration) {
+        enterCommunicationMode(ownerGeneration, false);
+    }
+
+    /**
+     * @param preferSpeakerphone when true and no Bluetooth SCO headset is in use, force
+     *     speakerphone so Realtime is audible at arm's length (not quiet earpiece).
+     */
+    void enterCommunicationMode(long ownerGeneration, boolean preferSpeakerphone) {
         synchronized (lock) {
             if (ownerGeneration != 0L) {
                 activeOwnerGeneration = ownerGeneration;
             }
-            if (audioManager == null || communicationModeActive) {
-                communicationModeActive = audioManager != null || communicationModeActive;
+            if (audioManager == null) {
+                return;
+            }
+            if (communicationModeActive) {
+                applySpeakerphoneLocked(preferSpeakerphone);
                 return;
             }
             try {
                 audioManager.setMode(AudioManager.MODE_IN_COMMUNICATION);
-                audioManager.setBluetoothScoOn(true);
-                audioManager.startBluetoothSco();
-                scoStarted = true;
+                boolean useSco = shouldStartBluetoothScoLocked();
+                if (useSco) {
+                    audioManager.setBluetoothScoOn(true);
+                    audioManager.startBluetoothSco();
+                    scoStarted = true;
+                    applySpeakerphoneLocked(false);
+                } else {
+                    scoStarted = false;
+                    applySpeakerphoneLocked(preferSpeakerphone);
+                }
                 communicationModeActive = true;
             } catch (Exception error) {
                 Log.w(TAG, "failed to enter communication mode", error);
             }
+        }
+    }
+
+    private boolean shouldStartBluetoothScoLocked() {
+        if (audioManager == null) {
+            return false;
+        }
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {
+            return false;
+        }
+        try {
+            for (android.media.AudioDeviceInfo device
+                : audioManager.getDevices(AudioManager.GET_DEVICES_OUTPUTS)) {
+                int type = device.getType();
+                if (type == android.media.AudioDeviceInfo.TYPE_BLUETOOTH_SCO
+                    || type == android.media.AudioDeviceInfo.TYPE_BLE_HEADSET
+                    || type == android.media.AudioDeviceInfo.TYPE_BLUETOOTH_A2DP) {
+                    return true;
+                }
+            }
+        } catch (Exception error) {
+            Log.w(TAG, "failed to inspect audio devices for SCO", error);
+        }
+        return false;
+    }
+
+    private void applySpeakerphoneLocked(boolean enabled) {
+        if (audioManager == null) {
+            return;
+        }
+        try {
+            audioManager.setSpeakerphoneOn(enabled);
+            speakerphoneEnabled = enabled;
+        } catch (Exception error) {
+            Log.w(TAG, "failed to set speakerphone=" + enabled, error);
         }
     }
 
@@ -325,9 +379,10 @@ final class AssistantVoiceAudioRouter {
         if (audioManager == null) {
             communicationModeActive = false;
             scoStarted = false;
+            speakerphoneEnabled = false;
             return;
         }
-        if (!communicationModeActive && !scoStarted) {
+        if (!communicationModeActive && !scoStarted && !speakerphoneEnabled) {
             return;
         }
         try {
@@ -335,11 +390,15 @@ final class AssistantVoiceAudioRouter {
                 audioManager.stopBluetoothSco();
                 audioManager.setBluetoothScoOn(false);
             }
+            if (speakerphoneEnabled) {
+                audioManager.setSpeakerphoneOn(false);
+            }
             audioManager.setMode(AudioManager.MODE_NORMAL);
         } catch (Exception error) {
             Log.w(TAG, "failed to leave communication mode", error);
         }
         scoStarted = false;
+        speakerphoneEnabled = false;
         communicationModeActive = false;
     }
 }

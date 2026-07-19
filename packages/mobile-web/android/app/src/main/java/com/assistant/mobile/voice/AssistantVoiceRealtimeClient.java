@@ -94,6 +94,26 @@ final class AssistantVoiceRealtimeClient {
         long ownerGeneration,
         AssistantVoiceAudioRouter audioRouter
     ) {
+        start(
+            assistantBaseUrl,
+            conversationId,
+            listsInstanceId,
+            muteOnStart,
+            ownerGeneration,
+            audioRouter,
+            false
+        );
+    }
+
+    void start(
+        String assistantBaseUrl,
+        String conversationId,
+        String listsInstanceId,
+        boolean muteOnStart,
+        long ownerGeneration,
+        AssistantVoiceAudioRouter audioRouter,
+        boolean preferSpeakerphone
+    ) {
         executor.execute(() -> {
             try {
                 // Previous stop() leaves terminal=true and may leave WebRTC resources half-torn.
@@ -110,7 +130,8 @@ final class AssistantVoiceRealtimeClient {
                     listsInstanceId,
                     muteOnStart,
                     ownerGeneration,
-                    audioRouter
+                    audioRouter,
+                    preferSpeakerphone
                 );
             } catch (Exception error) {
                 Log.w(TAG, "realtime start failed", error);
@@ -184,7 +205,8 @@ final class AssistantVoiceRealtimeClient {
         String listsInstanceId,
         boolean muteOnStart,
         long ownerGeneration,
-        AssistantVoiceAudioRouter audioRouter
+        AssistantVoiceAudioRouter audioRouter,
+        boolean preferSpeakerphone
     ) throws Exception {
         if (terminal.get()) {
             // Should not happen after start() re-arms terminal=false; treat as hard failure.
@@ -204,7 +226,7 @@ final class AssistantVoiceRealtimeClient {
             if (!focusGranted) {
                 throw new IllegalStateException("audio_focus_denied");
             }
-            audioRouter.enterCommunicationMode(ownerGeneration);
+            audioRouter.enterCommunicationMode(ownerGeneration, preferSpeakerphone);
         }
 
         JSONObject createBody = new JSONObject();

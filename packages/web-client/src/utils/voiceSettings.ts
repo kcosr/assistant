@@ -25,6 +25,8 @@ export interface VoiceSettings {
   voiceRuntimeMode: VoiceRuntimeMode;
   realtimeConversationId: string;
   realtimeMuteOnStart: boolean;
+  /** Prefer phone loudspeaker for Realtime when no Bluetooth headset is connected. */
+  realtimeSpeakerphone: boolean;
   realtimeListsInstanceId: string;
   audioMode: AudioMode;
   autoListenEnabled: boolean;
@@ -154,6 +156,7 @@ export function createDefaultVoiceSettings(options?: {
     voiceRuntimeMode: 'thread',
     realtimeConversationId: '',
     realtimeMuteOnStart: false,
+    realtimeSpeakerphone: true,
     realtimeListsInstanceId: 'default',
     audioMode: isAndroid ? 'tool' : 'off',
     autoListenEnabled: isAndroid,
@@ -195,6 +198,10 @@ export function normalizeVoiceSettings(
       typeof record['realtimeMuteOnStart'] === 'boolean'
         ? record['realtimeMuteOnStart']
         : defaults.realtimeMuteOnStart,
+    realtimeSpeakerphone:
+      typeof record['realtimeSpeakerphone'] === 'boolean'
+        ? record['realtimeSpeakerphone']
+        : defaults.realtimeSpeakerphone,
     realtimeListsInstanceId:
       normalizeOptionalString(record['realtimeListsInstanceId']) || defaults.realtimeListsInstanceId,
     audioMode: normalizeAudioMode(
@@ -253,6 +260,7 @@ export function areVoiceSettingsEqual(left: VoiceSettings, right: VoiceSettings)
     left.voiceRuntimeMode === right.voiceRuntimeMode &&
     left.realtimeConversationId === right.realtimeConversationId &&
     left.realtimeMuteOnStart === right.realtimeMuteOnStart &&
+    left.realtimeSpeakerphone === right.realtimeSpeakerphone &&
     left.realtimeListsInstanceId === right.realtimeListsInstanceId &&
     left.audioMode === right.audioMode &&
     left.autoListenEnabled === right.autoListenEnabled &&

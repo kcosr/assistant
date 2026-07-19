@@ -662,10 +662,29 @@ public final class AssistantVoiceRuntimeServiceTest {
     @Test
     @Config(sdk = Build.VERSION_CODES.N)
     public void shouldAcceptStateUpdateWhileRealtimeOwnerBlocksThreadStates() {
+        // Not in a Realtime call: allow Thread states even if owner flag is stale.
         assertEquals(
             true,
             AssistantVoiceRuntimeService.shouldAcceptStateUpdateWhileRealtimeOwner(
                 false,
+                AssistantVoiceRuntimeService.STATE_CONNECTING,
+                AssistantVoiceRuntimeService.STATE_IDLE
+            )
+        );
+        assertEquals(
+            true,
+            AssistantVoiceRuntimeService.shouldAcceptStateUpdateWhileRealtimeOwner(
+                true,
+                AssistantVoiceRuntimeService.STATE_CONNECTING,
+                AssistantVoiceRuntimeService.STATE_IDLE
+            )
+        );
+        // Live Realtime call: block Thread idle/connecting stomps.
+        assertEquals(
+            false,
+            AssistantVoiceRuntimeService.shouldAcceptStateUpdateWhileRealtimeOwner(
+                true,
+                AssistantVoiceRuntimeService.STATE_REALTIME_ACTIVE,
                 AssistantVoiceRuntimeService.STATE_IDLE
             )
         );
@@ -673,13 +692,7 @@ public final class AssistantVoiceRuntimeServiceTest {
             false,
             AssistantVoiceRuntimeService.shouldAcceptStateUpdateWhileRealtimeOwner(
                 true,
-                AssistantVoiceRuntimeService.STATE_IDLE
-            )
-        );
-        assertEquals(
-            false,
-            AssistantVoiceRuntimeService.shouldAcceptStateUpdateWhileRealtimeOwner(
-                true,
+                AssistantVoiceRuntimeService.STATE_REALTIME_ACTIVE,
                 AssistantVoiceRuntimeService.STATE_CONNECTING
             )
         );
@@ -687,6 +700,7 @@ public final class AssistantVoiceRuntimeServiceTest {
             true,
             AssistantVoiceRuntimeService.shouldAcceptStateUpdateWhileRealtimeOwner(
                 true,
+                AssistantVoiceRuntimeService.STATE_REALTIME_CONNECTING,
                 AssistantVoiceRuntimeService.STATE_REALTIME_ACTIVE
             )
         );
@@ -694,6 +708,7 @@ public final class AssistantVoiceRuntimeServiceTest {
             true,
             AssistantVoiceRuntimeService.shouldAcceptStateUpdateWhileRealtimeOwner(
                 true,
+                AssistantVoiceRuntimeService.STATE_REALTIME_ACTIVE,
                 AssistantVoiceRuntimeService.STATE_ERROR
             )
         );
@@ -1340,6 +1355,7 @@ public final class AssistantVoiceRuntimeServiceTest {
             false,
             "",
             false,
+            true,
             AssistantVoiceConfig.DEFAULT_REALTIME_LISTS_INSTANCE_ID
         );
     }

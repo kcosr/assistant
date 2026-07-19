@@ -95,6 +95,7 @@ describe('createInputRuntime', () => {
         voiceRuntimeMode: 'thread',
         realtimeConversationId: '',
         realtimeMuteOnStart: false,
+        realtimeSpeakerphone: true,
         realtimeListsInstanceId: 'default',
         audioMode: 'tool',
         autoListenEnabled: true,
