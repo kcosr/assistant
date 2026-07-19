@@ -48,6 +48,7 @@
 
 ### Fixed
 
+- Fixed Realtime Bluetooth headset routing so dual-profile call headsets (SCO/HFP, e.g. Shokz OpenComm) are preferred via `setCommunicationDevice` + SCO instead of staying on quiet A2DP/earpiece when speakerphone preference is enabled; pure A2DP media speakers still leave loudspeaker free. ([#115](https://github.com/kcosr/assistant/pull/115))
 - Fixed Thread voice getting stuck on connecting after Realtime by recovering a stale Realtime owner fence so adapter/assistant sockets can return to idle. ([#114](https://github.com/kcosr/assistant/pull/114))
 - Fixed Realtime speakerphone so A2DP-only Bluetooth devices no longer suppress loudspeaker (only SCO/BLE headsets trigger SCO routing), and force the built-in speaker via `setCommunicationDevice` on API 31+ so media-only BT speakers do not leave voice on the quiet earpiece. ([#114](https://github.com/kcosr/assistant/pull/114))
 - Fixed Android Realtime ownership and lease lifecycle: Thread path no longer stomps Realtime runtime state, Realtime callbacks are generation-fenced, WebRTC release completes dispose/server close, server reaps live sessions after missed heartbeats, hangup uses a success close token, and the Realtime wake lock is not capped at one hour. ([#113](https://github.com/kcosr/assistant/pull/113))
