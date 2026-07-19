@@ -105,5 +105,26 @@ describe('VoiceService', () => {
 
     const loaded = await service.getSession(created.session.id);
     expect(loaded?.conversationId).toBe(created.conversationId);
+    service.shutdown();
+  });
+
+  it('persists heartbeat lease timestamps', async () => {
+    const dataDir = await fs.mkdtemp(path.join(os.tmpdir(), 'voice-svc-'));
+    tempDirs.push(dataDir);
+    const service = new VoiceService(
+      {
+        envConfig: makeEnv({ dataDir, apiKey: 'test-key' }),
+        toolHost: makeToolHost(),
+        createToolContext: makeToolContext,
+      },
+      dataDir,
+    );
+    await service.init();
+    const created = await service.createSession({ listsInstanceId: 'default' });
+    const before = created.session.updatedAtMs;
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    const heartbeated = await service.heartbeat(created.session.id);
+    expect(heartbeated?.updatedAtMs).toBeGreaterThanOrEqual(before);
+    service.shutdown();
   });
 });

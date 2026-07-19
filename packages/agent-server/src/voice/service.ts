@@ -44,6 +44,12 @@ interface LiveRealtimeCall {
   listsInstanceId: string;
 }
 
+/** Drop live Realtime sessions that miss heartbeats for this long (client interval is 15s). */
+const HEARTBEAT_LEASE_MS = 45_000;
+const LEASE_REAPER_INTERVAL_MS = 15_000;
+/** Cap retained closed/failed sessions in the durable store. */
+const MAX_TERMINAL_SESSIONS = 100;
+
 export class VoiceService {
   private readonly store: VoiceStore;
   private readonly liveCalls = new Map<VoiceSessionId, LiveRealtimeCall>();
@@ -52,6 +58,7 @@ export class VoiceService {
   private readonly toolAllowlist: string[] | undefined;
   private readonly toolDenylist: string[] | undefined;
   private readonly instructionsOverride: string | undefined;
+  private leaseReaperTimer: ReturnType<typeof setInterval> | null = null;
 
   constructor(
     private readonly options: VoiceServiceOptions,
@@ -75,6 +82,14 @@ export class VoiceService {
 
   async init(): Promise<void> {
     await this.store.init();
+    this.startLeaseReaper();
+  }
+
+  shutdown(): void {
+    if (this.leaseReaperTimer) {
+      clearInterval(this.leaseReaperTimer);
+      this.leaseReaperTimer = null;
+    }
   }
 
   capabilities(): VoiceCapabilities {
@@ -200,12 +215,71 @@ export class VoiceService {
   }
 
   async heartbeat(sessionId: VoiceSessionId): Promise<VoiceSessionRecord | null> {
-    const session = await this.store.getSession(sessionId);
-    if (!session) {
-      return null;
+    // Touch via updateSession so the lease timestamp is durable, not only in-memory.
+    return this.store.updateSession(sessionId, {});
+  }
+
+  private startLeaseReaper(): void {
+    if (this.leaseReaperTimer) {
+      return;
     }
-    session.updatedAtMs = Date.now();
-    return session;
+    this.leaseReaperTimer = setInterval(() => {
+      void this.reapStaleLiveCalls().catch((error) => {
+        console.warn('[voice] lease reaper failed', error);
+      });
+    }, LEASE_REAPER_INTERVAL_MS);
+    // Do not keep the process alive solely for the reaper.
+    if (typeof this.leaseReaperTimer.unref === 'function') {
+      this.leaseReaperTimer.unref();
+    }
+  }
+
+  /** @internal Exported for tests via package access pattern. */
+  async reapStaleLiveCalls(nowMs = Date.now()): Promise<string[]> {
+    const reaped: string[] = [];
+    for (const [sessionId, live] of [...this.liveCalls.entries()]) {
+      const session = await this.store.getSession(sessionId);
+      if (!session) {
+        live.sideband.close();
+        this.liveCalls.delete(sessionId);
+        reaped.push(sessionId);
+        continue;
+      }
+      if (session.state === 'closed' || session.state === 'failed') {
+        live.sideband.close();
+        this.liveCalls.delete(sessionId);
+        reaped.push(sessionId);
+        continue;
+      }
+      const age = nowMs - session.updatedAtMs;
+      if (age > HEARTBEAT_LEASE_MS) {
+        const apiKey = this.options.envConfig.apiKey;
+        live.sideband.close();
+        this.liveCalls.delete(sessionId);
+        if (apiKey && live.providerCallId) {
+          await hangupOpenAiRealtimeCall({ apiKey, providerCallId: live.providerCallId }).catch(
+            () => undefined,
+          );
+        }
+        await this.store.updateSession(sessionId, {
+          state: 'failed',
+          lastError: 'heartbeat_lease_expired',
+        });
+        await this.store.appendEvent(sessionId, {
+          type: 'error',
+          code: 'heartbeat_lease_expired',
+          message: 'Realtime session lease expired (missed heartbeats)',
+        });
+        await this.store.appendEvent(sessionId, {
+          type: 'session_state',
+          state: 'failed',
+          message: 'heartbeat_lease_expired',
+        });
+        reaped.push(sessionId);
+      }
+    }
+    await this.store.pruneTerminalSessions(MAX_TERMINAL_SESSIONS);
+    return reaped;
   }
 
   async events(sessionId: VoiceSessionId, afterSequence: number) {
@@ -380,11 +454,14 @@ export class VoiceService {
 
     // Built-in hangup: acknowledge the tool, then close so the client plays the end cue.
     if (isRealtimeEndSessionTool(name)) {
-      const reason =
+      // Protocol close reason is always a success token so the client plays SUCCESS_COMPLETION.
+      // Free-text model detail stays only in the tool result / journal payload.
+      const detail =
         typeof args['reason'] === 'string' && args['reason'].trim().length > 0
           ? args['reason'].trim()
           : 'agent_end';
-      const output = { ok: true, ending: true, reason };
+      const reason = 'agent_end';
+      const output = { ok: true, ending: true, reason, detail };
       await this.store.appendJournal(live.conversationId, {
         kind: 'tool_result',
         toolName: name,

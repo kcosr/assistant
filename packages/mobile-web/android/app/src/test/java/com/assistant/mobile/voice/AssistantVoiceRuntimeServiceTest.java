@@ -661,6 +661,58 @@ public final class AssistantVoiceRuntimeServiceTest {
 
     @Test
     @Config(sdk = Build.VERSION_CODES.N)
+    public void shouldAcceptStateUpdateWhileRealtimeOwnerBlocksThreadStates() {
+        assertEquals(
+            true,
+            AssistantVoiceRuntimeService.shouldAcceptStateUpdateWhileRealtimeOwner(
+                false,
+                AssistantVoiceRuntimeService.STATE_IDLE
+            )
+        );
+        assertEquals(
+            false,
+            AssistantVoiceRuntimeService.shouldAcceptStateUpdateWhileRealtimeOwner(
+                true,
+                AssistantVoiceRuntimeService.STATE_IDLE
+            )
+        );
+        assertEquals(
+            false,
+            AssistantVoiceRuntimeService.shouldAcceptStateUpdateWhileRealtimeOwner(
+                true,
+                AssistantVoiceRuntimeService.STATE_CONNECTING
+            )
+        );
+        assertEquals(
+            true,
+            AssistantVoiceRuntimeService.shouldAcceptStateUpdateWhileRealtimeOwner(
+                true,
+                AssistantVoiceRuntimeService.STATE_REALTIME_ACTIVE
+            )
+        );
+        assertEquals(
+            true,
+            AssistantVoiceRuntimeService.shouldAcceptStateUpdateWhileRealtimeOwner(
+                true,
+                AssistantVoiceRuntimeService.STATE_ERROR
+            )
+        );
+    }
+
+    @Test
+    @Config(sdk = Build.VERSION_CODES.N)
+    public void isRealtimeCloseSuccessfulOnlyForUserOrAgentStops() {
+        assertEquals(true, AssistantVoiceRuntimeService.isRealtimeCloseSuccessful(null));
+        assertEquals(true, AssistantVoiceRuntimeService.isRealtimeCloseSuccessful("intent_stop"));
+        assertEquals(true, AssistantVoiceRuntimeService.isRealtimeCloseSuccessful("user_request"));
+        assertEquals(true, AssistantVoiceRuntimeService.isRealtimeCloseSuccessful("agent_end"));
+        assertEquals(false, AssistantVoiceRuntimeService.isRealtimeCloseSuccessful("sideband_closed"));
+        assertEquals(false, AssistantVoiceRuntimeService.isRealtimeCloseSuccessful("realtime_failed"));
+        assertEquals(false, AssistantVoiceRuntimeService.isRealtimeCloseSuccessful("ice_failed"));
+    }
+
+    @Test
+    @Config(sdk = Build.VERSION_CODES.N)
     public void resolveRecognitionSubmitSessionIdKeepsActiveRecognitionTarget() {
         assertEquals(
             "session-old",

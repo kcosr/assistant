@@ -221,6 +221,33 @@ export class VoiceStore {
     return session.events.filter((e) => e.sequence > afterSequence);
   }
 
+  /**
+   * Drop oldest closed/failed sessions beyond {@code maxTerminal}, keeping active ones.
+   * Also clears activeSessionId on conversations that pointed at pruned sessions.
+   */
+  async pruneTerminalSessions(maxTerminal: number): Promise<number> {
+    await this.init();
+    if (maxTerminal < 0) {
+      return 0;
+    }
+    const terminal = this.data.sessions
+      .filter((s) => s.state === 'closed' || s.state === 'failed')
+      .sort((a, b) => a.updatedAtMs - b.updatedAtMs);
+    const overflow = terminal.length - maxTerminal;
+    if (overflow <= 0) {
+      return 0;
+    }
+    const toRemove = new Set(terminal.slice(0, overflow).map((s) => s.id));
+    this.data.sessions = this.data.sessions.filter((s) => !toRemove.has(s.id));
+    for (const conversation of this.data.conversations) {
+      if (conversation.activeSessionId && toRemove.has(conversation.activeSessionId)) {
+        conversation.activeSessionId = null;
+      }
+    }
+    await this.persist();
+    return toRemove.size;
+  }
+
   recentJournalText(conversation: VoiceConversationRecord, maxEntries = 24): string {
     const slice = conversation.journal.slice(-maxEntries);
     return slice

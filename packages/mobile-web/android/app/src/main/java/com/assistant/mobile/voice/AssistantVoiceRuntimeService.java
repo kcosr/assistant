@@ -327,13 +327,28 @@ public final class AssistantVoiceRuntimeService extends Service {
         realtimeClient = new AssistantVoiceRealtimeClient(this, httpClient);
         realtimeClient.setListener(new AssistantVoiceRealtimeClient.Listener() {
             @Override
-            public void onConnecting() {
-                mainHandler.post(() -> updateState(STATE_REALTIME_CONNECTING, null));
+            public void onConnecting(long ownerGeneration) {
+                mainHandler.post(() -> {
+                    if (!isRealtimeCallbackCurrent(ownerGeneration)) {
+                        return;
+                    }
+                    updateState(STATE_REALTIME_CONNECTING, null);
+                });
             }
 
             @Override
-            public void onConnected(String sessionId, String conversationId) {
+            public void onConnected(String sessionId, String conversationId, long ownerGeneration) {
                 mainHandler.post(() -> {
+                    if (!isRealtimeCallbackCurrent(ownerGeneration)) {
+                        Log.d(
+                            TAG,
+                            "onConnected ignored stale generation="
+                                + ownerGeneration
+                                + " current="
+                                + controllerGeneration
+                        );
+                        return;
+                    }
                     realtimeSessionId = sessionId == null ? "" : sessionId;
                     realtimeConversationId = conversationId == null ? "" : conversationId;
                     if (!realtimeConversationId.isEmpty() && config != null) {
@@ -345,28 +360,62 @@ public final class AssistantVoiceRuntimeService extends Service {
                         } catch (Exception ignored) {
                         }
                     }
+                    // Arming cue on ready (connected), not at preempt.
+                    if (player != null && config != null && config.recognitionCueEnabled) {
+                        player.playRecognitionCue(
+                            "__realtime_arming__:" + controllerGeneration,
+                            AssistantVoicePcmPlayer.RecognitionCueType.ARMING
+                        );
+                    }
                     acquireRealtimeWakeLock();
                     updateState(STATE_REALTIME_ACTIVE, null);
                 });
             }
 
             @Override
-            public void onFailed(String message) {
+            public void onFailed(String message, long ownerGeneration) {
                 mainHandler.post(() -> {
+                    // Generation match only — never let a superseded call tear down a newer one.
+                    if (!isRealtimeCallbackCurrent(ownerGeneration)) {
+                        Log.d(
+                            TAG,
+                            "onFailed ignored stale generation="
+                                + ownerGeneration
+                                + " current="
+                                + controllerGeneration
+                        );
+                        return;
+                    }
                     releaseRealtimeWakeLock();
-                    stopRealtimeOwner("realtime_failed");
+                    stopRealtimeOwner("realtime_failed", false);
                     updateState(STATE_ERROR, message);
                     emitRuntimeError(message == null ? "Realtime failed" : message);
                 });
             }
 
             @Override
-            public void onClosed(String reason) {
+            public void onClosed(String reason, long ownerGeneration) {
                 mainHandler.post(() -> {
-                    releaseRealtimeWakeLock();
-                    if (AssistantVoiceControllerPolicy.OWNER_REALTIME.equals(liveOwner)) {
-                        stopRealtimeOwner(reason == null ? "realtime_closed" : reason);
+                    // Generation match only. Intentional stop already advanced the generation and
+                    // ran stopRealtimeOwner; late closes from that generation must not run again
+                    // against a newer Realtime call.
+                    if (!isRealtimeCallbackCurrent(ownerGeneration)) {
+                        Log.d(
+                            TAG,
+                            "onClosed ignored stale generation="
+                                + ownerGeneration
+                                + " current="
+                                + controllerGeneration
+                                + " reason="
+                                + safe(reason)
+                        );
+                        return;
                     }
+                    releaseRealtimeWakeLock();
+                    stopRealtimeOwner(
+                        reason == null ? "realtime_closed" : reason,
+                        isRealtimeCloseSuccessful(reason)
+                    );
                     if (!STATE_ERROR.equals(runtimeState)) {
                         updateState(resolveInactiveState(), null);
                     }
@@ -820,6 +869,23 @@ public final class AssistantVoiceRuntimeService extends Service {
     static boolean hasActiveRealtimeInteraction(String state, String liveOwner) {
         return isRealtimeActiveState(state)
             || AssistantVoiceControllerPolicy.OWNER_REALTIME.equals(trim(liveOwner));
+    }
+
+    /**
+     * While Realtime is the exclusive owner, only Realtime/error/disabled states may be applied.
+     * Thread socket reconnect handlers must not force IDLE/CONNECTING mid-call.
+     */
+    static boolean shouldAcceptStateUpdateWhileRealtimeOwner(
+        boolean realtimeOwnerActive,
+        String nextState
+    ) {
+        if (!realtimeOwnerActive) {
+            return true;
+        }
+        String normalized = trim(nextState);
+        return isRealtimeActiveState(normalized)
+            || STATE_ERROR.equals(normalized)
+            || STATE_DISABLED.equals(normalized);
     }
 
     /** @deprecated Prefer {@link #hasActiveRealtimeInteraction(String, String)}. */
@@ -1981,9 +2047,8 @@ public final class AssistantVoiceRuntimeService extends Service {
     }
 
     /**
-     * Phase-1 stub for the exclusive Realtime owner transition without WebRTC media.
-     * Preempts Thread (stop + clear FIFO + pause admission) and advances generation so later
-     * Realtime media can plug into the same fence.
+     * Preempts Thread (stop + clear FIFO + pause admission) and advances generation so Realtime
+     * media can own the audio path. Arming cue plays later on connected+ready.
      */
     void prepareRealtimeOwnerPreempt(String reason) {
         stopAndClearQueue(reason);
@@ -1993,26 +2058,21 @@ public final class AssistantVoiceRuntimeService extends Service {
         advanceControllerGeneration("prepare_realtime:" + safe(reason));
         if (player != null) {
             player.setPreferVoiceCommunicationCueFocus(true);
-            // Arming cue on voice-comm route when entering Realtime.
-            if (config != null && config.recognitionCueEnabled) {
-                player.playRecognitionCue(
-                    "__realtime_arming__:" + controllerGeneration,
-                    AssistantVoicePcmPlayer.RecognitionCueType.ARMING
-                );
-            }
         }
     }
 
     void stopRealtimeOwner(String reason) {
+        stopRealtimeOwner(reason, isRealtimeCloseSuccessful(reason));
+    }
+
+    void stopRealtimeOwner(String reason, boolean success) {
         if (!AssistantVoiceControllerPolicy.OWNER_REALTIME.equals(liveOwner)) {
             return;
         }
-        Log.d(TAG, "stopRealtimeOwner reason=" + safe(reason));
+        Log.d(TAG, "stopRealtimeOwner reason=" + safe(reason) + " success=" + success);
         if (audioRouter != null) {
             audioRouter.releaseAll(controllerGeneration);
         }
-        boolean success = reason == null
-            || (!reason.contains("fail") && !reason.contains("error") && !reason.contains("ice"));
         if (player != null) {
             player.setPreferVoiceCommunicationCueFocus(false);
             if (config != null && config.recognitionCueEnabled) {
@@ -2028,6 +2088,34 @@ public final class AssistantVoiceRuntimeService extends Service {
         realtimeSessionId = "";
         advanceControllerGeneration("stop_realtime:" + safe(reason));
         resumeThreadAdmission();
+    }
+
+    /**
+     * Explicit success/failure for completion cues. Avoid free-text substring sniffing so provider
+     * drops like {@code sideband_closed} are not mislabeled as success.
+     */
+    static boolean isRealtimeCloseSuccessful(String reason) {
+        String normalized = trim(reason);
+        if (normalized.isEmpty()) {
+            return true;
+        }
+        if (normalized.startsWith("intent_")
+            || normalized.startsWith("config_")
+            || "client_stop".equals(normalized)
+            || "user_stop".equals(normalized)
+            || "manual_stop".equals(normalized)
+            || "stale_owner_recover".equals(normalized)
+            || "agent_end".equals(normalized)
+            || "user_request".equals(normalized)
+            || "done".equals(normalized)) {
+            return true;
+        }
+        return false;
+    }
+
+    private boolean isRealtimeCallbackCurrent(long ownerGeneration) {
+        return AssistantVoiceControllerPolicy.OWNER_REALTIME.equals(liveOwner)
+            && AssistantVoiceControllerPolicy.isCurrentGeneration(controllerGeneration, ownerGeneration);
     }
 
     private void startRealtimeCall(String reason) {
@@ -2075,7 +2163,7 @@ public final class AssistantVoiceRuntimeService extends Service {
         releaseRealtimeWakeLock();
         // Owner fence returns to Thread immediately; client async teardown must not leave us
         // stuck in REALTIME_ACTIVE so the next start is ignored.
-        stopRealtimeOwner(reason);
+        stopRealtimeOwner(reason, isRealtimeCloseSuccessful(reason));
         updateState(resolveInactiveState(), null);
     }
 
@@ -2087,6 +2175,7 @@ public final class AssistantVoiceRuntimeService extends Service {
         refreshNotification();
     }
 
+    @SuppressWarnings("deprecation")
     private void acquireRealtimeWakeLock() {
         if (realtimeWakeLock != null && realtimeWakeLock.isHeld()) {
             return;
@@ -2100,7 +2189,9 @@ public final class AssistantVoiceRuntimeService extends Service {
             "assistant:voice-realtime"
         );
         realtimeWakeLock.setReferenceCounted(false);
-        realtimeWakeLock.acquire(60 * 60 * 1000L);
+        // No fixed timeout: long background calls must not lose the lock after 1h.
+        // Released generation-scoped in releaseRealtimeWakeLock()/stop paths.
+        realtimeWakeLock.acquire();
     }
 
     private void releaseRealtimeWakeLock() {
@@ -3712,6 +3803,21 @@ public final class AssistantVoiceRuntimeService extends Service {
         String normalizedError = trim(maybeErrorMessage);
         if (normalizedState.isEmpty()) {
             normalizedState = STATE_DISABLED;
+        }
+        // While Realtime owns media, ignore Thread-path idle/connecting/speaking/listening
+        // stomps from adapter/assistant socket lifecycle (reconnects during a live call).
+        if (!shouldAcceptStateUpdateWhileRealtimeOwner(
+            AssistantVoiceControllerPolicy.OWNER_REALTIME.equals(liveOwner),
+            normalizedState
+        )) {
+            Log.d(
+                TAG,
+                "updateState ignored while realtime owner previous="
+                    + previousState
+                    + " next="
+                    + normalizedState
+            );
+            return;
         }
         if (runtimeState.equals(normalizedState) && normalizedError.isEmpty()) {
             return;

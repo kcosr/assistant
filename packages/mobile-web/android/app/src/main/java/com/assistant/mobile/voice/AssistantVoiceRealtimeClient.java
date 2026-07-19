@@ -45,10 +45,10 @@ final class AssistantVoiceRealtimeClient {
     private static final long EVENTS_POLL_INTERVAL_MS = 1_500L;
 
     interface Listener {
-        void onConnecting();
-        void onConnected(String sessionId, String conversationId);
-        void onFailed(String message);
-        void onClosed(String reason);
+        void onConnecting(long ownerGeneration);
+        void onConnected(String sessionId, String conversationId, long ownerGeneration);
+        void onFailed(String message, long ownerGeneration);
+        void onClosed(String reason, long ownerGeneration);
         void onTranscript(String role, String text, boolean isFinal);
         void onTool(String name, String status, String detail);
     }
@@ -72,6 +72,8 @@ final class AssistantVoiceRealtimeClient {
     private String conversationId = "";
     private boolean muted = false;
     private long eventCursor = 0L;
+    /** Generation stamped when start() is admitted; forwarded on all Listener callbacks. */
+    private long activeOwnerGeneration = 0L;
     private final Runnable heartbeatRunnable = this::heartbeatOnce;
     private final Runnable eventsPollRunnable = this::pollEventsOnce;
 
@@ -101,6 +103,7 @@ final class AssistantVoiceRealtimeClient {
                 sessionId = "";
                 this.conversationId = "";
                 eventCursor = 0L;
+                activeOwnerGeneration = ownerGeneration;
                 startLocked(
                     assistantBaseUrl,
                     conversationId,
@@ -157,8 +160,22 @@ final class AssistantVoiceRealtimeClient {
     }
 
     void release() {
+        if (executor.isShutdown()) {
+            return;
+        }
+        // Must finish dispose + server close; shutdownNow() would cancel the queued cleanup.
+        // Bound wait tightly: onDestroy runs on the main thread and must not ANR.
         executor.execute(() -> cleanupMedia("release", true, false));
-        executor.shutdownNow();
+        executor.shutdown();
+        try {
+            if (!executor.awaitTermination(3, TimeUnit.SECONDS)) {
+                Log.w(TAG, "release cleanup timed out; forcing shutdown");
+                executor.shutdownNow();
+            }
+        } catch (InterruptedException interrupted) {
+            executor.shutdownNow();
+            Thread.currentThread().interrupt();
+        }
     }
 
     private void startLocked(
@@ -423,12 +440,14 @@ final class AssistantVoiceRealtimeClient {
         String closingSessionId = sessionId;
         if (notifyServer && !closingSessionId.isEmpty()) {
             try {
-                postJson(
+                // Short timeouts so release()/onDestroy cannot block the main thread on a hung host.
+                postJsonWithTimeout(
                     AssistantVoiceUrlUtils.assistantVoiceSessionCloseUrl(
                         assistantBaseUrl,
                         closingSessionId
                     ),
-                    new JSONObject()
+                    new JSONObject(),
+                    2
                 );
             } catch (Exception ignored) {
             }
@@ -482,31 +501,35 @@ final class AssistantVoiceRealtimeClient {
 
     private void fail(String message) {
         // Always notify failure; cleanup may already have been terminal during restart races.
+        long generation = activeOwnerGeneration;
         cleanupMedia(message, true, false);
         Listener current = listener;
         if (current != null) {
-            mainHandler.post(() -> current.onFailed(message));
+            mainHandler.post(() -> current.onFailed(message, generation));
         }
     }
 
     private void notifyConnecting() {
         Listener current = listener;
+        long generation = activeOwnerGeneration;
         if (current != null) {
-            mainHandler.post(current::onConnecting);
+            mainHandler.post(() -> current.onConnecting(generation));
         }
     }
 
     private void notifyConnected(String sessionId, String conversationId) {
         Listener current = listener;
+        long generation = activeOwnerGeneration;
         if (current != null) {
-            mainHandler.post(() -> current.onConnected(sessionId, conversationId));
+            mainHandler.post(() -> current.onConnected(sessionId, conversationId, generation));
         }
     }
 
     private void notifyClosed(String reason) {
         Listener current = listener;
+        long generation = activeOwnerGeneration;
         if (current != null) {
-            mainHandler.post(() -> current.onClosed(reason));
+            mainHandler.post(() -> current.onClosed(reason, generation));
         }
     }
 
@@ -525,12 +548,29 @@ final class AssistantVoiceRealtimeClient {
     }
 
     private JSONObject postJson(String url, JSONObject body) throws IOException {
+        return postJsonWithClient(httpClient, url, body);
+    }
+
+    private JSONObject postJsonWithTimeout(String url, JSONObject body, long timeoutSeconds)
+        throws IOException {
+        OkHttpClient shortClient = httpClient
+            .newBuilder()
+            .connectTimeout(timeoutSeconds, TimeUnit.SECONDS)
+            .readTimeout(timeoutSeconds, TimeUnit.SECONDS)
+            .writeTimeout(timeoutSeconds, TimeUnit.SECONDS)
+            .callTimeout(timeoutSeconds + 1, TimeUnit.SECONDS)
+            .build();
+        return postJsonWithClient(shortClient, url, body);
+    }
+
+    private JSONObject postJsonWithClient(OkHttpClient client, String url, JSONObject body)
+        throws IOException {
         Request request = new Request.Builder()
             .url(url)
             .post(RequestBody.create(body.toString(), JSON))
             .header("Content-Type", "application/json")
             .build();
-        try (Response response = httpClient.newCall(request).execute()) {
+        try (Response response = client.newCall(request).execute()) {
             String text = response.body() == null ? "" : response.body().string();
             if (!response.isSuccessful()) {
                 throw new IOException("HTTP " + response.code() + ": " + text);

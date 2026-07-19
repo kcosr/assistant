@@ -273,6 +273,7 @@ export async function startServer(
       gitVersioningService.shutdown();
     }
     scheduledSessionService?.shutdown();
+    voiceService.shutdown();
   };
 
   process.once('SIGINT', shutdownHandler);
