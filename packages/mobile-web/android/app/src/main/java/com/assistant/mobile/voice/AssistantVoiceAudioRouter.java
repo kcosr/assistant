@@ -42,6 +42,8 @@ final class AssistantVoiceAudioRouter {
     private boolean communicationModeActive = false;
     private boolean scoStarted = false;
     private boolean speakerphoneEnabled = false;
+    /** True when we called {@link AudioManager#setCommunicationDevice} this session. */
+    private boolean communicationDeviceSet = false;
     private AudioFocusRequest playbackFocusRequest;
     private AudioFocusRequest captureFocusRequest;
     private AudioFocusRequest realtimeFocusRequest;
@@ -162,8 +164,9 @@ final class AssistantVoiceAudioRouter {
     }
 
     /**
-     * @param preferSpeakerphone when true and no Bluetooth SCO headset is in use, force
-     *     speakerphone so Realtime is audible at arm's length (not quiet earpiece).
+     * @param preferSpeakerphone when true and no Bluetooth voice headset is available, force
+     *     the built-in loudspeaker so Realtime is audible at arm's length (not quiet earpiece).
+     *     Real HFP/SCO/BLE headsets always win over speakerphone.
      */
     void enterCommunicationMode(long ownerGeneration, boolean preferSpeakerphone) {
         synchronized (lock) {
@@ -174,30 +177,15 @@ final class AssistantVoiceAudioRouter {
                 return;
             }
             if (communicationModeActive) {
-                // Keep SCO and speakerphone mutually exclusive if this is re-entered mid-call.
-                applySpeakerphoneLocked(preferSpeakerphone && !scoStarted);
+                // Keep SCO/BT voice and speakerphone mutually exclusive if re-entered mid-call.
+                if (!scoStarted && !isBluetoothCommunicationRouteActiveLocked()) {
+                    applySpeakerphoneLocked(preferSpeakerphone);
+                }
                 return;
             }
             try {
                 audioManager.setMode(AudioManager.MODE_IN_COMMUNICATION);
-                boolean useSco = shouldStartBluetoothScoLocked();
-                if (useSco) {
-                    Log.d(TAG, "enterCommunicationMode route=sco gen=" + ownerGeneration);
-                    audioManager.setBluetoothScoOn(true);
-                    audioManager.startBluetoothSco();
-                    scoStarted = true;
-                    applySpeakerphoneLocked(false);
-                } else {
-                    Log.d(
-                        TAG,
-                        "enterCommunicationMode route=speakerphone prefer="
-                            + preferSpeakerphone
-                            + " gen="
-                            + ownerGeneration
-                    );
-                    scoStarted = false;
-                    applySpeakerphoneLocked(preferSpeakerphone);
-                }
+                applyCommunicationRouteLocked(preferSpeakerphone, ownerGeneration);
                 communicationModeActive = true;
             } catch (Exception error) {
                 Log.w(TAG, "failed to enter communication mode", error);
@@ -206,10 +194,186 @@ final class AssistantVoiceAudioRouter {
     }
 
     /**
-     * Only SCO/HFP (and BLE headset) devices can carry voice-call audio. A2DP is media-only and
-     * must not suppress speakerphone or trigger a non-functional SCO session.
+     * Route priority after {@link AudioManager#MODE_IN_COMMUNICATION}:
+     * <ol>
+     *   <li>Bluetooth voice (SCO / BLE headset) via {@code setCommunicationDevice} + SCO start</li>
+     *   <li>Built-in speaker when {@code preferSpeakerphone}</li>
+     *   <li>Default earpiece</li>
+     * </ol>
+     * Pure A2DP media speakers are not communication devices and do not take priority over
+     * speakerphone. Dual-profile call headsets often only expose SCO after mode is set — use
+     * {@link AudioManager#getAvailableCommunicationDevices()} rather than treating A2DP alone
+     * as a voice headset.
      */
-    private boolean shouldStartBluetoothScoLocked() {
+    private void applyCommunicationRouteLocked(boolean preferSpeakerphone, long ownerGeneration) {
+        android.media.AudioDeviceInfo bluetoothComm = findBluetoothCommunicationDeviceLocked();
+        if (bluetoothComm != null) {
+            Log.d(
+                TAG,
+                "enterCommunicationMode route=bluetooth type="
+                    + bluetoothComm.getType()
+                    + " gen="
+                    + ownerGeneration
+            );
+            routeToBluetoothCommunicationDeviceLocked(bluetoothComm);
+            return;
+        }
+
+        // Legacy path: SCO type already present in outputs (pre-API 31 or OEM listing).
+        if (hasLegacyScoOutputDeviceLocked()) {
+            Log.d(TAG, "enterCommunicationMode route=sco-legacy gen=" + ownerGeneration);
+            startLegacyBluetoothScoLocked();
+            applySpeakerphoneLocked(false);
+            return;
+        }
+
+        scoStarted = false;
+        if (preferSpeakerphone) {
+            Log.d(
+                TAG,
+                "enterCommunicationMode route=speakerphone prefer=true gen=" + ownerGeneration
+            );
+            applySpeakerphoneLocked(true);
+        } else {
+            Log.d(
+                TAG,
+                "enterCommunicationMode route=earpiece prefer=false gen=" + ownerGeneration
+            );
+            applySpeakerphoneLocked(false);
+        }
+    }
+
+    private void routeToBluetoothCommunicationDeviceLocked(
+        android.media.AudioDeviceInfo bluetoothComm
+    ) {
+        speakerphoneEnabled = false;
+        try {
+            audioManager.setSpeakerphoneOn(false);
+        } catch (Exception error) {
+            Log.w(TAG, "failed to clear speakerphone for bluetooth route", error);
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            try {
+                boolean ok = audioManager.setCommunicationDevice(bluetoothComm);
+                communicationDeviceSet = ok;
+                if (!ok) {
+                    Log.w(TAG, "setCommunicationDevice(bluetooth) returned false");
+                }
+            } catch (Exception error) {
+                Log.w(TAG, "setCommunicationDevice(bluetooth) failed", error);
+            }
+        }
+        // Still start classic SCO: WebRTC / older paths often need the SCO link even when
+        // setCommunicationDevice was used.
+        startLegacyBluetoothScoLocked();
+    }
+
+    private void startLegacyBluetoothScoLocked() {
+        try {
+            audioManager.setBluetoothScoOn(true);
+            audioManager.startBluetoothSco();
+            scoStarted = true;
+        } catch (Exception error) {
+            Log.w(TAG, "failed to start bluetooth SCO", error);
+            scoStarted = false;
+        }
+    }
+
+    /**
+     * Voice-capable Bluetooth devices after call mode is active. Prefer SCO/BLE headset over
+     * anything else. Pure A2DP media speakers are intentionally ignored so speakerphone can win.
+     * Dual-profile headsets (e.g. Shokz OpenComm) often expose both A2DP and SCO; we must pick
+     * the SCO node or Android keeps routing VOICE_COMMUNICATION over quiet A2DP.
+     */
+    private android.media.AudioDeviceInfo findBluetoothCommunicationDeviceLocked() {
+        if (audioManager == null || Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
+            return null;
+        }
+        android.media.AudioDeviceInfo fromAvailable =
+            findFirstBluetoothVoiceDeviceLocked(listAvailableCommunicationDevicesLocked());
+        if (fromAvailable != null) {
+            return fromAvailable;
+        }
+        // Fallback: SCO may be listed only under GET_DEVICES_OUTPUTS until preferred.
+        return findFirstBluetoothVoiceDeviceLocked(listOutputDevicesLocked());
+    }
+
+    private android.media.AudioDeviceInfo findFirstBluetoothVoiceDeviceLocked(
+        android.media.AudioDeviceInfo[] devices
+    ) {
+        if (devices == null) {
+            return null;
+        }
+        for (android.media.AudioDeviceInfo device : devices) {
+            if (device != null && isBluetoothVoiceDeviceType(device.getType())) {
+                return device;
+            }
+        }
+        return null;
+    }
+
+    private android.media.AudioDeviceInfo[] listAvailableCommunicationDevicesLocked() {
+        if (audioManager == null || Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
+            return new android.media.AudioDeviceInfo[0];
+        }
+        try {
+            java.util.List<android.media.AudioDeviceInfo> devices =
+                audioManager.getAvailableCommunicationDevices();
+            if (devices == null || devices.isEmpty()) {
+                return new android.media.AudioDeviceInfo[0];
+            }
+            return devices.toArray(new android.media.AudioDeviceInfo[0]);
+        } catch (Exception error) {
+            Log.w(TAG, "failed to list available communication devices for bluetooth", error);
+            return new android.media.AudioDeviceInfo[0];
+        }
+    }
+
+    private android.media.AudioDeviceInfo[] listOutputDevicesLocked() {
+        if (audioManager == null || Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {
+            return new android.media.AudioDeviceInfo[0];
+        }
+        try {
+            android.media.AudioDeviceInfo[] devices =
+                audioManager.getDevices(AudioManager.GET_DEVICES_OUTPUTS);
+            return devices == null ? new android.media.AudioDeviceInfo[0] : devices;
+        } catch (Exception error) {
+            Log.w(TAG, "failed to list output devices", error);
+            return new android.media.AudioDeviceInfo[0];
+        }
+    }
+
+    private boolean isBluetoothCommunicationRouteActiveLocked() {
+        if (audioManager == null || Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
+            return scoStarted;
+        }
+        try {
+            android.media.AudioDeviceInfo current = audioManager.getCommunicationDevice();
+            return current != null && isBluetoothVoiceDeviceType(current.getType());
+        } catch (Exception error) {
+            return scoStarted;
+        }
+    }
+
+    private static boolean isBluetoothVoiceDeviceType(int type) {
+        if (type == android.media.AudioDeviceInfo.TYPE_BLUETOOTH_SCO
+            || type == android.media.AudioDeviceInfo.TYPE_BLE_HEADSET
+            || type == android.media.AudioDeviceInfo.TYPE_HEARING_AID) {
+            return true;
+        }
+        // API 31+: BLE speaker can be used for communication on some stacks.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
+            && type == android.media.AudioDeviceInfo.TYPE_BLE_SPEAKER) {
+            return true;
+        }
+        return false;
+    }
+
+    /**
+     * Pre-communication-device-API detection: only true SCO/BLE headset outputs, never A2DP
+     * alone (A2DP-only media speakers must not block loudspeaker preference).
+     */
+    private boolean hasLegacyScoOutputDeviceLocked() {
         if (audioManager == null) {
             return false;
         }
@@ -243,6 +407,7 @@ final class AssistantVoiceAudioRouter {
                     android.media.AudioDeviceInfo speaker = findBuiltinSpeakerLocked();
                     if (speaker != null) {
                         boolean ok = audioManager.setCommunicationDevice(speaker);
+                        communicationDeviceSet = ok;
                         if (!ok) {
                             Log.w(TAG, "setCommunicationDevice(BUILTIN_SPEAKER) returned false");
                         }
@@ -252,7 +417,7 @@ final class AssistantVoiceAudioRouter {
                     // Keep legacy flag in sync for OEM paths that still honor it.
                     audioManager.setSpeakerphoneOn(true);
                 } else {
-                    audioManager.clearCommunicationDevice();
+                    clearCommunicationDeviceLocked();
                     audioManager.setSpeakerphoneOn(false);
                 }
             } else {
@@ -262,6 +427,19 @@ final class AssistantVoiceAudioRouter {
         } catch (Exception error) {
             Log.w(TAG, "failed to set speakerphone=" + enabled, error);
         }
+    }
+
+    private void clearCommunicationDeviceLocked() {
+        if (audioManager == null || Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
+            communicationDeviceSet = false;
+            return;
+        }
+        try {
+            audioManager.clearCommunicationDevice();
+        } catch (Exception error) {
+            Log.w(TAG, "clearCommunicationDevice failed", error);
+        }
+        communicationDeviceSet = false;
     }
 
     private android.media.AudioDeviceInfo findBuiltinSpeakerLocked() {
@@ -446,9 +624,13 @@ final class AssistantVoiceAudioRouter {
             communicationModeActive = false;
             scoStarted = false;
             speakerphoneEnabled = false;
+            communicationDeviceSet = false;
             return;
         }
-        if (!communicationModeActive && !scoStarted && !speakerphoneEnabled) {
+        if (!communicationModeActive
+            && !scoStarted
+            && !speakerphoneEnabled
+            && !communicationDeviceSet) {
             return;
         }
         try {
@@ -456,14 +638,8 @@ final class AssistantVoiceAudioRouter {
                 audioManager.stopBluetoothSco();
                 audioManager.setBluetoothScoOn(false);
             }
-            if (speakerphoneEnabled) {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                    try {
-                        audioManager.clearCommunicationDevice();
-                    } catch (Exception clearError) {
-                        Log.w(TAG, "clearCommunicationDevice failed", clearError);
-                    }
-                }
+            if (speakerphoneEnabled || communicationDeviceSet) {
+                clearCommunicationDeviceLocked();
                 audioManager.setSpeakerphoneOn(false);
             }
             audioManager.setMode(AudioManager.MODE_NORMAL);
@@ -472,6 +648,7 @@ final class AssistantVoiceAudioRouter {
         }
         scoStarted = false;
         speakerphoneEnabled = false;
+        communicationDeviceSet = false;
         communicationModeActive = false;
     }
 }
