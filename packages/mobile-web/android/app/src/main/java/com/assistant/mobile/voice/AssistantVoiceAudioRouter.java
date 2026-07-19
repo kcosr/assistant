@@ -77,6 +77,12 @@ final class AssistantVoiceAudioRouter {
         }
     }
 
+    boolean isSpeakerphoneEnabled() {
+        synchronized (lock) {
+            return speakerphoneEnabled;
+        }
+    }
+
     boolean requestPlaybackFocus(long ownerGeneration) {
         synchronized (lock) {
             if (audioManager == null) {
@@ -168,7 +174,8 @@ final class AssistantVoiceAudioRouter {
                 return;
             }
             if (communicationModeActive) {
-                applySpeakerphoneLocked(preferSpeakerphone);
+                // Keep SCO and speakerphone mutually exclusive if this is re-entered mid-call.
+                applySpeakerphoneLocked(preferSpeakerphone && !scoStarted);
                 return;
             }
             try {
@@ -190,6 +197,10 @@ final class AssistantVoiceAudioRouter {
         }
     }
 
+    /**
+     * Only SCO/HFP (and BLE headset) devices can carry voice-call audio. A2DP is media-only and
+     * must not suppress speakerphone or trigger a non-functional SCO session.
+     */
     private boolean shouldStartBluetoothScoLocked() {
         if (audioManager == null) {
             return false;
@@ -202,8 +213,7 @@ final class AssistantVoiceAudioRouter {
                 : audioManager.getDevices(AudioManager.GET_DEVICES_OUTPUTS)) {
                 int type = device.getType();
                 if (type == android.media.AudioDeviceInfo.TYPE_BLUETOOTH_SCO
-                    || type == android.media.AudioDeviceInfo.TYPE_BLE_HEADSET
-                    || type == android.media.AudioDeviceInfo.TYPE_BLUETOOTH_A2DP) {
+                    || type == android.media.AudioDeviceInfo.TYPE_BLE_HEADSET) {
                     return true;
                 }
             }

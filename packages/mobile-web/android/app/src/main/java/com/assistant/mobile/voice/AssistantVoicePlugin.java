@@ -477,6 +477,7 @@ public final class AssistantVoicePlugin extends Plugin {
         voiceSettings.put("voiceRuntimeMode", current.voiceRuntimeMode);
         voiceSettings.put("realtimeConversationId", current.realtimeConversationId);
         voiceSettings.put("realtimeMuteOnStart", current.realtimeMuteOnStart);
+        voiceSettings.put("realtimeSpeakerphone", current.realtimeSpeakerphone);
         voiceSettings.put("realtimeListsInstanceId", current.realtimeListsInstanceId);
         voiceSettings.put("audioMode", current.audioMode);
         voiceSettings.put("autoListenEnabled", current.autoListenEnabled);
