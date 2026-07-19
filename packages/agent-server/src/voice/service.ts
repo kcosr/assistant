@@ -13,6 +13,7 @@ import {
   negotiateOpenAiRealtimeCall,
   OpenAiRealtimeSideband,
 } from './openaiRealtime';
+import { realtimeToolSessionId } from './constants';
 import { VoiceStore } from './store';
 import type {
   VoiceCapabilities,
@@ -490,7 +491,7 @@ export class VoiceService {
       return;
     }
 
-    const ctx = this.options.createToolContext(`voice:${live.conversationId}`);
+    const ctx = this.options.createToolContext(realtimeToolSessionId(live.conversationId));
     let output: unknown;
     try {
       output = await this.options.toolHost.callTool(name, JSON.stringify(args), ctx);

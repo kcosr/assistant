@@ -32,6 +32,7 @@ import {
   formatAttachmentTooLargeMessage,
 } from './attachments/constants';
 import { createNotificationRecord } from '../../plugins/core/notifications/server/service';
+import { createWebSearchToolDefinition } from './tools/webSearch';
 
 interface AgentMessageArgs {
   agentId: string;
@@ -1266,4 +1267,6 @@ export function registerBuiltInSessionTools(options: {
     handler: async (args, ctx) =>
       handleAttachmentSend(args, ctx, options.sessionHub, attachmentPreviewChars),
   });
+
+  options.host.registerTool(createWebSearchToolDefinition());
 }

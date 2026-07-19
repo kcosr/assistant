@@ -8,6 +8,7 @@
 
 ### Added
 
+- Added built-in `web_search` tool that runs local Grok CLI headless research (live web and public X) with optional `continue` resume, for text agents and Realtime allowlists.
 - Added Android Realtime voice end-to-end: server `/api/voice/*` (conversation/session, OpenAI SDP negotiate, sideband lists tools, events), Android WebRTC Realtime client with exclusive-owner preemption, wake lock, start/stop/mute plugin APIs, config tool allowlist/denylist globs, `realtime_end_session` hangup, headset media-button start/stop, and web settings/FAB controls. Uses server-side `OPENAI_API_KEY` only. ([#113](https://github.com/kcosr/assistant/pull/113))
 - Added Android native voice foundations for exclusive Thread vs Realtime ownership: generation-fenced controller helpers, shared audio router (focus/mode/SCO), Thread queue stop/clear/pause-admission hooks, and a `voiceRuntimeMode` preference. ([#113](https://github.com/kcosr/assistant/pull/113))
 - Wait for the agent-voice-adapter client identity before starting direct TTS playback from the Android voice queue, and drain the queue once the identity arrives. ([#113](https://github.com/kcosr/assistant/pull/113))
