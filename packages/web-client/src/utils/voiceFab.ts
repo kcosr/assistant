@@ -71,6 +71,11 @@ export function setupVoiceFab(options: VoiceFabOptions): VoiceFabHandle {
   /** Local mute UI for the current Realtime call; reset when the call ends. */
   let realtimeMuted = false;
   let wasRealtimeMode = false;
+  /**
+   * After hangup, native mode can lag briefly as still `realtime`. Keep the mute FAB
+   * hidden until mode is no longer realtime so it never sticks past call end.
+   */
+  let suppressMuteUntilRealtimeEnds = false;
 
   const positionChip = (): void => {
     const rect = button.getBoundingClientRect();
@@ -110,13 +115,20 @@ export function setupVoiceFab(options: VoiceFabOptions): VoiceFabHandle {
     muteButton.setAttribute('aria-pressed', 'false');
   };
 
+  const clearRealtimeMuteUi = (): void => {
+    realtimeMuted = false;
+    wasRealtimeMode = false;
+    hideMuteButton();
+  };
+
   const renderMuteButton = (mode: VoiceFabMode, visible: boolean): void => {
-    if (!visible || mode !== 'realtime') {
-      if (wasRealtimeMode) {
-        realtimeMuted = false;
+    // Mute control is Realtime-call-only. Hide as soon as we leave realtime (or suppress
+    // after hangup while native state still reports realtime for a beat).
+    if (!visible || mode !== 'realtime' || suppressMuteUntilRealtimeEnds) {
+      if (mode !== 'realtime') {
+        suppressMuteUntilRealtimeEnds = false;
       }
-      wasRealtimeMode = false;
-      hideMuteButton();
+      clearRealtimeMuteUi();
       return;
     }
     if (!wasRealtimeMode) {
@@ -171,12 +183,15 @@ export function setupVoiceFab(options: VoiceFabOptions): VoiceFabHandle {
     button.classList.toggle('is-visible', visible);
     if (!visible) {
       hideSessionChip();
-      hideMuteButton();
+      clearRealtimeMuteUi();
       return;
     }
 
     const controller = options.getSpeechController();
     const state = controller?.getVoiceFabState() ?? { enabled: false, mode: 'idle' as const };
+    if (state.mode !== 'realtime') {
+      suppressMuteUntilRealtimeEnds = false;
+    }
     renderSessionChip(state.mode);
     renderMuteButton(state.mode, visible);
     button.classList.add('voice-fab');
@@ -215,6 +230,11 @@ export function setupVoiceFab(options: VoiceFabOptions): VoiceFabHandle {
     }
     const state = controller.getVoiceFabState();
     if (state.mode === 'speaking' || state.mode === 'listening' || state.mode === 'realtime') {
+      if (state.mode === 'realtime') {
+        // Immediate hide: do not wait for native idle/connecting reset to drop mode.
+        suppressMuteUntilRealtimeEnds = true;
+        clearRealtimeMuteUi();
+      }
       controller.stopVoiceFromFab();
       update();
       return;

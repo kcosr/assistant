@@ -240,4 +240,57 @@ describe('setupVoiceFab', () => {
     expect(mute?.getAttribute('aria-pressed')).toBe('true');
     handle.destroy();
   });
+
+  it('hides the mute FAB immediately when stopping a realtime call even if mode lags', async () => {
+    const button = document.createElement('button');
+    document.body.appendChild(button);
+    let mode: 'idle' | 'realtime' = 'realtime';
+    const stopVoiceFromFab = vi.fn(() => {
+      // Native often still reports realtime until the next state push.
+      mode = 'realtime';
+      return true;
+    });
+
+    const handle = setupVoiceFab({
+      button,
+      isVisible: () => true,
+      getSpeechController: () => ({
+        getVoiceFabState: () => ({ enabled: true, mode }),
+        startVoiceFromFab: vi.fn(async () => true),
+        stopVoiceFromFab,
+        getRealtimeMuteOnStart: () => false,
+        setRealtimeMuted: vi.fn(() => true),
+      }),
+      getSessionChipState: () => ({
+        visible: false,
+        interactive: false,
+        title: null,
+      }),
+      onSessionChipClick: vi.fn(),
+    });
+
+    handle.update();
+    const mute = document.querySelector<HTMLButtonElement>('.voice-fab-mute');
+    expect(mute?.hidden).toBe(false);
+
+    button.click();
+    await Promise.resolve();
+    expect(stopVoiceFromFab).toHaveBeenCalled();
+    expect(mute?.hidden).toBe(true);
+    expect(mute?.classList.contains('is-visible')).toBe(false);
+
+    // Still "realtime" from controller — mute must stay suppressed until idle.
+    handle.update();
+    expect(mute?.hidden).toBe(true);
+
+    mode = 'idle';
+    handle.update();
+    expect(mute?.hidden).toBe(true);
+
+    // Next realtime call can show mute again.
+    mode = 'realtime';
+    handle.update();
+    expect(mute?.hidden).toBe(false);
+    handle.destroy();
+  });
 });
