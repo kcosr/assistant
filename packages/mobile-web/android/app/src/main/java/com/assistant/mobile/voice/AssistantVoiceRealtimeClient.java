@@ -431,14 +431,68 @@ final class AssistantVoiceRealtimeClient {
             );
         } else if ("error".equals(type)) {
             // Non-terminal provider error surface; keep call unless session_state fails.
-            Log.w(TAG, "realtime event error=" + event.optString("message", ""));
+            Log.w(
+                TAG,
+                "realtime event error="
+                    + event.optString("message", "")
+                    + " webrtc="
+                    + describeWebRtcState()
+            );
         } else if ("session_state".equals(type)) {
             String state = event.optString("state", "");
             if ("failed".equals(state) || "closed".equals(state)) {
-                teardown(event.optString("message", state), false);
+                String message = event.optString("message", state);
+                // Snapshot phone↔OpenAI path at the moment the server ends the session
+                // (e.g. sideband 1006) so we can tell media-still-up vs media-already-dead.
+                Log.w(
+                    TAG,
+                    "session_state terminal state="
+                        + state
+                        + " message="
+                        + message
+                        + " webrtc="
+                        + describeWebRtcState()
+                );
+                teardown(message, false);
             }
         } else if ("closed".equals(type)) {
-            teardown(event.optString("reason", "closed"), false);
+            String reason = event.optString("reason", "closed");
+            Log.w(TAG, "closed event reason=" + reason + " webrtc=" + describeWebRtcState());
+            teardown(reason, false);
+        }
+    }
+
+    /**
+     * Compact WebRTC path snapshot for logcat correlation with server sideband closes.
+     * Safe when peerConnection is null or already disposed.
+     */
+    private String describeWebRtcState() {
+        PeerConnection pc = peerConnection;
+        if (pc == null) {
+            return "pc=null muted=" + muted + " sessionId=" + sessionId;
+        }
+        try {
+            String ice = String.valueOf(pc.iceConnectionState());
+            String signaling = String.valueOf(pc.signalingState());
+            String connection = "n/a";
+            try {
+                // Available on modern org.webrtc builds (Stream WebRTC).
+                connection = String.valueOf(pc.connectionState());
+            } catch (Throwable ignored) {
+                // Older bindings may omit connectionState().
+            }
+            return "ice="
+                + ice
+                + " connection="
+                + connection
+                + " signaling="
+                + signaling
+                + " muted="
+                + muted
+                + " sessionId="
+                + sessionId;
+        } catch (Throwable error) {
+            return "pc=error muted=" + muted + " err=" + error.getMessage();
         }
     }
 
@@ -639,10 +693,16 @@ final class AssistantVoiceRealtimeClient {
 
     private class PeerObserver implements PeerConnection.Observer {
         @Override
-        public void onSignalingChange(PeerConnection.SignalingState signalingState) {}
+        public void onSignalingChange(PeerConnection.SignalingState signalingState) {
+            Log.i(TAG, "webrtc signaling=" + signalingState + " " + describeWebRtcState());
+        }
 
         @Override
         public void onIceConnectionChange(PeerConnection.IceConnectionState iceConnectionState) {
+            Log.i(
+                TAG,
+                "webrtc ice=" + iceConnectionState + " " + describeWebRtcState()
+            );
             if (iceConnectionState == PeerConnection.IceConnectionState.FAILED
                 || iceConnectionState == PeerConnection.IceConnectionState.DISCONNECTED
                 || iceConnectionState == PeerConnection.IceConnectionState.CLOSED) {
@@ -650,8 +710,22 @@ final class AssistantVoiceRealtimeClient {
                     if (!terminal.get()) {
                         // Grace: disconnect may recover briefly; hard-fail on FAILED.
                         if (iceConnectionState == PeerConnection.IceConnectionState.FAILED) {
+                            Log.e(TAG, "ice_failed " + describeWebRtcState());
                             fail("ice_failed");
                         }
+                    }
+                });
+            }
+        }
+
+        @Override
+        public void onConnectionChange(PeerConnection.PeerConnectionState newState) {
+            Log.i(TAG, "webrtc connection=" + newState + " " + describeWebRtcState());
+            if (newState == PeerConnection.PeerConnectionState.FAILED) {
+                executor.execute(() -> {
+                    if (!terminal.get()) {
+                        Log.e(TAG, "connection_failed " + describeWebRtcState());
+                        fail("webrtc_connection_failed");
                     }
                 });
             }

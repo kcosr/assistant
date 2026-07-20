@@ -50,6 +50,7 @@
 
 ### Fixed
 
+- Added Realtime OpenAI sideband WebSocket ping + TCP keepalive (60s) to reduce idle NAT drops, and log ping/pong counts on close; Android logs WebRTC ice/connection state when a session fails so phone↔OpenAI can be correlated with server sideband closes.
 - Improved Realtime sideband logging so unexpected WebSocket closes record code, wasClean, reason text, and intentional vs peer/network drop (helps distinguish OpenAI hangup from path failures).
 - Fixed Realtime mode preference persistence across app restarts so WebView localStorage defaults do not overwrite native `voiceRuntimeMode` on cold start.
 - Fixed Realtime mute state sync so notification Mute/Unmute updates the in-app mute FAB (and vice versa) via a `realtimeMuted` native state field.
