@@ -50,10 +50,10 @@
 
 ### Fixed
 
-- Added Realtime OpenAI sideband WebSocket ping + TCP keepalive (60s) to reduce idle NAT drops, and log ping/pong counts on close; Android logs WebRTC ice/connection state when a session fails so phone↔OpenAI can be correlated with server sideband closes.
-- Improved Realtime sideband logging so unexpected WebSocket closes record code, wasClean, reason text, and intentional vs peer/network drop (helps distinguish OpenAI hangup from path failures).
-- Fixed Realtime mode preference persistence across app restarts so WebView localStorage defaults do not overwrite native `voiceRuntimeMode` on cold start.
-- Fixed Realtime mute state sync so notification Mute/Unmute updates the in-app mute FAB (and vice versa) via a `realtimeMuted` native state field.
+- Added Realtime OpenAI sideband WebSocket ping + TCP keepalive (60s) to reduce idle NAT drops, and log ping/pong counts on close; Android logs WebRTC ice/connection state when a session fails so phone↔OpenAI can be correlated with server sideband closes. ([#116](https://github.com/kcosr/assistant/pull/116))
+- Improved Realtime sideband logging so unexpected WebSocket closes record code, wasClean, reason text, and intentional vs peer/network drop (helps distinguish OpenAI hangup from path failures). ([#116](https://github.com/kcosr/assistant/pull/116))
+- Fixed Realtime mode preference persistence across app restarts so WebView localStorage defaults do not overwrite native `voiceRuntimeMode` on cold start. ([#116](https://github.com/kcosr/assistant/pull/116))
+- Fixed Realtime mute state sync so notification Mute/Unmute updates the in-app mute FAB (and vice versa) via a `realtimeMuted` native state field. ([#116](https://github.com/kcosr/assistant/pull/116))
 - Fixed Realtime Bluetooth headset routing so dual-profile call headsets (SCO/HFP, e.g. Shokz OpenComm) are preferred via `setCommunicationDevice` + SCO instead of staying on quiet A2DP/earpiece when speakerphone preference is enabled; pure A2DP media speakers still leave loudspeaker free. ([#115](https://github.com/kcosr/assistant/pull/115))
 - Fixed Thread voice getting stuck on connecting after Realtime by recovering a stale Realtime owner fence so adapter/assistant sockets can return to idle. ([#114](https://github.com/kcosr/assistant/pull/114))
 - Fixed Realtime speakerphone so A2DP-only Bluetooth devices no longer suppress loudspeaker (only SCO/BLE headsets trigger SCO routing), and force the built-in speaker via `setCommunicationDevice` on API 31+ so media-only BT speakers do not leave voice on the quiet earpiece. ([#114](https://github.com/kcosr/assistant/pull/114))
