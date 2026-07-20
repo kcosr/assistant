@@ -1258,6 +1258,8 @@ async function main(): Promise<void> {
       }
       return {
         getVoiceFabState: () => resolveVoiceFabState(),
+        getRealtimeMuteOnStart: () => getCurrentVoiceSettings().realtimeMuteOnStart,
+        setRealtimeMuted: (muted: boolean) => nativeVoiceBridge.setRealtimeMuted(muted),
         startVoiceFromFab: async () => {
           // Push latest settings before start so native mode matches the dropdown.
           const latestSettings = getCurrentVoiceSettings();
@@ -1293,6 +1295,8 @@ async function main(): Promise<void> {
     }
     return {
       getVoiceFabState: () => resolveVoiceFabState(),
+      getRealtimeMuteOnStart: () => getCurrentVoiceSettings().realtimeMuteOnStart,
+      setRealtimeMuted: (muted: boolean) => nativeVoiceBridge.setRealtimeMuted(muted),
       startVoiceFromFab: async () => {
         // Ensure native mode is current even if async settings sync is still in flight.
         const latestSettings = getCurrentVoiceSettings();

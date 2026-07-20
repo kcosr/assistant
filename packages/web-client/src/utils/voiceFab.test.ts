@@ -157,4 +157,87 @@ describe('setupVoiceFab', () => {
     resolveStart(true);
     await Promise.resolve();
   });
+
+  it('shows a realtime mute toggle above the FAB and toggles uplink mute', async () => {
+    const button = document.createElement('button');
+    document.body.appendChild(button);
+    let mode: 'idle' | 'realtime' = 'idle';
+    const setRealtimeMuted = vi.fn(() => true);
+
+    const handle = setupVoiceFab({
+      button,
+      isVisible: () => true,
+      getSpeechController: () => ({
+        getVoiceFabState: () => ({ enabled: true, mode }),
+        startVoiceFromFab: vi.fn(async () => true),
+        stopVoiceFromFab: vi.fn(() => true),
+        getRealtimeMuteOnStart: () => false,
+        setRealtimeMuted,
+      }),
+      getSessionChipState: () => ({
+        visible: false,
+        interactive: false,
+        title: null,
+      }),
+      onSessionChipClick: vi.fn(),
+    });
+
+    handle.update();
+    let mute = document.querySelector<HTMLButtonElement>('.voice-fab-mute');
+    expect(mute?.hidden).toBe(true);
+
+    mode = 'realtime';
+    handle.update();
+    mute = document.querySelector<HTMLButtonElement>('.voice-fab-mute');
+    expect(mute?.hidden).toBe(false);
+    expect(mute?.classList.contains('is-visible')).toBe(true);
+    expect(mute?.classList.contains('is-muted')).toBe(false);
+    expect(mute?.getAttribute('aria-label')).toBe('Mute realtime microphone');
+
+    mute?.click();
+    await Promise.resolve();
+    expect(setRealtimeMuted).toHaveBeenCalledWith(true);
+    expect(mute?.classList.contains('is-muted')).toBe(true);
+    expect(mute?.getAttribute('aria-label')).toBe('Unmute realtime microphone');
+
+    mute?.click();
+    await Promise.resolve();
+    expect(setRealtimeMuted).toHaveBeenCalledWith(false);
+    expect(mute?.classList.contains('is-muted')).toBe(false);
+
+    mode = 'idle';
+    handle.update();
+    expect(mute?.hidden).toBe(true);
+    handle.destroy();
+  });
+
+  it('seeds mute UI from mute-on-start when entering realtime', () => {
+    const button = document.createElement('button');
+    document.body.appendChild(button);
+    let mode: 'idle' | 'realtime' = 'realtime';
+
+    const handle = setupVoiceFab({
+      button,
+      isVisible: () => true,
+      getSpeechController: () => ({
+        getVoiceFabState: () => ({ enabled: true, mode }),
+        startVoiceFromFab: vi.fn(async () => true),
+        stopVoiceFromFab: vi.fn(() => true),
+        getRealtimeMuteOnStart: () => true,
+        setRealtimeMuted: vi.fn(() => true),
+      }),
+      getSessionChipState: () => ({
+        visible: false,
+        interactive: false,
+        title: null,
+      }),
+      onSessionChipClick: vi.fn(),
+    });
+
+    handle.update();
+    const mute = document.querySelector<HTMLButtonElement>('.voice-fab-mute');
+    expect(mute?.classList.contains('is-muted')).toBe(true);
+    expect(mute?.getAttribute('aria-pressed')).toBe('true');
+    handle.destroy();
+  });
 });

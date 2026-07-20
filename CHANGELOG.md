@@ -8,6 +8,7 @@
 
 ### Added
 
+- Added a Realtime mic mute toggle FAB stacked above the floating microphone control so uplink audio can be muted while keeping the duplex call active.
 - Added Realtime speakerphone preference (default on) so duplex voice uses the phone loudspeaker when no Bluetooth headset is connected, instead of the quiet earpiece. ([#114](https://github.com/kcosr/assistant/pull/114))
 - Added built-in `web_search` tool that runs local Grok CLI headless research (live web and public X) with optional `continue` resume, for text agents and Realtime allowlists. ([#114](https://github.com/kcosr/assistant/pull/114))
 - Added Android Realtime voice end-to-end: server `/api/voice/*` (conversation/session, OpenAI SDP negotiate, sideband lists tools, events), Android WebRTC Realtime client with exclusive-owner preemption, wake lock, start/stop/mute plugin APIs, config tool allowlist/denylist globs, `realtime_end_session` hangup, headset media-button start/stop, and web settings/FAB controls. Uses server-side `OPENAI_API_KEY` only. ([#113](https://github.com/kcosr/assistant/pull/113))
