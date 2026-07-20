@@ -77,6 +77,8 @@ export type AssistantNativeVoiceRuntimeState =
 
 export interface AssistantNativeVoiceStatePayload {
   state?: string;
+  /** Live Realtime uplink mute (persisted by the native service). */
+  realtimeMuted?: boolean;
   activeSessionId?: string | null;
   activeDisplayTitle?: string | null;
   voiceSettings?: VoiceSettings;

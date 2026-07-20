@@ -533,7 +533,15 @@ public final class AssistantVoiceRuntimeService extends Service {
         }
         if (ACTION_SET_REALTIME_MUTED.equals(action)) {
             boolean muted = intent != null && intent.getBooleanExtra(EXTRA_REALTIME_MUTED, false);
-            setRealtimeMuted(muted);
+            if (isRealtimeActiveState(runtimeState)) {
+                // Live duplex call: gate uplink audio only.
+                setRealtimeMuted(muted);
+            } else {
+                // Idle Realtime mode: persist mute-on-start so the next call honors it.
+                applyConfig(config.withRealtimeMuteOnStart(muted));
+                realtimeMuted = muted;
+                refreshNotification();
+            }
             return START_STICKY;
         }
 
@@ -998,7 +1006,6 @@ public final class AssistantVoiceRuntimeService extends Service {
     }
 
     private Notification buildNotification(String state) {
-        String displayedAudioMode = resolveDisplayedNotificationAudioMode(state, config.audioMode);
         Intent launchIntent = new Intent(this, MainActivity.class)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP);
         PendingIntent launchPendingIntent = PendingIntent.getActivity(
@@ -1007,6 +1014,58 @@ public final class AssistantVoiceRuntimeService extends Service {
             launchIntent,
             PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT
         );
+
+        // Realtime preference: Realtime chrome whether idle or in a call (not Thread speak/mode).
+        // Exception: Thread SPEAKING/LISTENING (e.g. notification replay) still needs Stop chrome.
+        boolean threadMediaActive =
+            STATE_SPEAKING.equals(trim(state)) || STATE_LISTENING.equals(trim(state));
+        if (isRealtimeRuntimeMode(config.voiceRuntimeMode)
+            && !(threadMediaActive && !isRealtimeActiveState(state))) {
+            boolean callActive = isRealtimeActiveState(state);
+            boolean mutedForUi = callActive ? realtimeMuted : config.realtimeMuteOnStart;
+            PendingIntent muteTogglePendingIntent = PendingIntent.getService(
+                this,
+                6,
+                setRealtimeMutedIntent(this, !mutedForUi),
+                PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT
+            );
+            if (callActive) {
+                PendingIntent endCallPendingIntent = PendingIntent.getService(
+                    this,
+                    5,
+                    stopRealtimeIntent(this),
+                    PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT
+                );
+                return buildRealtimeNotification(
+                    this,
+                    state,
+                    launchPendingIntent,
+                    muteTogglePendingIntent,
+                    endCallPendingIntent,
+                    null,
+                    true,
+                    mutedForUi
+                );
+            }
+            PendingIntent startCallPendingIntent = PendingIntent.getService(
+                this,
+                7,
+                startRealtimeIntent(this),
+                PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT
+            );
+            return buildRealtimeNotification(
+                this,
+                state,
+                launchPendingIntent,
+                muteTogglePendingIntent,
+                null,
+                startCallPendingIntent,
+                false,
+                mutedForUi
+            );
+        }
+
+        String displayedAudioMode = resolveDisplayedNotificationAudioMode(state, config.audioMode);
         PendingIntent startListenPendingIntent = PendingIntent.getService(
             this,
             1,
@@ -1063,6 +1122,83 @@ public final class AssistantVoiceRuntimeService extends Service {
             displayedAudioMode,
             config.mediaButtonsEnabled
         );
+    }
+
+    /**
+     * Realtime-mode foreground notification (preference is Realtime, not only while a call is live).
+     * Idle: Start call + Mute/Unmute (mute-on-start). Active: Mute/Unmute + End call.
+     * Thread speak / audio-mode / media-button actions are omitted in this mode.
+     */
+    static Notification buildRealtimeNotification(
+        Context context,
+        String state,
+        PendingIntent launchPendingIntent,
+        PendingIntent muteTogglePendingIntent,
+        PendingIntent endCallPendingIntent,
+        PendingIntent startCallPendingIntent,
+        boolean callActive,
+        boolean muted
+    ) {
+        NotificationCompat.Builder builder = new NotificationCompat.Builder(context, NOTIFICATION_CHANNEL_ID)
+            .setSmallIcon(android.R.drawable.ic_btn_speak_now)
+            .setContentTitle(
+                context.getString(
+                    R.string.assistant_voice_notification_title,
+                    formatNotificationStateLabel(context, state, muted, true, callActive)
+                )
+            )
+            .setContentText(
+                context.getString(
+                    callActive
+                        ? (muted
+                            ? R.string.assistant_voice_notification_realtime_body_muted
+                            : R.string.assistant_voice_notification_realtime_body)
+                        : (muted
+                            ? R.string.assistant_voice_notification_realtime_body_muted
+                            : R.string.assistant_voice_notification_realtime_body_idle)
+                )
+            )
+            .setContentIntent(launchPendingIntent)
+            .setPriority(NOTIFICATION_PRIORITY)
+            .setVisibility(NOTIFICATION_VISIBILITY)
+            .setCategory(NOTIFICATION_CATEGORY)
+            .setOngoing(true);
+
+        int compactCount = 0;
+        if (!callActive && startCallPendingIntent != null) {
+            builder.addAction(
+                android.R.drawable.ic_btn_speak_now,
+                context.getString(R.string.assistant_voice_notification_action_start_call),
+                startCallPendingIntent
+            );
+            compactCount += 1;
+        }
+        // Icon reflects current state (muted → mic-off), matching the in-app mute FAB.
+        // Label still describes the action taken on tap (Mute / Unmute).
+        builder.addAction(
+            muted ? R.drawable.ic_notification_mic_off : R.drawable.ic_notification_mic,
+            context.getString(
+                muted
+                    ? R.string.assistant_voice_notification_action_unmute
+                    : R.string.assistant_voice_notification_action_mute
+            ),
+            muteTogglePendingIntent
+        );
+        compactCount += 1;
+        if (callActive && endCallPendingIntent != null) {
+            builder.addAction(
+                R.drawable.ic_notification_stop,
+                context.getString(R.string.assistant_voice_notification_action_end_call),
+                endCallPendingIntent
+            );
+            compactCount += 1;
+        }
+        builder.setStyle(
+            compactCount >= 3
+                ? new MediaStyle().setShowActionsInCompactView(0, 1, 2)
+                : new MediaStyle().setShowActionsInCompactView(0, 1)
+        );
+        return builder.build();
     }
 
     static Notification buildNotification(
@@ -1254,6 +1390,29 @@ public final class AssistantVoiceRuntimeService extends Service {
     }
 
     static String formatNotificationStateLabel(Context context, String state) {
+        return formatNotificationStateLabel(context, state, false, false, false);
+    }
+
+    static String formatNotificationStateLabel(Context context, String state, boolean realtimeMuted) {
+        return formatNotificationStateLabel(context, state, realtimeMuted, false, true);
+    }
+
+    static String formatNotificationStateLabel(
+        Context context,
+        String state,
+        boolean realtimeMuted,
+        boolean realtimeModePreference,
+        boolean callActive
+    ) {
+        if (realtimeModePreference && !callActive && !isRealtimeActiveState(state)) {
+            if (realtimeMuted) {
+                return context.getString(R.string.assistant_voice_notification_state_realtime_muted);
+            }
+            if (STATE_DISABLED.equals(trim(state))) {
+                return context.getString(R.string.assistant_voice_notification_state_disabled);
+            }
+            return context.getString(R.string.assistant_voice_notification_state_realtime_idle);
+        }
         switch (trim(state)) {
             case STATE_CONNECTING:
                 return context.getString(R.string.assistant_voice_notification_state_connecting);
@@ -1263,6 +1422,14 @@ public final class AssistantVoiceRuntimeService extends Service {
                 return context.getString(R.string.assistant_voice_notification_state_speaking);
             case STATE_LISTENING:
                 return context.getString(R.string.assistant_voice_notification_state_listening);
+            case STATE_REALTIME_CONNECTING:
+                return context.getString(R.string.assistant_voice_notification_state_realtime_connecting);
+            case STATE_REALTIME_ACTIVE:
+                return context.getString(
+                    realtimeMuted
+                        ? R.string.assistant_voice_notification_state_realtime_muted
+                        : R.string.assistant_voice_notification_state_realtime
+                );
             case STATE_ERROR:
                 return context.getString(R.string.assistant_voice_notification_state_error);
             case STATE_DISABLED:
@@ -2193,6 +2360,7 @@ public final class AssistantVoiceRuntimeService extends Service {
         }
         prepareRealtimeOwnerPreempt(reason);
         realtimeMuted = config.realtimeMuteOnStart;
+        AssistantVoiceConfig.saveRuntimeRealtimeMuted(this, realtimeMuted);
         updateState(STATE_REALTIME_CONNECTING, null);
         // Speakerphone preference is applied inside RealtimeClient via the audio router
         // (call mode defaults to quiet earpiece without it).
@@ -2220,10 +2388,13 @@ public final class AssistantVoiceRuntimeService extends Service {
 
     private void setRealtimeMuted(boolean muted) {
         realtimeMuted = muted;
+        AssistantVoiceConfig.saveRuntimeRealtimeMuted(this, muted);
         if (realtimeClient != null) {
             realtimeClient.setMuted(muted);
         }
         refreshNotification();
+        // Notify WebView so the mute FAB tracks notification-initiated toggles.
+        broadcastStateChanged();
     }
 
     @SuppressWarnings("deprecation")

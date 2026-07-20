@@ -83,6 +83,7 @@ final class AssistantVoiceConfig {
     private static final String KEY_RUNTIME_ERROR = "runtime_error";
     private static final String KEY_RUNTIME_ACTIVE_SESSION_ID = "runtime_active_session_id";
     private static final String KEY_RUNTIME_ACTIVE_DISPLAY_TITLE = "runtime_active_display_title";
+    private static final String KEY_RUNTIME_REALTIME_MUTED = "runtime_realtime_muted";
 
     static final String EXTRA_AUDIO_MODE = "audioMode";
     static final String EXTRA_RUNTIME_MODE = "voiceRuntimeMode";
@@ -481,6 +482,14 @@ final class AssistantVoiceConfig {
 
     static String loadRuntimeActiveDisplayTitle(Context context) {
         return normalizeOptional(prefs(context).getString(KEY_RUNTIME_ACTIVE_DISPLAY_TITLE, null));
+    }
+
+    static void saveRuntimeRealtimeMuted(Context context, boolean muted) {
+        prefs(context).edit().putBoolean(KEY_RUNTIME_REALTIME_MUTED, muted).apply();
+    }
+
+    static boolean loadRuntimeRealtimeMuted(Context context) {
+        return prefs(context).getBoolean(KEY_RUNTIME_REALTIME_MUTED, false);
     }
 
     private static SharedPreferences prefs(Context context) {
@@ -1016,6 +1025,40 @@ final class AssistantVoiceConfig {
 
             realtimeSpeakerphone,
 
+            realtimeListsInstanceId
+        );
+    }
+
+    AssistantVoiceConfig withRealtimeMuteOnStart(boolean muted) {
+        return new AssistantVoiceConfig(
+            audioMode,
+            voiceRuntimeMode,
+            autoListenEnabled,
+            selectedMicDeviceId,
+            recognitionStartTimeoutMs,
+            recognitionCompletionTimeoutMs,
+            recognitionEndSilenceMs,
+            selectedPanelId,
+            selectedSessionId,
+            preferredVoiceSessionId,
+            sessionTitles,
+            watchedSessionIds,
+            inputContextEnabled,
+            inputContextLine,
+            voiceAdapterBaseUrl,
+            assistantBaseUrl,
+            ttsGain,
+            recognitionCueEnabled,
+            recognitionCueGain,
+            recognizeStopCommandEnabled,
+            startupPreRollMs,
+            mediaButtonsEnabled,
+            ttsPreferredSessionOnly,
+            standaloneNotificationPlaybackEnabled,
+            notificationTitlePlaybackEnabled,
+            realtimeConversationId,
+            muted,
+            realtimeSpeakerphone,
             realtimeListsInstanceId
         );
     }

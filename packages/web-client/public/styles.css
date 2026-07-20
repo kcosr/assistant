@@ -2181,6 +2181,58 @@ button.settings-dropdown-item {
   cursor: pointer;
 }
 
+/* Stacked above the voice FAB with the same 64px step as lists plus → voice FAB. */
+.voice-fab-mute {
+  position: fixed;
+  right: var(--spacing-lg);
+  width: 52px;
+  height: 52px;
+  border: none;
+  border-radius: 999px;
+  background-color: var(--color-bg-elevated);
+  color: var(--color-text-primary);
+  border: 1px solid var(--color-border-default);
+  display: none;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: var(--shadow-md);
+  transition:
+    background-color var(--transition-fast),
+    transform var(--transition-fast),
+    box-shadow var(--transition-fast),
+    color var(--transition-fast);
+  z-index: 201;
+}
+
+.voice-fab-mute.is-visible {
+  display: inline-flex;
+}
+
+.voice-fab-mute:hover {
+  box-shadow: var(--shadow-lg);
+  background-color: color-mix(in srgb, var(--color-bg-elevated) 92%, var(--color-accent-primary));
+}
+
+.voice-fab-mute:active {
+  transform: translateY(1px);
+}
+
+.voice-fab-mute.is-muted {
+  background-color: color-mix(in srgb, var(--theme-danger) 88%, black);
+  color: var(--color-text-on-accent);
+  border-color: transparent;
+}
+
+.voice-fab-mute.is-muted:hover {
+  background-color: var(--theme-danger);
+}
+
+.voice-fab-mute .icon-sm {
+  width: 18px;
+  height: 18px;
+}
+
 .command-palette-input {
   padding: var(--spacing-xs) var(--spacing-md);
   border-bottom: 1px solid var(--color-border-subtle);

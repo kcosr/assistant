@@ -509,6 +509,7 @@ public final class AssistantVoicePlugin extends Plugin {
 
         JSObject payload = new JSObject();
         payload.put("state", AssistantVoiceConfig.loadRuntimeState(getContext()));
+        payload.put("realtimeMuted", AssistantVoiceConfig.loadRuntimeRealtimeMuted(getContext()));
         payload.put("activeSessionId", activeSessionId.isEmpty() ? null : activeSessionId);
         payload.put("activeDisplayTitle", activeDisplayTitle.isEmpty() ? null : activeDisplayTitle);
         payload.put("voiceSettings", voiceSettings);
