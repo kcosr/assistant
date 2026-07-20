@@ -1478,8 +1478,13 @@ async function main(): Promise<void> {
     nativeVoiceSettingsSync.request(getCurrentVoiceSettings());
   }
 
-  function applyVoiceSettingsToChatInputs(settings: VoiceSettings): void {
-    if (!nativeVoiceSettingsHydrated) {
+  function applyVoiceSettingsToChatInputs(
+    settings: VoiceSettings,
+    options?: { userInitiated?: boolean },
+  ): void {
+    // Only user-driven edits (settings modal) mark dirty — automatic cleanups such as
+    // clearMissingPreferredVoiceSession must not skip native cold-start hydration.
+    if (!nativeVoiceSettingsHydrated && options?.userInitiated) {
       voiceSettingsDirtyBeforeHydrate = true;
     }
     currentVoiceSettings = settings;
@@ -4169,7 +4174,7 @@ async function main(): Promise<void> {
       syncPreferredVoiceSessionControl();
       return;
     }
-    applyVoiceSettingsToChatInputs(nextSettings);
+    applyVoiceSettingsToChatInputs(nextSettings, { userInitiated: true });
     syncPreferredVoiceSessionControl();
   };
   closeVoiceSettingsModal();
