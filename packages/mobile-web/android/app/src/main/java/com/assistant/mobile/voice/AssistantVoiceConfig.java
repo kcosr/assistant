@@ -1020,6 +1020,40 @@ final class AssistantVoiceConfig {
         );
     }
 
+    AssistantVoiceConfig withRealtimeMuteOnStart(boolean muted) {
+        return new AssistantVoiceConfig(
+            audioMode,
+            voiceRuntimeMode,
+            autoListenEnabled,
+            selectedMicDeviceId,
+            recognitionStartTimeoutMs,
+            recognitionCompletionTimeoutMs,
+            recognitionEndSilenceMs,
+            selectedPanelId,
+            selectedSessionId,
+            preferredVoiceSessionId,
+            sessionTitles,
+            watchedSessionIds,
+            inputContextEnabled,
+            inputContextLine,
+            voiceAdapterBaseUrl,
+            assistantBaseUrl,
+            ttsGain,
+            recognitionCueEnabled,
+            recognitionCueGain,
+            recognizeStopCommandEnabled,
+            startupPreRollMs,
+            mediaButtonsEnabled,
+            ttsPreferredSessionOnly,
+            standaloneNotificationPlaybackEnabled,
+            notificationTitlePlaybackEnabled,
+            realtimeConversationId,
+            muted,
+            realtimeSpeakerphone,
+            realtimeListsInstanceId
+        );
+    }
+
     String getSessionTitle(String sessionId) {
         String normalized = normalizeOptional(sessionId);
         if (normalized.isEmpty()) {

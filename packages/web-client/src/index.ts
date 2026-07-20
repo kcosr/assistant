@@ -1448,12 +1448,29 @@ async function main(): Promise<void> {
     nativeInputContextSync.request(getNativeVoiceInputContext());
   }
 
+  /** Do not push web defaults to native until first native getState hydration finishes. */
+  let nativeVoiceSettingsHydrated = !useNativeVoiceRuntime;
+
+  function persistVoiceSettingsLocally(settings: VoiceSettings): void {
+    try {
+      localStorage.setItem(VOICE_SETTINGS_STORAGE_KEY, JSON.stringify(settings));
+    } catch {
+      // Ignore localStorage errors (private mode / quota).
+    }
+  }
+
   function syncNativeVoiceSettings(): void {
+    if (!nativeVoiceSettingsHydrated) {
+      return;
+    }
     nativeVoiceSettingsSync.request(getCurrentVoiceSettings());
   }
 
   function applyVoiceSettingsToChatInputs(settings: VoiceSettings): void {
     currentVoiceSettings = settings;
+    // Always persist — speech-controller persist only runs when a primary chat panel exists.
+    // Without this, Realtime mode is lost on app restart when no chat panel owned the write.
+    persistVoiceSettingsLocally(settings);
     panelHostController?.setContext('voice.settings', settings);
     const primary = getPrimaryChatInputRuntime();
     if (primary) {
@@ -1469,6 +1486,37 @@ async function main(): Promise<void> {
     // no-primary-panel path and can leave native voiceRuntimeMode stale (e.g. still
     // realtime after the settings dropdown switches to thread).
     syncNativeVoiceSettings();
+  }
+
+  function hydrateVoiceSettingsFromNative(raw: unknown): void {
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+      return;
+    }
+    const merged = normalizeVoiceSettings(
+      {
+        ...getCurrentVoiceSettings(),
+        ...(raw as Record<string, unknown>),
+      },
+      { isCapacitorAndroid: true },
+    );
+    if (areVoiceSettingsEqual(getCurrentVoiceSettings(), merged)) {
+      return;
+    }
+    // Apply without waiting for hydration gate (we are the hydrator).
+    currentVoiceSettings = merged;
+    persistVoiceSettingsLocally(merged);
+    panelHostController?.setContext('voice.settings', merged);
+    const primary = getPrimaryChatInputRuntime();
+    if (primary) {
+      primary.setVoiceSettingsFromExternal(merged);
+    }
+    for (const entry of chatPanelsById.values()) {
+      if (entry.inputRuntime === primary) {
+        continue;
+      }
+      entry.inputRuntime.setVoiceSettingsFromExternal(merged);
+    }
+    voiceFabHandle?.update();
   }
 
   function syncNativeAssistantBaseUrl(): void {
@@ -1560,6 +1608,15 @@ async function main(): Promise<void> {
     });
     void nativeVoiceBridge.getState().then((payload) => {
       applyNativeVoiceRuntimePayload(payload);
+      // Prefer native SharedPreferences for voiceRuntimeMode / modes after cold start so
+      // empty WebView localStorage defaults do not stomp a saved Realtime preference.
+      if (!nativeVoiceSettingsHydrated) {
+        if (payload?.voiceSettings) {
+          hydrateVoiceSettingsFromNative(payload.voiceSettings);
+        }
+        nativeVoiceSettingsHydrated = true;
+        syncNativeVoiceBridgeState();
+      }
     });
   }
 

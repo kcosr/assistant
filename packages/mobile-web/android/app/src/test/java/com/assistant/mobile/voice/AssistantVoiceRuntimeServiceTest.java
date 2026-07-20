@@ -422,7 +422,7 @@ public final class AssistantVoiceRuntimeServiceTest {
 
     @Test
     @Config(sdk = Build.VERSION_CODES.N)
-    public void buildRealtimeNotificationShowsMuteAndEndCallOnly() {
+    public void buildRealtimeNotificationShowsMuteAndEndCallWhenActive() {
         Context context = RuntimeEnvironment.getApplication();
 
         Notification unmuted = AssistantVoiceRuntimeService.buildRealtimeNotification(
@@ -431,6 +431,8 @@ public final class AssistantVoiceRuntimeServiceTest {
             createActivityPendingIntent(context, "launch"),
             createServicePendingIntent(context, "mute"),
             createServicePendingIntent(context, "end"),
+            null,
+            true,
             false
         );
         assertEquals(
@@ -458,6 +460,8 @@ public final class AssistantVoiceRuntimeServiceTest {
             createActivityPendingIntent(context, "launch"),
             createServicePendingIntent(context, "unmute"),
             createServicePendingIntent(context, "end"),
+            null,
+            true,
             true
         );
         assertEquals(
@@ -471,6 +475,36 @@ public final class AssistantVoiceRuntimeServiceTest {
         assertEquals(
             context.getString(R.string.assistant_voice_notification_realtime_body_muted),
             String.valueOf(muted.extras.getCharSequence(Notification.EXTRA_TEXT))
+        );
+    }
+
+    @Test
+    @Config(sdk = Build.VERSION_CODES.N)
+    public void buildRealtimeNotificationShowsStartAndMuteWhenIdle() {
+        Context context = RuntimeEnvironment.getApplication();
+
+        Notification idle = AssistantVoiceRuntimeService.buildRealtimeNotification(
+            context,
+            AssistantVoiceRuntimeService.STATE_IDLE,
+            createActivityPendingIntent(context, "launch"),
+            createServicePendingIntent(context, "mute"),
+            null,
+            createServicePendingIntent(context, "start"),
+            false,
+            false
+        );
+        assertEquals(
+            "Voice (Realtime · Idle)",
+            String.valueOf(idle.extras.getCharSequence(Notification.EXTRA_TITLE))
+        );
+        assertEquals(2, idle.actions.length);
+        assertEquals(
+            context.getString(R.string.assistant_voice_notification_action_start_call),
+            idle.actions[0].title
+        );
+        assertEquals(
+            context.getString(R.string.assistant_voice_notification_action_mute),
+            idle.actions[1].title
         );
     }
 
@@ -499,6 +533,16 @@ public final class AssistantVoiceRuntimeServiceTest {
                 context,
                 AssistantVoiceRuntimeService.STATE_REALTIME_ACTIVE,
                 true
+            )
+        );
+        assertEquals(
+            "Realtime · Idle",
+            AssistantVoiceRuntimeService.formatNotificationStateLabel(
+                context,
+                AssistantVoiceRuntimeService.STATE_IDLE,
+                false,
+                true,
+                false
             )
         );
     }
