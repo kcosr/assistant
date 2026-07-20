@@ -1258,8 +1258,12 @@ async function main(): Promise<void> {
       }
       return {
         getVoiceFabState: () => resolveVoiceFabState(),
+        getRealtimeMuted: () => nativeRealtimeMuted,
         getRealtimeMuteOnStart: () => getCurrentVoiceSettings().realtimeMuteOnStart,
-        setRealtimeMuted: (muted: boolean) => nativeVoiceBridge.setRealtimeMuted(muted),
+        setRealtimeMuted: (muted: boolean) => {
+          nativeRealtimeMuted = muted;
+          return nativeVoiceBridge.setRealtimeMuted(muted);
+        },
         startVoiceFromFab: async () => {
           // Push latest settings before start so native mode matches the dropdown.
           const latestSettings = getCurrentVoiceSettings();
@@ -1295,8 +1299,12 @@ async function main(): Promise<void> {
     }
     return {
       getVoiceFabState: () => resolveVoiceFabState(),
+      getRealtimeMuted: () => nativeRealtimeMuted,
       getRealtimeMuteOnStart: () => getCurrentVoiceSettings().realtimeMuteOnStart,
-      setRealtimeMuted: (muted: boolean) => nativeVoiceBridge.setRealtimeMuted(muted),
+      setRealtimeMuted: (muted: boolean) => {
+        nativeRealtimeMuted = muted;
+        return nativeVoiceBridge.setRealtimeMuted(muted);
+      },
       startVoiceFromFab: async () => {
         // Ensure native mode is current even if async settings sync is still in flight.
         const latestSettings = getCurrentVoiceSettings();
@@ -1450,6 +1458,10 @@ async function main(): Promise<void> {
 
   /** Do not push web defaults to native until first native getState hydration finishes. */
   let nativeVoiceSettingsHydrated = !useNativeVoiceRuntime;
+  /** User changed settings before native hydrate — do not let stale native win. */
+  let voiceSettingsDirtyBeforeHydrate = false;
+  /** Live uplink mute mirrored from native stateChanged / getState. */
+  let nativeRealtimeMuted = false;
 
   function persistVoiceSettingsLocally(settings: VoiceSettings): void {
     try {
@@ -1467,6 +1479,9 @@ async function main(): Promise<void> {
   }
 
   function applyVoiceSettingsToChatInputs(settings: VoiceSettings): void {
+    if (!nativeVoiceSettingsHydrated) {
+      voiceSettingsDirtyBeforeHydrate = true;
+    }
     currentVoiceSettings = settings;
     // Always persist — speech-controller persist only runs when a primary chat panel exists.
     // Without this, Realtime mode is lost on app restart when no chat panel owned the write.
@@ -1574,11 +1589,14 @@ async function main(): Promise<void> {
         ? payload.selectedSession.sessionId
         : null,
     );
+    const nextRealtimeMuted =
+      typeof payload?.realtimeMuted === 'boolean' ? payload.realtimeMuted : nativeRealtimeMuted;
     if (
       nativeVoiceRuntimeState === nextState &&
       nativeVoiceActiveSessionId === nextActiveSessionId &&
       nativeVoiceActiveDisplayTitle === nextActiveDisplayTitle &&
-      nativeVoiceBridgeSelectedSessionId === nextBridgeSelectedSessionId
+      nativeVoiceBridgeSelectedSessionId === nextBridgeSelectedSessionId &&
+      nativeRealtimeMuted === nextRealtimeMuted
     ) {
       return;
     }
@@ -1586,6 +1604,7 @@ async function main(): Promise<void> {
     nativeVoiceActiveSessionId = nextActiveSessionId;
     nativeVoiceActiveDisplayTitle = nextActiveDisplayTitle;
     nativeVoiceBridgeSelectedSessionId = nextBridgeSelectedSessionId;
+    nativeRealtimeMuted = nextRealtimeMuted;
     for (const entry of chatPanelsById.values()) {
       entry.inputRuntime.speechAudioController?.setNativeRuntimeState(nextState);
     }
@@ -1611,10 +1630,11 @@ async function main(): Promise<void> {
       // Prefer native SharedPreferences for voiceRuntimeMode / modes after cold start so
       // empty WebView localStorage defaults do not stomp a saved Realtime preference.
       if (!nativeVoiceSettingsHydrated) {
-        if (payload?.voiceSettings) {
+        if (!voiceSettingsDirtyBeforeHydrate && payload?.voiceSettings) {
           hydrateVoiceSettingsFromNative(payload.voiceSettings);
         }
         nativeVoiceSettingsHydrated = true;
+        // If the user edited settings before hydrate finished, push those to native now.
         syncNativeVoiceBridgeState();
       }
     });

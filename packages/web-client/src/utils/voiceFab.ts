@@ -131,11 +131,13 @@ export function setupVoiceFab(options: VoiceFabOptions): VoiceFabHandle {
       clearRealtimeMuteUi();
       return;
     }
-    if (!wasRealtimeMode) {
-      const controller = options.getSpeechController();
-      const seeded =
-        controller?.getRealtimeMuted?.() ?? controller?.getRealtimeMuteOnStart?.() ?? false;
-      realtimeMuted = Boolean(seeded);
+    const controller = options.getSpeechController();
+    // Prefer live native mute (tracks notification toggles). Seed from mute-on-start only
+    // the first time we enter a Realtime call when native has not reported yet.
+    if (typeof controller?.getRealtimeMuted === 'function') {
+      realtimeMuted = Boolean(controller.getRealtimeMuted());
+    } else if (!wasRealtimeMode) {
+      realtimeMuted = Boolean(controller?.getRealtimeMuteOnStart?.());
     }
     wasRealtimeMode = true;
     muteButton.hidden = false;

@@ -1016,7 +1016,11 @@ public final class AssistantVoiceRuntimeService extends Service {
         );
 
         // Realtime preference: Realtime chrome whether idle or in a call (not Thread speak/mode).
-        if (isRealtimeRuntimeMode(config.voiceRuntimeMode)) {
+        // Exception: Thread SPEAKING/LISTENING (e.g. notification replay) still needs Stop chrome.
+        boolean threadMediaActive =
+            STATE_SPEAKING.equals(trim(state)) || STATE_LISTENING.equals(trim(state));
+        if (isRealtimeRuntimeMode(config.voiceRuntimeMode)
+            && !(threadMediaActive && !isRealtimeActiveState(state))) {
             boolean callActive = isRealtimeActiveState(state);
             boolean mutedForUi = callActive ? realtimeMuted : config.realtimeMuteOnStart;
             PendingIntent muteTogglePendingIntent = PendingIntent.getService(
@@ -2356,6 +2360,7 @@ public final class AssistantVoiceRuntimeService extends Service {
         }
         prepareRealtimeOwnerPreempt(reason);
         realtimeMuted = config.realtimeMuteOnStart;
+        AssistantVoiceConfig.saveRuntimeRealtimeMuted(this, realtimeMuted);
         updateState(STATE_REALTIME_CONNECTING, null);
         // Speakerphone preference is applied inside RealtimeClient via the audio router
         // (call mode defaults to quiet earpiece without it).
@@ -2383,10 +2388,13 @@ public final class AssistantVoiceRuntimeService extends Service {
 
     private void setRealtimeMuted(boolean muted) {
         realtimeMuted = muted;
+        AssistantVoiceConfig.saveRuntimeRealtimeMuted(this, muted);
         if (realtimeClient != null) {
             realtimeClient.setMuted(muted);
         }
         refreshNotification();
+        // Notify WebView so the mute FAB tracks notification-initiated toggles.
+        broadcastStateChanged();
     }
 
     @SuppressWarnings("deprecation")

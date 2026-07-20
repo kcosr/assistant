@@ -10,7 +10,6 @@
 
 - Added a Realtime mic mute toggle FAB stacked above the floating microphone control so uplink audio can be muted while keeping the duplex call active.
 - Added Realtime-specific persistent notification controls for Realtime mode (Start call + Mute/Unmute when idle; Mute/Unmute + End call when live) instead of Thread speak/mode/media-button actions.
-- Fixed Realtime mode preference persistence across app restarts so WebView localStorage defaults do not overwrite native `voiceRuntimeMode` on cold start.
 - Added Realtime speakerphone preference (default on) so duplex voice uses the phone loudspeaker when no Bluetooth headset is connected, instead of the quiet earpiece. ([#114](https://github.com/kcosr/assistant/pull/114))
 - Added built-in `web_search` tool that runs local Grok CLI headless research (live web and public X) with optional `continue` resume, for text agents and Realtime allowlists. ([#114](https://github.com/kcosr/assistant/pull/114))
 - Added Android Realtime voice end-to-end: server `/api/voice/*` (conversation/session, OpenAI SDP negotiate, sideband lists tools, events), Android WebRTC Realtime client with exclusive-owner preemption, wake lock, start/stop/mute plugin APIs, config tool allowlist/denylist globs, `realtime_end_session` hangup, headset media-button start/stop, and web settings/FAB controls. Uses server-side `OPENAI_API_KEY` only. ([#113](https://github.com/kcosr/assistant/pull/113))
@@ -51,6 +50,8 @@
 
 ### Fixed
 
+- Fixed Realtime mode preference persistence across app restarts so WebView localStorage defaults do not overwrite native `voiceRuntimeMode` on cold start.
+- Fixed Realtime mute state sync so notification Mute/Unmute updates the in-app mute FAB (and vice versa) via a `realtimeMuted` native state field.
 - Fixed Realtime Bluetooth headset routing so dual-profile call headsets (SCO/HFP, e.g. Shokz OpenComm) are preferred via `setCommunicationDevice` + SCO instead of staying on quiet A2DP/earpiece when speakerphone preference is enabled; pure A2DP media speakers still leave loudspeaker free. ([#115](https://github.com/kcosr/assistant/pull/115))
 - Fixed Thread voice getting stuck on connecting after Realtime by recovering a stale Realtime owner fence so adapter/assistant sockets can return to idle. ([#114](https://github.com/kcosr/assistant/pull/114))
 - Fixed Realtime speakerphone so A2DP-only Bluetooth devices no longer suppress loudspeaker (only SCO/BLE headsets trigger SCO routing), and force the built-in speaker via `setCommunicationDevice` on API 31+ so media-only BT speakers do not leave voice on the quiet earpiece. ([#114](https://github.com/kcosr/assistant/pull/114))

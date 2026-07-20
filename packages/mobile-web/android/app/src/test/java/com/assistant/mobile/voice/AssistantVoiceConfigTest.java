@@ -137,6 +137,30 @@ public final class AssistantVoiceConfigTest {
     }
 
     @Test
+    public void withRealtimeMuteOnStartUpdatesOnlyThatField() {
+        AssistantVoiceConfig base = createConfig(1.0f);
+        assertFalse(base.realtimeMuteOnStart);
+
+        AssistantVoiceConfig muted = base.withRealtimeMuteOnStart(true);
+        assertTrue(muted.realtimeMuteOnStart);
+        assertEquals(base.audioMode, muted.audioMode);
+        assertEquals(base.voiceRuntimeMode, muted.voiceRuntimeMode);
+        assertEquals(base.realtimeSpeakerphone, muted.realtimeSpeakerphone);
+
+        AssistantVoiceConfig unmuted = muted.withRealtimeMuteOnStart(false);
+        assertFalse(unmuted.realtimeMuteOnStart);
+    }
+
+    @Test
+    public void saveAndLoadRuntimeRealtimeMuted() {
+        Context context = RuntimeEnvironment.getApplication();
+        AssistantVoiceConfig.saveRuntimeRealtimeMuted(context, true);
+        assertTrue(AssistantVoiceConfig.loadRuntimeRealtimeMuted(context));
+        AssistantVoiceConfig.saveRuntimeRealtimeMuted(context, false);
+        assertFalse(AssistantVoiceConfig.loadRuntimeRealtimeMuted(context));
+    }
+
+    @Test
     public void saveAndLoadPersistMediaButtonsEnabled() {
         Context context = RuntimeEnvironment.getApplication();
         AssistantVoiceConfig.save(context, createConfig(true));

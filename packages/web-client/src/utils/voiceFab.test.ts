@@ -241,6 +241,40 @@ describe('setupVoiceFab', () => {
     handle.destroy();
   });
 
+  it('re-reads live native mute on each update so notification toggles sync', () => {
+    const button = document.createElement('button');
+    document.body.appendChild(button);
+    let liveMuted = false;
+
+    const handle = setupVoiceFab({
+      button,
+      isVisible: () => true,
+      getSpeechController: () => ({
+        getVoiceFabState: () => ({ enabled: true, mode: 'realtime' as const }),
+        startVoiceFromFab: vi.fn(async () => true),
+        stopVoiceFromFab: vi.fn(() => true),
+        getRealtimeMuted: () => liveMuted,
+        getRealtimeMuteOnStart: () => false,
+        setRealtimeMuted: vi.fn(() => true),
+      }),
+      getSessionChipState: () => ({
+        visible: false,
+        interactive: false,
+        title: null,
+      }),
+      onSessionChipClick: vi.fn(),
+    });
+
+    handle.update();
+    const mute = document.querySelector<HTMLButtonElement>('.voice-fab-mute');
+    expect(mute?.classList.contains('is-muted')).toBe(false);
+
+    liveMuted = true;
+    handle.update();
+    expect(mute?.classList.contains('is-muted')).toBe(true);
+    handle.destroy();
+  });
+
   it('hides the mute FAB immediately when stopping a realtime call even if mode lags', async () => {
     const button = document.createElement('button');
     document.body.appendChild(button);
