@@ -422,6 +422,89 @@ public final class AssistantVoiceRuntimeServiceTest {
 
     @Test
     @Config(sdk = Build.VERSION_CODES.N)
+    public void buildRealtimeNotificationShowsMuteAndEndCallOnly() {
+        Context context = RuntimeEnvironment.getApplication();
+
+        Notification unmuted = AssistantVoiceRuntimeService.buildRealtimeNotification(
+            context,
+            AssistantVoiceRuntimeService.STATE_REALTIME_ACTIVE,
+            createActivityPendingIntent(context, "launch"),
+            createServicePendingIntent(context, "mute"),
+            createServicePendingIntent(context, "end"),
+            false
+        );
+        assertEquals(
+            "Voice (Realtime)",
+            String.valueOf(unmuted.extras.getCharSequence(Notification.EXTRA_TITLE))
+        );
+        assertEquals(
+            context.getString(R.string.assistant_voice_notification_realtime_body),
+            String.valueOf(unmuted.extras.getCharSequence(Notification.EXTRA_TEXT))
+        );
+        assertNotNull(unmuted.actions);
+        assertEquals(2, unmuted.actions.length);
+        assertEquals(
+            context.getString(R.string.assistant_voice_notification_action_mute),
+            unmuted.actions[0].title
+        );
+        assertEquals(
+            context.getString(R.string.assistant_voice_notification_action_end_call),
+            unmuted.actions[1].title
+        );
+
+        Notification muted = AssistantVoiceRuntimeService.buildRealtimeNotification(
+            context,
+            AssistantVoiceRuntimeService.STATE_REALTIME_ACTIVE,
+            createActivityPendingIntent(context, "launch"),
+            createServicePendingIntent(context, "unmute"),
+            createServicePendingIntent(context, "end"),
+            true
+        );
+        assertEquals(
+            "Voice (Realtime · Muted)",
+            String.valueOf(muted.extras.getCharSequence(Notification.EXTRA_TITLE))
+        );
+        assertEquals(
+            context.getString(R.string.assistant_voice_notification_action_unmute),
+            muted.actions[0].title
+        );
+        assertEquals(
+            context.getString(R.string.assistant_voice_notification_realtime_body_muted),
+            String.valueOf(muted.extras.getCharSequence(Notification.EXTRA_TEXT))
+        );
+    }
+
+    @Test
+    @Config(sdk = Build.VERSION_CODES.N)
+    public void formatNotificationStateLabelCoversRealtimeStates() {
+        Context context = RuntimeEnvironment.getApplication();
+        assertEquals(
+            "Realtime · Connecting",
+            AssistantVoiceRuntimeService.formatNotificationStateLabel(
+                context,
+                AssistantVoiceRuntimeService.STATE_REALTIME_CONNECTING
+            )
+        );
+        assertEquals(
+            "Realtime",
+            AssistantVoiceRuntimeService.formatNotificationStateLabel(
+                context,
+                AssistantVoiceRuntimeService.STATE_REALTIME_ACTIVE,
+                false
+            )
+        );
+        assertEquals(
+            "Realtime · Muted",
+            AssistantVoiceRuntimeService.formatNotificationStateLabel(
+                context,
+                AssistantVoiceRuntimeService.STATE_REALTIME_ACTIVE,
+                true
+            )
+        );
+    }
+
+    @Test
+    @Config(sdk = Build.VERSION_CODES.N)
     public void buildNotificationShowsModeToggleWhenVoiceIsDisabled() {
         Context context = RuntimeEnvironment.getApplication();
 

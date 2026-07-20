@@ -998,7 +998,6 @@ public final class AssistantVoiceRuntimeService extends Service {
     }
 
     private Notification buildNotification(String state) {
-        String displayedAudioMode = resolveDisplayedNotificationAudioMode(state, config.audioMode);
         Intent launchIntent = new Intent(this, MainActivity.class)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP);
         PendingIntent launchPendingIntent = PendingIntent.getActivity(
@@ -1007,6 +1006,32 @@ public final class AssistantVoiceRuntimeService extends Service {
             launchIntent,
             PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT
         );
+
+        // Realtime call: mute/unmute + end — not Thread speak/mode/media-button chrome.
+        if (isRealtimeActiveState(state)) {
+            PendingIntent endCallPendingIntent = PendingIntent.getService(
+                this,
+                5,
+                stopRealtimeIntent(this),
+                PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT
+            );
+            PendingIntent muteTogglePendingIntent = PendingIntent.getService(
+                this,
+                6,
+                setRealtimeMutedIntent(this, !realtimeMuted),
+                PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT
+            );
+            return buildRealtimeNotification(
+                this,
+                state,
+                launchPendingIntent,
+                muteTogglePendingIntent,
+                endCallPendingIntent,
+                realtimeMuted
+            );
+        }
+
+        String displayedAudioMode = resolveDisplayedNotificationAudioMode(state, config.audioMode);
         PendingIntent startListenPendingIntent = PendingIntent.getService(
             this,
             1,
@@ -1063,6 +1088,57 @@ public final class AssistantVoiceRuntimeService extends Service {
             displayedAudioMode,
             config.mediaButtonsEnabled
         );
+    }
+
+    /**
+     * Realtime-only foreground notification: mute/unmute uplink + end the duplex call.
+     * Thread audio-mode / media-button actions are omitted while a call is live.
+     */
+    static Notification buildRealtimeNotification(
+        Context context,
+        String state,
+        PendingIntent launchPendingIntent,
+        PendingIntent muteTogglePendingIntent,
+        PendingIntent endCallPendingIntent,
+        boolean muted
+    ) {
+        NotificationCompat.Builder builder = new NotificationCompat.Builder(context, NOTIFICATION_CHANNEL_ID)
+            .setSmallIcon(android.R.drawable.ic_btn_speak_now)
+            .setContentTitle(
+                context.getString(
+                    R.string.assistant_voice_notification_title,
+                    formatNotificationStateLabel(context, state, muted)
+                )
+            )
+            .setContentText(
+                context.getString(
+                    muted
+                        ? R.string.assistant_voice_notification_realtime_body_muted
+                        : R.string.assistant_voice_notification_realtime_body
+                )
+            )
+            .setContentIntent(launchPendingIntent)
+            .setPriority(NOTIFICATION_PRIORITY)
+            .setVisibility(NOTIFICATION_VISIBILITY)
+            .setCategory(NOTIFICATION_CATEGORY)
+            .setOngoing(true);
+
+        builder.addAction(
+            muted ? R.drawable.ic_notification_mic : R.drawable.ic_notification_mic_off,
+            context.getString(
+                muted
+                    ? R.string.assistant_voice_notification_action_unmute
+                    : R.string.assistant_voice_notification_action_mute
+            ),
+            muteTogglePendingIntent
+        );
+        builder.addAction(
+            R.drawable.ic_notification_stop,
+            context.getString(R.string.assistant_voice_notification_action_end_call),
+            endCallPendingIntent
+        );
+        builder.setStyle(new MediaStyle().setShowActionsInCompactView(0, 1));
+        return builder.build();
     }
 
     static Notification buildNotification(
@@ -1254,6 +1330,10 @@ public final class AssistantVoiceRuntimeService extends Service {
     }
 
     static String formatNotificationStateLabel(Context context, String state) {
+        return formatNotificationStateLabel(context, state, false);
+    }
+
+    static String formatNotificationStateLabel(Context context, String state, boolean realtimeMuted) {
         switch (trim(state)) {
             case STATE_CONNECTING:
                 return context.getString(R.string.assistant_voice_notification_state_connecting);
@@ -1263,6 +1343,14 @@ public final class AssistantVoiceRuntimeService extends Service {
                 return context.getString(R.string.assistant_voice_notification_state_speaking);
             case STATE_LISTENING:
                 return context.getString(R.string.assistant_voice_notification_state_listening);
+            case STATE_REALTIME_CONNECTING:
+                return context.getString(R.string.assistant_voice_notification_state_realtime_connecting);
+            case STATE_REALTIME_ACTIVE:
+                return context.getString(
+                    realtimeMuted
+                        ? R.string.assistant_voice_notification_state_realtime_muted
+                        : R.string.assistant_voice_notification_state_realtime
+                );
             case STATE_ERROR:
                 return context.getString(R.string.assistant_voice_notification_state_error);
             case STATE_DISABLED:
