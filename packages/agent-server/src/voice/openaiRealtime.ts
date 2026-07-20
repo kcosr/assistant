@@ -65,8 +65,11 @@ export async function negotiateOpenAiRealtimeCall(options: {
 export type SidebandEventHandler = (event: Record<string, unknown>) => void | Promise<void>;
 
 export class OpenAiRealtimeSideband {
+  private static readonly LOG_PREFIX = '[voice:sideband]';
   private socket: WebSocket | null = null;
   private closed = false;
+  /** True once we intentionally close; distinguishes peer/network drops from hangup. */
+  private intentionalClose = false;
 
   constructor(
     private readonly apiKey: string,
@@ -84,24 +87,54 @@ export class OpenAiRealtimeSideband {
     });
 
     this.socket.on('open', () => {
-      // no-op; session was configured at negotiate time
+      console.info(
+        `${OpenAiRealtimeSideband.LOG_PREFIX} open callId=${this.providerCallId}`,
+      );
     });
 
     this.socket.on('message', (data) => {
       void this.handleMessage(data);
     });
 
-    this.socket.on('close', () => {
+    // ws close: (code, reason Buffer). Code/reason distinguish clean peer close vs abnormal drop.
+    this.socket.on('close', (code: number, reasonBuf: Buffer) => {
+      const reasonText =
+        reasonBuf && reasonBuf.length > 0 ? reasonBuf.toString('utf8') : '';
+      const wasClean = code === 1000 || code === 1001;
+      const detail = formatSidebandCloseDetail({
+        callId: this.providerCallId,
+        code,
+        reasonText,
+        wasClean,
+        intentional: this.intentionalClose,
+      });
+      if (this.intentionalClose) {
+        console.info(`${OpenAiRealtimeSideband.LOG_PREFIX} close intentional ${detail}`);
+      } else {
+        console.warn(`${OpenAiRealtimeSideband.LOG_PREFIX} close unexpected ${detail}`);
+      }
       if (!this.closed) {
         this.closed = true;
-        this.onClose('sideband_closed');
+        // Preserve sideband_closed prefix so existing filters still match; append diagnostics.
+        this.onClose(
+          this.intentionalClose
+            ? `sideband_closed_intentional code=${code}`
+            : `sideband_closed code=${code} wasClean=${wasClean}${
+                reasonText ? ` reason=${JSON.stringify(reasonText.slice(0, 200))}` : ''
+              }`,
+        );
       }
     });
 
-    this.socket.on('error', () => {
+    this.socket.on('error', (error: Error) => {
+      const message = error?.message ?? String(error);
+      console.warn(
+        `${OpenAiRealtimeSideband.LOG_PREFIX} error callId=${this.providerCallId} message=${message}`,
+        error,
+      );
       if (!this.closed) {
         this.closed = true;
-        this.onClose('sideband_error');
+        this.onClose(`sideband_error message=${JSON.stringify(message.slice(0, 200))}`);
       }
     });
   }
@@ -114,9 +147,10 @@ export class OpenAiRealtimeSideband {
   }
 
   close(): void {
+    this.intentionalClose = true;
     this.closed = true;
     try {
-      this.socket?.close();
+      this.socket?.close(1000, 'client_hangup');
     } catch {
       // ignore
     }
@@ -127,11 +161,39 @@ export class OpenAiRealtimeSideband {
     try {
       const text = typeof data === 'string' ? data : data.toString('utf8');
       const event = JSON.parse(text) as Record<string, unknown>;
+      // Log terminal-ish provider events that often precede a drop.
+      const type = typeof event['type'] === 'string' ? event['type'] : '';
+      if (
+        type === 'error' ||
+        type === 'session.ended' ||
+        type.endsWith('.failed') ||
+        type.includes('expired')
+      ) {
+        console.warn(
+          `${OpenAiRealtimeSideband.LOG_PREFIX} event callId=${this.providerCallId} type=${type} body=${JSON.stringify(event).slice(0, 500)}`,
+        );
+      }
       await this.onEvent(event);
     } catch {
       // ignore malformed frames
     }
   }
+}
+
+function formatSidebandCloseDetail(options: {
+  callId: string;
+  code: number;
+  reasonText: string;
+  wasClean: boolean;
+  intentional: boolean;
+}): string {
+  const reasonPart = options.reasonText
+    ? ` reason=${JSON.stringify(options.reasonText.slice(0, 200))}`
+    : '';
+  return (
+    `callId=${options.callId} code=${options.code} wasClean=${options.wasClean}` +
+    ` intentional=${options.intentional}${reasonPart}`
+  );
 }
 
 export async function hangupOpenAiRealtimeCall(options: {

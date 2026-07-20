@@ -50,6 +50,7 @@
 
 ### Fixed
 
+- Improved Realtime sideband logging so unexpected WebSocket closes record code, wasClean, reason text, and intentional vs peer/network drop (helps distinguish OpenAI hangup from path failures).
 - Fixed Realtime mode preference persistence across app restarts so WebView localStorage defaults do not overwrite native `voiceRuntimeMode` on cold start.
 - Fixed Realtime mute state sync so notification Mute/Unmute updates the in-app mute FAB (and vice versa) via a `realtimeMuted` native state field.
 - Fixed Realtime Bluetooth headset routing so dual-profile call headsets (SCO/HFP, e.g. Shokz OpenComm) are preferred via `setCommunicationDevice` + SCO instead of staying on quiet A2DP/earpiece when speakerphone preference is enabled; pure A2DP media speakers still leave loudspeaker free. ([#115](https://github.com/kcosr/assistant/pull/115))

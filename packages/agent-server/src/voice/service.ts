@@ -193,6 +193,16 @@ export class VoiceService {
       negotiated.providerCallId,
       (event) => this.handleSidebandEvent(session.id, event),
       (reason) => {
+        // Intentional hangups use close() first and should not fail the session as an error.
+        if (reason.startsWith('sideband_closed_intentional')) {
+          console.info(
+            `[voice] sideband closed after hangup sessionId=${session.id} ${reason}`,
+          );
+          return;
+        }
+        console.warn(
+          `[voice] sideband failed sessionId=${session.id} providerCallId=${negotiated.providerCallId} ${reason}`,
+        );
         void this.failSession(session.id, reason);
       },
     );
