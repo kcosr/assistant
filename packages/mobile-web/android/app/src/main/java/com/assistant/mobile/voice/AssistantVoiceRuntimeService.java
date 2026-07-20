@@ -1169,8 +1169,10 @@ public final class AssistantVoiceRuntimeService extends Service {
             );
             compactCount += 1;
         }
+        // Icon reflects current state (muted → mic-off), matching the in-app mute FAB.
+        // Label still describes the action taken on tap (Mute / Unmute).
         builder.addAction(
-            muted ? R.drawable.ic_notification_mic : R.drawable.ic_notification_mic_off,
+            muted ? R.drawable.ic_notification_mic_off : R.drawable.ic_notification_mic,
             context.getString(
                 muted
                     ? R.string.assistant_voice_notification_action_unmute
