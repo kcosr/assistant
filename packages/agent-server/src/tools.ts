@@ -6,6 +6,7 @@ export type {
   AgentToolResult,
   AgentToolUpdateCallback,
   BuiltInToolDefinition,
+  CodexThreadsToolConfig,
   CreateToolHostDeps,
   McpServerConfig,
   Tool,
@@ -352,6 +353,7 @@ export function createToolHost(config: ToolHostConfig, deps?: CreateToolHostDeps
       ...(typeof deps.attachmentPreviewChars === 'number'
         ? { attachmentPreviewChars: deps.attachmentPreviewChars }
         : {}),
+      ...(deps.codexThreadsConfig ? { codexThreadsConfig: deps.codexThreadsConfig } : {}),
     });
   }
 

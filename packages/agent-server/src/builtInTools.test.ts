@@ -182,6 +182,24 @@ describe('registerBuiltInSessionTools', () => {
     );
   });
 
+  it('registers the Codex Threads built-in tool family', async () => {
+    const host = createHost();
+    const tools = await host.listTools();
+
+    expect(tools.map((tool) => tool.name)).toEqual(
+      expect.arrayContaining([
+        'codex_threads_list',
+        'codex_threads_find',
+        'codex_threads_status',
+        'codex_threads_messages',
+        'codex_threads_send',
+        'codex_threads_steer',
+        'codex_threads_create',
+        'codex_threads_rename',
+      ]),
+    );
+  });
+
   it('registers attachment_send', async () => {
     const host = createHost();
 

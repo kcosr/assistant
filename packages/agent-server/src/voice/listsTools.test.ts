@@ -10,6 +10,7 @@ import {
   filterToolsForVoiceRealtime,
   isToolAllowedForVoiceRealtime,
   toRealtimeFunctionTools,
+  withListsInstanceIdDefault,
 } from './listsTools';
 
 const sampleTools: Tool[] = [
@@ -83,6 +84,27 @@ describe('isToolAllowedForVoiceRealtime', () => {
   });
 });
 
+describe('withListsInstanceIdDefault', () => {
+  it('adds the conversation instance only to Lists plugin tools', () => {
+    expect(withListsInstanceIdDefault('lists_list', {}, 'work')).toEqual({ instance_id: 'work' });
+    expect(withListsInstanceIdDefault('codex_threads_list', {}, 'work')).toEqual({});
+    expect(withListsInstanceIdDefault('web_search', { query: 'hello' }, 'work')).toEqual({
+      query: 'hello',
+    });
+  });
+
+  it('preserves an explicit Lists instance', () => {
+    expect(withListsInstanceIdDefault('lists_list', { instance_id: 'personal' }, 'work')).toEqual({
+      instance_id: 'personal',
+    });
+  });
+
+  it('normalizes non-object tool arguments', () => {
+    expect(withListsInstanceIdDefault('codex_threads_list', null, 'work')).toEqual({});
+    expect(withListsInstanceIdDefault('lists_list', [], 'work')).toEqual({ instance_id: 'work' });
+  });
+});
+
 describe('buildRealtimeToolsFromHost', () => {
   it('returns no tools when the allowlist is omitted', async () => {
     const tools = await buildRealtimeToolsFromHost({
@@ -106,6 +128,21 @@ describe('buildRealtimeToolsFromHost', () => {
     ]);
     expect(tools[2]).toEqual(buildRealtimeInteractionEndTool());
     expect(tools[2]?.description).toContain('A spoken acknowledgment does not end the call');
+  });
+
+  it('exposes an exact Codex Threads tool to Realtime when allowlisted', async () => {
+    const codexTool: Tool = {
+      name: 'codex_threads_list',
+      description: 'List recent Codex threads',
+      parameters: { type: 'object', additionalProperties: false },
+    };
+    const tools = await buildRealtimeToolsFromHost({
+      listTools: async () => [...sampleTools, codexTool],
+      toolAllowlist: ['codex_threads_list'],
+      toolDenylist: undefined,
+    });
+
+    expect(tools.map((tool) => tool.name)).toEqual(['codex_threads_list']);
   });
 });
 

@@ -1,6 +1,13 @@
 import type { ToolContext } from './types';
+import { isRealtimeToolSessionId } from '../voice/constants';
 
 export async function resolveSessionWorkingDir(ctx: ToolContext): Promise<string | undefined> {
+  // Realtime voice tool contexts use a synthetic conversation-scoped ID, not a
+  // persisted chat session. Let callers use their configured non-session fallback.
+  if (isRealtimeToolSessionId(ctx.sessionId)) {
+    return undefined;
+  }
+
   const stateWorkingDir = ctx.sessionHub?.getSessionState(ctx.sessionId)?.summary.attributes?.core?.workingDir;
   if (typeof stateWorkingDir === 'string' && stateWorkingDir.trim().length > 0) {
     return stateWorkingDir.trim();

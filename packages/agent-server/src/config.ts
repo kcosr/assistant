@@ -832,6 +832,32 @@ export const VoiceConfigSchema = z
 
 export type VoiceConfig = z.infer<typeof VoiceConfigSchema>;
 
+export const CodexThreadsConfigSchema = z
+  .object({
+    allowedServers: z
+      .array(
+        z
+          .string()
+          .trim()
+          .min(1)
+          .max(100)
+          .regex(
+            /^[A-Za-z0-9][A-Za-z0-9._-]*$/,
+            'Codex Threads server aliases may contain letters, numbers, dots, underscores, and hyphens',
+          ),
+      )
+      .min(1)
+      .refine((servers) => new Set(servers).size === servers.length, {
+        message: 'Codex Threads server aliases must be unique',
+      }),
+    binary: NonEmptyTrimmedStringSchema.default('codex-threads'),
+    permissionMode: z.enum(['app-server-default', 'full-access']).default('app-server-default'),
+    allowedCwdRoots: z.array(AbsolutePathSchema).default([]),
+  })
+  .strict();
+
+export type CodexThreadsConfig = z.infer<typeof CodexThreadsConfigSchema>;
+
 export const AppConfigSchema = z
   .object({
     agents: z
@@ -850,6 +876,7 @@ export const AppConfigSchema = z
     sessions: SessionsConfigSchema.optional(),
     attachments: AttachmentsConfigSchema.default({}),
     voice: VoiceConfigSchema,
+    codexThreads: CodexThreadsConfigSchema.optional(),
   })
   .superRefine((value, ctx) => {
     const profileIds = new Set<string>();

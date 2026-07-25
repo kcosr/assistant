@@ -122,6 +122,64 @@ describe('loadConfig', () => {
     expect(server.env?.['COMPLEX']).toBe('prefix-one-two-suffix');
   });
 
+  it('loads bounded Codex Threads host configuration', async () => {
+    const filePath = createTempFile('config-codex-threads');
+    await fs.writeFile(
+      filePath,
+      JSON.stringify({
+        codexThreads: {
+          allowedServers: ['main', 'work'],
+          allowedCwdRoots: ['/home/kevin/worktrees'],
+        },
+      }),
+      'utf8',
+    );
+
+    const config = loadConfig(filePath);
+    expect(config.codexThreads).toEqual({
+      allowedServers: ['main', 'work'],
+      binary: 'codex-threads',
+      permissionMode: 'app-server-default',
+      allowedCwdRoots: ['/home/kevin/worktrees'],
+    });
+  });
+
+  it('rejects invalid Codex Threads configuration', async () => {
+    const relativeRootPath = createTempFile('config-codex-threads-relative');
+    await fs.writeFile(
+      relativeRootPath,
+      JSON.stringify({
+        codexThreads: {
+          allowedServers: ['main'],
+          allowedCwdRoots: ['relative/path'],
+        },
+      }),
+      'utf8',
+    );
+    expect(() => loadConfig(relativeRootPath)).toThrow(/absolute path/i);
+
+    const unknownModePath = createTempFile('config-codex-threads-mode');
+    await fs.writeFile(
+      unknownModePath,
+      JSON.stringify({
+        codexThreads: {
+          allowedServers: ['main'],
+          permissionMode: 'yolo',
+        },
+      }),
+      'utf8',
+    );
+    expect(() => loadConfig(unknownModePath)).toThrow();
+
+    const invalidServersPath = createTempFile('config-codex-threads-servers');
+    await fs.writeFile(
+      invalidServersPath,
+      JSON.stringify({ codexThreads: { allowedServers: ['main', 'main'] } }),
+      'utf8',
+    );
+    expect(() => loadConfig(invalidServersPath)).toThrow(/unique/i);
+  });
+
   it('parses coding plugin configuration with local workspace root', async () => {
     const filePath = createTempFile('config-coding-plugin');
     const configJson = {
