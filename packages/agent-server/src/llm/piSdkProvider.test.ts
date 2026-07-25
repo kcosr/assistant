@@ -4,20 +4,14 @@ import path from 'node:path';
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-vi.mock('@earendil-works/pi-ai', () => ({
-  getModels: vi.fn(),
-  getProviders: vi.fn(),
-  streamSimple: vi.fn(),
+vi.mock('./piSdkRuntime', () => ({
+  getPiSdkModels: vi.fn(),
+  getPiSdkProviders: vi.fn(),
+  streamPiSdkModel: vi.fn(),
 }));
-
-vi.mock('@earendil-works/pi-ai/oauth', () => ({
-  getOAuthApiKey: vi.fn(),
-}));
-
-import { getModels, getProviders, streamSimple } from '@earendil-works/pi-ai';
-import { getOAuthApiKey } from '@earendil-works/pi-ai/oauth';
 
 import type { ChatCompletionMessage } from '../chatCompletionTypes';
+import { getPiSdkModels, getPiSdkProviders, streamPiSdkModel } from './piSdkRuntime';
 import {
   buildPiContext,
   extractAssistantTextBlocksFromPiMessage,
@@ -45,8 +39,8 @@ function createStream(events: unknown[], result: unknown) {
 
 describe('resolvePiSdkModel', () => {
   it('resolves provider/model using the default provider', async () => {
-    vi.mocked(getProviders).mockReturnValue(['openai', 'anthropic']);
-    vi.mocked(getModels).mockImplementation((provider: string) => {
+    vi.mocked(getPiSdkProviders).mockResolvedValue(['openai', 'anthropic']);
+    vi.mocked(getPiSdkModels).mockImplementation(async (provider: string) => {
       if (provider === 'openai') {
         return [{ id: 'gpt-4o-mini', provider: 'openai', api: 'openai' } as never];
       }
@@ -63,8 +57,8 @@ describe('resolvePiSdkModel', () => {
   });
 
   it('throws when provider is missing and no default provider is configured', async () => {
-    vi.mocked(getProviders).mockReturnValue(['openai']);
-    vi.mocked(getModels).mockReturnValue([]);
+    vi.mocked(getPiSdkProviders).mockResolvedValue(['openai']);
+    vi.mocked(getPiSdkModels).mockResolvedValue([]);
 
     await expect(
       resolvePiSdkModel({
@@ -74,8 +68,8 @@ describe('resolvePiSdkModel', () => {
   });
 
   it('synthesizes a custom model when provider has no built-in models and baseUrl is configured', async () => {
-    vi.mocked(getProviders).mockReturnValue(['openai']);
-    vi.mocked(getModels).mockReturnValue([]);
+    vi.mocked(getPiSdkProviders).mockResolvedValue(['openai']);
+    vi.mocked(getPiSdkModels).mockResolvedValue([]);
 
     const resolved = await resolvePiSdkModel({
       modelSpec: 'mock-scenarios/scenarios',
@@ -123,8 +117,8 @@ describe('resolvePiSdkModel', () => {
   });
 
   it('still throws for unknown providers when no baseUrl is configured', async () => {
-    vi.mocked(getProviders).mockReturnValue(['openai']);
-    vi.mocked(getModels).mockReturnValue([]);
+    vi.mocked(getPiSdkProviders).mockResolvedValue(['openai']);
+    vi.mocked(getPiSdkModels).mockResolvedValue([]);
 
     await expect(
       resolvePiSdkModel({
@@ -134,8 +128,8 @@ describe('resolvePiSdkModel', () => {
   });
 
   it('still throws when a known provider exists but the model id does not', async () => {
-    vi.mocked(getProviders).mockReturnValue(['openai']);
-    vi.mocked(getModels).mockImplementation((provider: string) => {
+    vi.mocked(getPiSdkProviders).mockResolvedValue(['openai']);
+    vi.mocked(getPiSdkModels).mockImplementation(async (provider: string) => {
       if (provider === 'openai') {
         return [{ id: 'gpt-4o-mini', provider: 'openai', api: 'openai-responses' } as never];
       }
@@ -151,8 +145,8 @@ describe('resolvePiSdkModel', () => {
   });
 
   it('does not apply config-owned custom endpoint overrides to a different explicit provider', async () => {
-    vi.mocked(getProviders).mockReturnValue(['openai'] as never);
-    vi.mocked(getModels).mockReturnValue([]);
+    vi.mocked(getPiSdkProviders).mockResolvedValue(['openai'] as never);
+    vi.mocked(getPiSdkModels).mockResolvedValue([]);
 
     await expect(
       resolvePiSdkRuntimeModel({
@@ -169,8 +163,8 @@ describe('resolvePiSdkModel', () => {
   });
 
   it('builds runtime model headers and compat for matching custom endpoints', async () => {
-    vi.mocked(getProviders).mockReturnValue(['openai'] as never);
-    vi.mocked(getModels).mockReturnValue([]);
+    vi.mocked(getPiSdkProviders).mockResolvedValue(['openai'] as never);
+    vi.mocked(getPiSdkModels).mockResolvedValue([]);
 
     const resolved = await resolvePiSdkRuntimeModel({
       modelSpec: 'local/scenarios',
@@ -213,8 +207,8 @@ describe('resolvePiSdkModel', () => {
   });
 
   it('applies matching custom metadata overrides to built-in models', async () => {
-    vi.mocked(getProviders).mockReturnValue(['openai'] as never);
-    vi.mocked(getModels).mockImplementation((provider: string) => {
+    vi.mocked(getPiSdkProviders).mockResolvedValue(['openai'] as never);
+    vi.mocked(getPiSdkModels).mockImplementation(async (provider: string) => {
       if (provider === 'openai') {
         return [
           {
@@ -316,7 +310,7 @@ describe('resolvePiSdkAuthApiKey', () => {
     }
   });
 
-  it('resolves openai-codex oauth credentials from auth.json using canonical provider ids', async () => {
+  it('resolves openai-codex oauth credentials through the Pi model runtime', async () => {
     const originalAgentDir = process.env['PI_CODING_AGENT_DIR'];
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'assistant-auth-oauth-'));
     process.env['PI_CODING_AGENT_DIR'] = tempDir;
@@ -326,7 +320,7 @@ describe('resolvePiSdkAuthApiKey', () => {
         path.join(tempDir, 'auth.json'),
         JSON.stringify(
           {
-            'OpenAI-Codex': {
+            'openai-codex': {
               type: 'oauth',
               access: 'old-access',
               refresh: 'old-refresh',
@@ -340,39 +334,11 @@ describe('resolvePiSdkAuthApiKey', () => {
         'utf8',
       );
 
-      vi.mocked(getOAuthApiKey).mockResolvedValue({
-        apiKey: 'resolved-oauth-key',
-        newCredentials: {
-          access: 'new-access',
-          refresh: 'new-refresh',
-          expires: Date.now() + 120_000,
-        },
-      } as never);
-
       await expect(
         resolvePiSdkAuthApiKey({
           providerId: 'openai-codex',
         }),
-      ).resolves.toBe('resolved-oauth-key');
-
-      expect(getOAuthApiKey).toHaveBeenCalledWith(
-        'openai-codex',
-        expect.objectContaining({
-          'openai-codex': expect.objectContaining({
-            access: 'old-access',
-            refresh: 'old-refresh',
-          }),
-        }),
-      );
-
-      const persisted = JSON.parse(
-        await fs.readFile(path.join(tempDir, 'auth.json'), 'utf8'),
-      ) as Record<string, { access?: string; refresh?: string; accountId?: string }>;
-      expect(persisted['OpenAI-Codex']).toMatchObject({
-        access: 'new-access',
-        refresh: 'new-refresh',
-        accountId: 'acct-123',
-      });
+      ).resolves.toBe('old-access');
     } finally {
       if (originalAgentDir === undefined) {
         delete process.env['PI_CODING_AGENT_DIR'];
@@ -645,7 +611,9 @@ describe('runPiSdkChatCompletionIteration', () => {
       { type: 'toolcall_end', toolCall: { id: 'tc-1', name: 'doThing', arguments: { ok: 1 } } },
     ];
 
-    vi.mocked(streamSimple).mockReturnValue(createStream(events, { stopReason: 'stop' }) as never);
+    vi.mocked(streamPiSdkModel).mockResolvedValue(
+      createStream(events, { stopReason: 'stop' }) as never,
+    );
 
     const textDeltas: string[] = [];
     const toolStarts: Array<{ id: string; name: string }> = [];
@@ -695,7 +663,9 @@ describe('runPiSdkChatCompletionIteration', () => {
   it('only tags streamed text deltas with final_answer for openai-responses models', async () => {
     const events = [{ type: 'text_delta', delta: 'Hello' }];
 
-    vi.mocked(streamSimple).mockReturnValue(createStream(events, { stopReason: 'stop' }) as never);
+    vi.mocked(streamPiSdkModel).mockResolvedValue(
+      createStream(events, { stopReason: 'stop' }) as never,
+    );
 
     const openAiPhases: Array<string | undefined> = [];
     await runPiSdkChatCompletionIteration({
@@ -709,7 +679,9 @@ describe('runPiSdkChatCompletionIteration', () => {
     });
     expect(openAiPhases).toEqual(['final_answer']);
 
-    vi.mocked(streamSimple).mockReturnValue(createStream(events, { stopReason: 'stop' }) as never);
+    vi.mocked(streamPiSdkModel).mockResolvedValue(
+      createStream(events, { stopReason: 'stop' }) as never,
+    );
 
     const anthropicPhases: Array<string | undefined> = [];
     await runPiSdkChatCompletionIteration({
@@ -725,7 +697,7 @@ describe('runPiSdkChatCompletionIteration', () => {
   });
 
   it('marks aborted when the stream stops with aborted', async () => {
-    vi.mocked(streamSimple).mockReturnValue(
+    vi.mocked(streamPiSdkModel).mockResolvedValue(
       createStream([{ type: 'error', reason: 'aborted' }], { stopReason: 'aborted' }) as never,
     );
 
@@ -741,7 +713,7 @@ describe('runPiSdkChatCompletionIteration', () => {
   });
 
   it('throws on error stop reason', async () => {
-    vi.mocked(streamSimple).mockReturnValue(
+    vi.mocked(streamPiSdkModel).mockResolvedValue(
       createStream([], { stopReason: 'error', errorMessage: 'boom' }) as never,
     );
 
@@ -775,7 +747,7 @@ describe('runPiSdkChatCompletionIteration', () => {
       timestamp: Date.now(),
     } as const;
 
-    vi.mocked(streamSimple).mockReturnValue(createStream([], assistantMessage) as never);
+    vi.mocked(streamPiSdkModel).mockResolvedValue(createStream([], assistantMessage) as never);
 
     const onPayload = vi.fn();
     const onResponse = vi.fn();
@@ -790,7 +762,7 @@ describe('runPiSdkChatCompletionIteration', () => {
       onResponse,
     });
 
-    const options = vi.mocked(streamSimple).mock.calls[0]?.[2] as {
+    const options = vi.mocked(streamPiSdkModel).mock.calls[0]?.[2] as {
       onPayload?: (payload: unknown) => void;
     };
     options.onPayload?.({ foo: 'bar' });

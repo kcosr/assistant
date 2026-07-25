@@ -2,6 +2,7 @@ import type { AgentMessage } from '@earendil-works/pi-agent-core';
 import type { Api, Model, Usage } from '@earendil-works/pi-ai';
 
 import { calculateContextTokens } from '../contextUsage';
+import { completePiSdkModel } from '../llm/piSdkRuntime';
 
 /*
  * Adapted from @earendil-works/pi-coding-agent 0.62.0 compaction helpers
@@ -211,16 +212,6 @@ Summarize the prefix to provide context for the retained suffix:
 Be concise. Focus on what's needed to understand the kept suffix.`;
 
 const TOOL_RESULT_MAX_CHARS = 2000;
-
-type PiAiModule = typeof import('@earendil-works/pi-ai');
-let piAiModulePromise: Promise<PiAiModule> | null = null;
-
-async function loadPiAiModule(): Promise<PiAiModule> {
-  if (!piAiModulePromise) {
-    piAiModulePromise = import('@earendil-works/pi-ai');
-  }
-  return piAiModulePromise;
-}
 
 function getString(value: unknown): string {
   return typeof value === 'string' ? value : '';
@@ -745,8 +736,7 @@ async function generateSummary(options: {
     promptText += `<previous-summary>\n${previousSummary}\n</previous-summary>\n\n`;
   }
   promptText += basePrompt;
-  const { completeSimple } = await loadPiAiModule();
-  const response = await completeSimple(
+  const response = await completePiSdkModel(
     model,
     {
       systemPrompt: SUMMARIZATION_SYSTEM_PROMPT,

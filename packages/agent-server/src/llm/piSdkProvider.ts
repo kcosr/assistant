@@ -18,6 +18,7 @@ import type { AssistantTextPhase } from '@assistant/shared';
 import type { PiSdkChatConfig } from '../agents';
 import type { ChatCompletionMessage, ChatCompletionToolCallState } from '../chatCompletionTypes';
 import { resolvePiAgentAuthApiKey } from './piAgentAuth';
+import { getPiSdkModels, getPiSdkProviders, streamPiSdkModel } from './piSdkRuntime';
 
 export interface PiToolCallStartInfo {
   id: string;
@@ -48,16 +49,6 @@ export interface PiAssistantTextBlock {
   text: string;
   phase?: AssistantTextPhase;
   textSignature?: string;
-}
-
-type PiAiModule = typeof import('@earendil-works/pi-ai');
-let piAiModulePromise: Promise<PiAiModule> | null = null;
-
-async function loadPiAiModule(): Promise<PiAiModule> {
-  if (!piAiModulePromise) {
-    piAiModulePromise = import('@earendil-works/pi-ai');
-  }
-  return piAiModulePromise;
 }
 
 export async function resolvePiSdkAuthApiKey(options: {
@@ -111,8 +102,7 @@ async function resolveProviderId(providerRaw: string): Promise<string | undefine
     return undefined;
   }
   const target = trimmed.toLowerCase();
-  const { getProviders } = await loadPiAiModule();
-  const providers = getProviders();
+  const providers = await getPiSdkProviders();
   const match = providers.find((provider) => provider.toLowerCase() === target);
   return match ?? trimmed;
 }
@@ -341,8 +331,7 @@ export async function resolvePiSdkModel(options: {
     throw new Error(`Pi chat provider "${providerRaw}" is not available`);
   }
 
-  const { getModels, getProviders } = await loadPiAiModule();
-  const knownProvider = getProviders().find(
+  const knownProvider = (await getPiSdkProviders()).find(
     (provider) => provider.toLowerCase() === providerId.toLowerCase(),
   );
   if (!knownProvider) {
@@ -363,7 +352,7 @@ export async function resolvePiSdkModel(options: {
     throw new Error(`No Pi models found for provider "${providerId}"`);
   }
 
-  const models = getModels(knownProvider);
+  const models = await getPiSdkModels(knownProvider);
   if (!models || models.length === 0) {
     if (typeof baseUrl === 'string' && baseUrl.trim().length > 0) {
       return buildSyntheticPiSdkModelResolution({
@@ -785,8 +774,7 @@ export async function runPiSdkChatCompletionIteration(options: {
   let aborted = false;
   let abortReason: 'timeout' | 'aborted' | undefined;
 
-  const { streamSimple } = await loadPiAiModule();
-  const stream = streamSimple(resolvedModel, context, streamOptions);
+  const stream = await streamPiSdkModel(resolvedModel, context, streamOptions);
 
   try {
     for await (const event of stream) {
