@@ -14,11 +14,11 @@ import type {
 
 import type { AgentDefinition, PiSdkChatConfig } from './agents';
 import type { ChatCompletionMessage, ChatCompletionToolCallState } from './chatCompletionTypes';
-import {
+import type {
   Agent,
-  type AgentEvent,
-  type AgentMessage,
-  type ThinkingLevel as PiAgentThinkingLevel,
+  AgentEvent,
+  AgentMessage,
+  ThinkingLevel as PiAgentThinkingLevel,
 } from '@earendil-works/pi-agent-core';
 import {
   type Api,
@@ -57,6 +57,7 @@ import { runPiCliChat, type PiCliChatConfig, type PiSessionInfo } from './ws/piC
 import { buildProviderAttributesPatch, getProviderAttributes } from './history/providerAttributes';
 import { loadCanonicalPiReplayMessages } from './history/piSessionReplay';
 import { parseAssistantTextSignature, resolvePiSdkRuntimeModel } from './llm/piSdkProvider';
+import { streamPiSdkModel } from './llm/piSdkRuntime';
 import {
   calculateContextTokens,
   extractSessionContextUsageFromAssistantMessage,
@@ -66,15 +67,16 @@ import type { AgentTool as NativeAgentTool } from './tools';
 
 type ChatProvider = 'pi' | 'claude-cli' | 'codex-cli' | 'pi-cli';
 type OutputModeValue = 'text' | 'speech' | 'both';
-type PiAiModule = typeof import('@earendil-works/pi-ai');
+type PiAgentCoreModule = typeof import('@earendil-works/pi-agent-core');
 
-let piAiModulePromise: Promise<PiAiModule> | null = null;
+const nativeImportPiAgentCore = new Function('return import("@earendil-works/pi-agent-core")') as (
+  specifier?: string,
+) => Promise<PiAgentCoreModule>;
 
-async function loadPiAiModule(): Promise<PiAiModule> {
-  if (!piAiModulePromise) {
-    piAiModulePromise = import('@earendil-works/pi-ai');
-  }
-  return piAiModulePromise;
+function importPiAgentCore(): Promise<PiAgentCoreModule> {
+  return process.env['VITEST']
+    ? import('@earendil-works/pi-agent-core')
+    : nativeImportPiAgentCore();
 }
 
 function extractToolOutputText(result: unknown): string {
@@ -1391,7 +1393,8 @@ export async function runChatCompletionCore(
     };
     const piAgentRuntime =
       state.piAgentRuntime ??
-      ((() => {
+      ((await (async () => {
+        const { Agent } = await importPiAgentCore();
         const runtime: PiRuntimeState = {
           requestConfig: {},
           onPayload: undefined,
@@ -1407,7 +1410,7 @@ export async function runChatCompletionCore(
             ) as PiSdkMessage[],
           getApiKey: async () => runtime.requestConfig.apiKey,
           streamFn: async (model, context, options) =>
-            (await loadPiAiModule()).streamSimple(model, context, {
+            streamPiSdkModel(model, context, {
               ...options,
               ...(runtime.requestConfig.apiKey ? { apiKey: runtime.requestConfig.apiKey } : {}),
               ...(runtime.requestConfig.temperature !== undefined
@@ -1424,7 +1427,7 @@ export async function runChatCompletionCore(
         });
         state.piAgentRuntime = runtime as LogicalSessionState['piAgentRuntime'];
         return runtime;
-      })() as PiRuntimeState);
+      })()) as PiRuntimeState);
     piAgentRuntime.requestConfig = {
       ...(resolvedRuntime.apiKey ? { apiKey: resolvedRuntime.apiKey } : {}),
       ...(resolvedRuntime.providerMatchesConfig && piConfig?.temperature !== undefined
