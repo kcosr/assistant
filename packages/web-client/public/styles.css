@@ -6311,7 +6311,7 @@ textarea.interaction-input {
   gap: var(--spacing-sm);
   width: 100%;
   max-width: var(--input-bar-max-width);
-  align-items: center;
+  align-items: flex-end;
 }
 
 .input-field-wrapper {
@@ -6319,7 +6319,7 @@ textarea.interaction-input {
   flex: 1 1 0;
   min-width: 0;
   display: flex;
-  align-items: center;
+  align-items: stretch;
 }
 
 .pending-message-list {
@@ -6567,9 +6567,19 @@ textarea.interaction-input {
   flex: 1 1 0;
   min-width: 0;
   padding: var(--spacing-sm) var(--spacing-md);
-  border-radius: var(--radius-full);
+  border-radius: var(--radius-lg);
+  font-family: var(--font-sans);
   font-size: var(--font-size-base);
+  line-height: 1.4;
   width: 100%;
+  min-height: var(--input-action-size);
+  max-height: min(30dvh, calc(7em + var(--spacing-lg) + 2px));
+  box-sizing: border-box;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overflow-wrap: anywhere;
+  resize: none;
+  white-space: pre-wrap;
 }
 
 .input-field {
@@ -6753,8 +6763,7 @@ textarea.interaction-input {
 .input-clear-inline {
   position: absolute;
   right: var(--spacing-xs);
-  top: 50%;
-  transform: translateY(-50%);
+  top: 0;
   z-index: 1;
 }
 

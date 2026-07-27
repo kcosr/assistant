@@ -37,7 +37,7 @@ function getInputPanelElements(container: HTMLElement): InputRuntimeElements {
     ),
     activityBarEl: container.querySelector<HTMLElement>('[data-role="input-activity-bar"]'),
     form: requireElement<HTMLFormElement>(container, '[data-role="input-form"]', 'input form'),
-    inputEl: requireElement<HTMLInputElement>(container, '[data-role="input-text"]', 'input text'),
+    inputEl: requireElement<HTMLTextAreaElement>(container, '[data-role="input-text"]', 'input text'),
     submitButtonEl: container.querySelector<HTMLButtonElement>('[data-role="input-submit"]'),
     clearButtonEl: requireElement<HTMLButtonElement>(
       container,
@@ -72,6 +72,7 @@ export function createInputPanel(options: InputPanelOptions): PanelFactory {
           if (cleanup) {
             cleanup();
           }
+          runtime.dispose();
           container.innerHTML = '';
         },
       };

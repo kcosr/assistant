@@ -815,7 +815,7 @@ describe('KeyboardNavigationController chat shortcuts', () => {
     panelFrame.dataset['panelId'] = 'panel-1';
     document.body.appendChild(panelFrame);
 
-    const input = document.createElement('input');
+    const input = document.createElement('textarea');
     document.body.appendChild(input);
 
     const options = buildOptions(panelFrame);
@@ -901,7 +901,7 @@ describe('KeyboardNavigationController chat shortcuts', () => {
     panelFrame.dataset['panelId'] = 'panel-1';
     document.body.appendChild(panelFrame);
 
-    const input = document.createElement('input');
+    const input = document.createElement('textarea');
     document.body.appendChild(input);
 
     let opened = false;
@@ -927,7 +927,7 @@ describe('KeyboardNavigationController chat shortcuts', () => {
     panelFrame.dataset['panelId'] = 'panel-1';
     document.body.appendChild(panelFrame);
 
-    const input = document.createElement('input');
+    const input = document.createElement('textarea');
     document.body.appendChild(input);
     input.focus();
 

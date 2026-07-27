@@ -408,13 +408,13 @@ export interface SpeechAudioControllerOptions {
   voiceStartupPreRollValueEl: HTMLElement;
   voiceTtsGainSliderEl: HTMLInputElement;
   voiceTtsGainValueEl: HTMLElement;
-  inputEl: HTMLInputElement;
+  inputEl: HTMLTextAreaElement;
   getSocket: () => WebSocket | null;
   getSessionId: () => string | null;
   setStatus: (text: string) => void;
   setTtsStatus: (text: string) => void;
   sendUserText: (text: string) => void;
-  updateClearInputButtonVisibility: () => void;
+  updateInputPresentation: () => void;
   sendModesUpdate: () => void;
   supportsAudioOutput: () => boolean;
   isOutputActive: () => boolean;
@@ -1213,7 +1213,7 @@ export class SpeechAudioController {
           this.options.inputEl.value.length,
           this.options.inputEl.value.length,
         );
-        this.options.updateClearInputButtonVisibility();
+        this.options.updateInputPresentation();
       };
 
       speechInputController.start({
@@ -1313,7 +1313,7 @@ export class SpeechAudioController {
     this.options.micButtonEl.classList.remove('recording');
     if (options.resetInput) {
       this.options.inputEl.value = this.speechInputBaseText ?? '';
-      this.options.updateClearInputButtonVisibility();
+      this.options.updateInputPresentation();
     }
     this.speechInputBaseText = null;
     this.options.setStatus('Connected');

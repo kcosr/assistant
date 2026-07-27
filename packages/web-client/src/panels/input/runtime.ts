@@ -21,7 +21,7 @@ export interface InputRuntimeElements {
   pendingMessageListEl: HTMLElement | null;
   activityBarEl?: HTMLElement | null;
   form: HTMLFormElement;
-  inputEl: HTMLInputElement;
+  inputEl: HTMLTextAreaElement;
   clearButtonEl: HTMLButtonElement;
   contextToggleButtonEl: HTMLButtonElement | null;
   briefToggleButtonEl: HTMLButtonElement | null;
@@ -103,13 +103,13 @@ export interface InputRuntimeOptions {
 }
 
 export interface InputRuntime {
-  inputEl: HTMLInputElement;
+  inputEl: HTMLTextAreaElement;
   textInputController: TextInputController;
   speechAudioController: SpeechAudioController | null;
   pendingMessageListController: PendingMessageListController | null;
   contextPreviewController: ContextPreviewController | null;
   focusInput: () => void;
-  updateClearInputButtonVisibility: () => void;
+  updateInputPresentation: () => void;
   updateContextAvailability: () => void;
   updateContextPreview: () => void;
   setSessionId: (sessionId: string | null) => void;
@@ -125,6 +125,7 @@ export interface InputRuntime {
   getAudioMode: () => AudioMode;
   getAutoListenEnabled: () => boolean;
   supportsAudioOutput: () => boolean;
+  dispose: () => void;
 }
 
 export function createInputRuntime(options: InputRuntimeOptions): InputRuntime {
@@ -288,7 +289,7 @@ export function createInputRuntime(options: InputRuntimeOptions): InputRuntime {
       elements.clearButtonEl.style.visibility = 'hidden';
     } else {
       elements.inputEl.placeholder = basePlaceholder;
-      textInputController.updateClearInputButtonVisibility();
+      textInputController.updateInputPresentation();
     }
   };
 
@@ -358,7 +359,7 @@ export function createInputRuntime(options: InputRuntimeOptions): InputRuntime {
     setStatus: options.setStatus,
     setTtsStatus: options.setTtsStatus,
     sendUserText: (text) => textInputController.sendUserText(text),
-    updateClearInputButtonVisibility: () => textInputController.updateClearInputButtonVisibility(),
+    updateInputPresentation: () => textInputController.updateInputPresentation(),
     sendModesUpdate,
     supportsAudioOutput,
     isOutputActive: () => {
@@ -420,7 +421,7 @@ export function createInputRuntime(options: InputRuntimeOptions): InputRuntime {
     focusInput: () => {
       elements.inputEl.focus();
     },
-    updateClearInputButtonVisibility: () => textInputController.updateClearInputButtonVisibility(),
+    updateInputPresentation: () => textInputController.updateInputPresentation(),
     updateContextAvailability: () => {
       applyIncludePanelContextState();
       updateContextPreview();
@@ -454,5 +455,8 @@ export function createInputRuntime(options: InputRuntimeOptions): InputRuntime {
     getAutoListenEnabled: () =>
       speechAudioController?.autoListenEnabled ?? initialVoiceSettings.autoListenEnabled,
     supportsAudioOutput,
+    dispose: () => {
+      textInputController.dispose();
+    },
   };
 }
