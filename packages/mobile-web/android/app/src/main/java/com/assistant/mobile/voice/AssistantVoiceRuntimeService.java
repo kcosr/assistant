@@ -119,6 +119,7 @@ public final class AssistantVoiceRuntimeService extends Service {
     private static final long PLAYBACK_DRAIN_TIMEOUT_MARGIN_MS = 1200L;
     private static final long MANUAL_PREEMPT_STOP_TIMEOUT_MS = 5000L;
     private static final int MAX_PENDING_QUEUE_ITEMS = 25;
+    private static final int MAX_INTERACTION_END_REQUESTS = 64;
     private static final int DURABLE_NOTIFICATION_ID_OFFSET = 24000;
     private static final long MEDIA_SESSION_PLAYBACK_ACTIONS =
         PlaybackState.ACTION_PLAY
@@ -169,6 +170,8 @@ public final class AssistantVoiceRuntimeService extends Service {
     private boolean assistantSocketConnected = false;
     private String adapterClientId = "";
     private final Set<String> assistantSubscribedSessionIds = new LinkedHashSet<>();
+    private final AssistantVoiceInteractionEndTracker interactionEndTracker =
+        new AssistantVoiceInteractionEndTracker(MAX_INTERACTION_END_REQUESTS);
     private String runtimeState = STATE_DISABLED;
 
     // The session currently owning native playback/listen/submit. This is set
@@ -1840,6 +1843,17 @@ public final class AssistantVoiceRuntimeService extends Service {
             Log.d(TAG, "handlePromptEvent skipped unwatched sessionId=" + safe(prompt.sessionId));
             return;
         }
+        if (prompt.isInteractionEnd()) {
+            interactionEndTracker.remember(prompt.sessionId, prompt.requestId);
+            Log.d(
+                TAG,
+                "interaction_end armed sessionId="
+                    + safe(prompt.sessionId)
+                    + " requestId="
+                    + safe(prompt.requestId)
+            );
+            return;
+        }
         if (config.ttsPreferredSessionOnly
             && !config.preferredVoiceSessionId.isEmpty()
             && !prompt.sessionId.equals(config.preferredVoiceSessionId)) {
@@ -1850,11 +1864,15 @@ public final class AssistantVoiceRuntimeService extends Service {
             );
             return;
         }
+        boolean suppressAutoListen =
+            prompt.isAssistantResponse()
+                && interactionEndTracker.consume(prompt.sessionId, prompt.requestId);
+        boolean autoListenForPrompt = config.autoListenEnabled && !suppressAutoListen;
         boolean idle = !hasActiveInteraction() && !isManualPreemptStopInFlight();
         boolean shouldAutoListenAfterManualAssistantMessage =
             AssistantVoiceInteractionRules.shouldAutoListenAfterManualAssistantMessage(
                 config.audioMode,
-                config.autoListenEnabled,
+                autoListenForPrompt,
                 prompt,
                 idle
             );
@@ -1867,6 +1885,7 @@ public final class AssistantVoiceRuntimeService extends Service {
             TAG,
             "handlePromptEvent decision shouldAutoplay=" + shouldAutoplay
                 + " shouldAutoListenAfterManualAssistantMessage=" + shouldAutoListenAfterManualAssistantMessage
+                + " suppressAutoListen=" + suppressAutoListen
                 + " audioMode=" + safe(config.audioMode)
                 + " autoListenEnabled=" + config.autoListenEnabled
                 + " hasActiveInteraction=" + hasActiveInteraction()
@@ -1891,7 +1910,7 @@ public final class AssistantVoiceRuntimeService extends Service {
         AssistantVoiceQueueItem item =
             AssistantVoiceQueueItem.fromPrompt(
                 prompt,
-                config.autoListenEnabled,
+                autoListenForPrompt,
                 config.notificationTitlePlaybackEnabled,
                 config.getSessionTitle(prompt.sessionId)
             );

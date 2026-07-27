@@ -16,6 +16,7 @@ final class AssistantVoiceEventParser {
             eventId = trim(findStringField(eventJson, "id", 0));
         }
         String sessionId = trim(findStringField(eventJson, "sessionId", 0));
+        String requestId = trim(findStringField(eventJson, "requestId", 0));
         String payloadJson = extractObjectField(eventJson, "payload", 0);
         if (eventId.isEmpty() || sessionId.isEmpty() || payloadJson.isEmpty()) {
             return null;
@@ -24,6 +25,16 @@ final class AssistantVoiceEventParser {
         if ("tool_call".equals(eventType)) {
             String toolName = trim(findStringField(payloadJson, "toolName", 0));
             String toolCallId = trim(findStringField(payloadJson, "toolCallId", 0));
+            if ("interaction_end".equals(toolName) && !requestId.isEmpty()) {
+                return new AssistantVoicePromptEvent(
+                    eventId,
+                    sessionId,
+                    requestId,
+                    toolCallId,
+                    toolName,
+                    ""
+                );
+            }
             String argsJson = extractObjectField(payloadJson, "args", 0);
             String text = trim(findStringField(argsJson, "text", 0));
             if (
@@ -33,7 +44,14 @@ final class AssistantVoiceEventParser {
             ) {
                 return null;
             }
-            return new AssistantVoicePromptEvent(eventId, sessionId, toolCallId, toolName, text);
+            return new AssistantVoicePromptEvent(
+                eventId,
+                sessionId,
+                requestId,
+                toolCallId,
+                toolName,
+                text
+            );
         }
 
         if ("assistant_done".equals(eventType)) {
@@ -44,6 +62,7 @@ final class AssistantVoiceEventParser {
                 return new AssistantVoicePromptEvent(
                     eventId,
                     sessionId,
+                    requestId,
                     responseId,
                     "assistant_response",
                     text

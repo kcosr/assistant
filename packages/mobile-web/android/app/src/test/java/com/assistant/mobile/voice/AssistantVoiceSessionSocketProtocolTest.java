@@ -19,7 +19,9 @@ public final class AssistantVoiceSessionSocketProtocolTest {
         assertTrue(payload.contains("\"subscriptions\":[{\"sessionId\":\"session-123\""));
         assertTrue(payload.contains("\"serverMessageTypes\":[\"transcript_event\"]"));
         assertTrue(payload.contains("\"chatEventTypes\":[\"tool_call\"]"));
-        assertTrue(payload.contains("\"toolNames\":[\"voice_speak\",\"voice_ask\"]"));
+        assertTrue(payload.contains(
+            "\"toolNames\":[\"voice_speak\",\"voice_ask\",\"interaction_end\"]"
+        ));
     }
 
     @Test
@@ -32,7 +34,8 @@ public final class AssistantVoiceSessionSocketProtocolTest {
         assertTrue(payload.contains("\"type\":\"subscribe\""));
         assertTrue(payload.contains("\"sessionId\":\"session-123\""));
         assertTrue(payload.contains("\"serverMessageTypes\":[\"transcript_event\"]"));
-        assertTrue(payload.contains("\"chatEventTypes\":[\"assistant_done\"]"));
+        assertTrue(payload.contains("\"chatEventTypes\":[\"tool_call\",\"assistant_done\"]"));
+        assertTrue(payload.contains("\"toolNames\":[\"interaction_end\"]"));
         assertTrue(payload.contains("\"messagePhases\":[\"final_answer\"]"));
     }
 
@@ -47,7 +50,9 @@ public final class AssistantVoiceSessionSocketProtocolTest {
         assertTrue(payload.contains("\"sessionId\":\"session-123\""));
         assertTrue(payload.contains("\"serverMessageTypes\":[\"transcript_event\"]"));
         assertTrue(payload.contains("\"chatEventTypes\":[\"tool_call\",\"assistant_done\"]"));
-        assertTrue(payload.contains("\"toolNames\":[\"voice_speak\",\"voice_ask\"]"));
+        assertTrue(payload.contains(
+            "\"toolNames\":[\"voice_speak\",\"voice_ask\",\"interaction_end\"]"
+        ));
         assertTrue(payload.contains("\"messagePhases\":[\"final_answer\"]"));
     }
 
@@ -66,6 +71,7 @@ public final class AssistantVoiceSessionSocketProtocolTest {
             + "\"event\":{"
             + "\"eventId\":\"event-1\","
             + "\"sessionId\":\"session-123\","
+            + "\"requestId\":\"request-1\","
             + "\"chatEventType\":\"tool_call\","
             + "\"payload\":{"
             + "\"toolName\":\"voice_speak\","
@@ -81,6 +87,7 @@ public final class AssistantVoiceSessionSocketProtocolTest {
         assertNotNull(prompt);
         assertTrue("event-1".equals(prompt.eventId));
         assertTrue("session-123".equals(prompt.sessionId));
+        assertTrue("request-1".equals(prompt.requestId));
         assertTrue("call-1".equals(prompt.toolCallId));
         assertTrue("voice_speak".equals(prompt.toolName));
         assertTrue("Hello from realtime".equals(prompt.text));
@@ -117,6 +124,7 @@ public final class AssistantVoiceSessionSocketProtocolTest {
             + "\"eventId\":\"event-2\","
             + "\"responseId\":\"response-2\","
             + "\"sessionId\":\"session-123\","
+            + "\"requestId\":\"request-2\","
             + "\"chatEventType\":\"assistant_done\","
             + "\"payload\":{"
             + "\"phase\":\"final_answer\","
@@ -133,5 +141,33 @@ public final class AssistantVoiceSessionSocketProtocolTest {
         assertTrue("assistant_response".equals(prompt.toolName));
         assertTrue("Final response text".equals(prompt.text));
         assertTrue("response-2".equals(prompt.toolCallId));
+        assertTrue("request-2".equals(prompt.requestId));
+    }
+
+    @Test
+    public void parsePlaybackMessageReturnsInteractionEndControl() {
+        String message = "{"
+            + "\"type\":\"transcript_event\","
+            + "\"event\":{"
+            + "\"eventId\":\"event-end\","
+            + "\"sessionId\":\"session-123\","
+            + "\"requestId\":\"request-end\","
+            + "\"chatEventType\":\"tool_call\","
+            + "\"payload\":{"
+            + "\"toolName\":\"interaction_end\","
+            + "\"toolCallId\":\"call-end\","
+            + "\"args\":{\"reason\":\"done\"}"
+            + "}"
+            + "}"
+            + "}";
+
+        AssistantVoicePromptEvent prompt = AssistantVoiceSessionSocketProtocol.parsePlaybackMessage(
+            message
+        );
+
+        assertNotNull(prompt);
+        assertTrue(prompt.isInteractionEnd());
+        assertTrue("request-end".equals(prompt.requestId));
+        assertTrue("call-end".equals(prompt.toolCallId));
     }
 }

@@ -5,9 +5,9 @@ import { ToolError } from '../tools';
 import {
   buildRealtimeInstructions,
   buildRealtimeToolsFromHost,
-  isRealtimeEndSessionTool,
   isToolAllowedForVoiceRealtime,
 } from './listsTools';
+import { isInteractionEndTool } from '../interactionEndTool';
 import {
   hangupOpenAiRealtimeCall,
   negotiateOpenAiRealtimeCall,
@@ -68,9 +68,7 @@ export class VoiceService {
     this.store = new VoiceStore(dataDir);
     // Match T3 Realtime defaults (OpenAiVoiceProvider: gpt-realtime-2.1 + marin).
     this.model =
-      options.model?.trim() ||
-      process.env['OPENAI_REALTIME_MODEL']?.trim() ||
-      'gpt-realtime-2.1';
+      options.model?.trim() || process.env['OPENAI_REALTIME_MODEL']?.trim() || 'gpt-realtime-2.1';
     this.voice =
       options.voice?.trim() ||
       process.env['OPENAI_REALTIME_VOICE']?.trim() ||
@@ -104,10 +102,7 @@ export class VoiceService {
     };
   }
 
-  async createConversation(input: {
-    conversationId?: string | null;
-    listsInstanceId?: string;
-  }) {
+  async createConversation(input: { conversationId?: string | null; listsInstanceId?: string }) {
     return this.store.getOrCreateConversation({
       ...(input.conversationId !== undefined ? { conversationId: input.conversationId } : {}),
       ...(input.listsInstanceId !== undefined ? { listsInstanceId: input.listsInstanceId } : {}),
@@ -195,9 +190,7 @@ export class VoiceService {
       (reason) => {
         // Intentional hangups use close() first and should not fail the session as an error.
         if (reason.startsWith('sideband_closed_intentional')) {
-          console.info(
-            `[voice] sideband closed after hangup sessionId=${session.id} ${reason}`,
-          );
+          console.info(`[voice] sideband closed after hangup sessionId=${session.id} ${reason}`);
           return;
         }
         console.warn(
@@ -334,7 +327,11 @@ export class VoiceService {
       code: 'realtime_failed',
       message: reason,
     });
-    await this.store.appendEvent(sessionId, { type: 'session_state', state: 'failed', message: reason });
+    await this.store.appendEvent(sessionId, {
+      type: 'session_state',
+      state: 'failed',
+      message: reason,
+    });
   }
 
   private async handleSidebandEvent(
@@ -347,7 +344,10 @@ export class VoiceService {
       return;
     }
 
-    if (type === 'response.output_audio_transcript.done' || type === 'response.audio_transcript.done') {
+    if (
+      type === 'response.output_audio_transcript.done' ||
+      type === 'response.audio_transcript.done'
+    ) {
       const text = typeof event['transcript'] === 'string' ? event['transcript'] : '';
       if (text.trim()) {
         await this.store.appendJournal(live.conversationId, {
@@ -397,7 +397,9 @@ export class VoiceService {
 
     if (type === 'error') {
       const message =
-        typeof event['error'] === 'object' && event['error'] && 'message' in (event['error'] as object)
+        typeof event['error'] === 'object' &&
+        event['error'] &&
+        'message' in (event['error'] as object)
           ? String((event['error'] as { message?: unknown }).message ?? 'provider_error')
           : 'provider_error';
       await this.store.appendEvent(sessionId, {
@@ -464,7 +466,7 @@ export class VoiceService {
     });
 
     // Built-in hangup: acknowledge the tool, then close so the client plays the end cue.
-    if (isRealtimeEndSessionTool(name)) {
+    if (isInteractionEndTool(name)) {
       // Protocol close reason is always a success token so the client plays SUCCESS_COMPLETION.
       // Free-text model detail stays only in the tool result / journal payload.
       const detail =
