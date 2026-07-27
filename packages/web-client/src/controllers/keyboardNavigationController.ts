@@ -25,7 +25,7 @@ export interface KeyboardNavigationControllerOptions {
   startPushToTalk: () => Promise<void>;
   stopPushToTalk: () => void;
   focusInput: () => void;
-  getInputEl: () => HTMLInputElement | null;
+  getInputEl: () => HTMLTextAreaElement | null;
   getActiveChatRuntime: () => ChatRuntime | null;
   openCommandPalette: () => void;
   focusGlobalQuery?: () => boolean;

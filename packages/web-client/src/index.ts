@@ -2186,6 +2186,7 @@ async function main(): Promise<void> {
       contextMenuManager.close();
       runtime.chatRenderer.setFocusInputHandler(null);
       runtime.chatRenderer.setRequestDividerActionHandler(null);
+      inputRuntime.dispose();
       chatPanelsById.delete(panelId);
       if (entry.bindingSessionId) {
         clearSessionTranscriptState(entry.bindingSessionId);
@@ -5377,7 +5378,7 @@ async function main(): Promise<void> {
       return;
     }
     runtime.inputEl.value = text;
-    runtime.updateClearInputButtonVisibility();
+    runtime.updateInputPresentation();
     runtime.focusInput();
     cancelQueuedMessage(messageId);
   };

@@ -13,7 +13,7 @@ Browser-based chat client for the AI Assistant.
 
 ## Features
 
-- Text input with streaming response display
+- Autosizing multiline text input with streaming response display
 - Voice input via Web Speech API (browser speech recognition)
 - Audio output via server-generated TTS
 - Session management (create, switch, delete)

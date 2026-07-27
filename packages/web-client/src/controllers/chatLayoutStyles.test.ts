@@ -74,6 +74,18 @@ describe('chat layout styles', () => {
     expect(css).toContain('padding: calc(var(--spacing-xs) + 2px) var(--spacing-lg) var(--spacing-md);');
   });
 
+  it('caps the autosizing chat composer and bottom-aligns its actions', () => {
+    const cssPath = join(process.cwd(), 'packages/web-client/public/styles.css');
+    const css = readFileSync(cssPath, 'utf8');
+
+    expect(css).toContain('.input-form {');
+    expect(css).toContain('align-items: flex-end;');
+    expect(css).toContain('font-family: var(--font-sans);');
+    expect(css).toContain('max-height: min(30dvh, calc(7em + var(--spacing-lg) + 2px));');
+    expect(css).toContain('overflow-y: auto;');
+    expect(css).toContain('resize: none;');
+  });
+
   it('keeps markdown code blocks full width inside tool output content', () => {
     const cssPath = join(process.cwd(), 'packages/web-client/public/styles.css');
     const css = readFileSync(cssPath, 'utf8');

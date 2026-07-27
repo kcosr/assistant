@@ -12,7 +12,7 @@ describe('createInputRuntime', () => {
 
     document.body.innerHTML = `
       <form></form>
-      <input />
+      <textarea></textarea>
       <button></button>
       <button></button>
       <button><svg class="mic-icon"></svg></button>
@@ -23,7 +23,7 @@ describe('createInputRuntime', () => {
     const [form, inputEl, clearButtonEl, _submitButtonEl, micButtonEl, select, autoListenCheckbox] =
       Array.from(document.body.children) as [
         HTMLFormElement,
-        HTMLInputElement,
+        HTMLTextAreaElement,
         HTMLButtonElement,
         HTMLButtonElement,
         HTMLButtonElement,
@@ -134,7 +134,7 @@ describe('createInputRuntime', () => {
     document.body.innerHTML = `
       <div data-role="context-preview"></div>
       <form></form>
-      <input />
+      <textarea></textarea>
       <button></button>
       <button></button>
       <button><svg class="mic-icon"></svg></button>
@@ -154,7 +154,7 @@ describe('createInputRuntime', () => {
     ] = Array.from(document.body.children) as [
       HTMLElement,
       HTMLFormElement,
-      HTMLInputElement,
+      HTMLTextAreaElement,
       HTMLButtonElement,
       HTMLButtonElement,
       HTMLButtonElement,
@@ -240,7 +240,7 @@ describe('createInputRuntime', () => {
 
     document.body.innerHTML = `
       <form></form>
-      <input />
+      <textarea></textarea>
       <button></button>
       <button></button>
       <button><svg class="mic-icon"></svg></button>
@@ -251,7 +251,7 @@ describe('createInputRuntime', () => {
     const [form, inputEl, clearButtonEl, _submitButtonEl, micButtonEl, select, autoListenCheckbox] =
       Array.from(document.body.children) as [
         HTMLFormElement,
-        HTMLInputElement,
+        HTMLTextAreaElement,
         HTMLButtonElement,
         HTMLButtonElement,
         HTMLButtonElement,

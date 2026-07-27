@@ -1,9 +1,10 @@
 import type { ClientTextInputMessage } from '@assistant/shared';
 import { resolveInputContext } from '../utils/inputContext';
+import { autosizeTextarea } from '../utils/textareaAutosize';
 
 export interface TextInputControllerOptions {
   form: HTMLFormElement;
-  inputEl: HTMLInputElement;
+  inputEl: HTMLTextAreaElement;
   clearInputButtonEl: HTMLButtonElement;
   getChatLogEl: () => HTMLElement | null;
   appendMessage: (
@@ -55,6 +56,9 @@ export interface TextInputControllerOptions {
 }
 
 export class TextInputController {
+  private resizeObserver: ResizeObserver | null = null;
+  private observedWidth: number | null = null;
+
   constructor(private readonly options: TextInputControllerOptions) {}
 
   attach(): void {
@@ -67,12 +71,24 @@ export class TextInputController {
     });
 
     inputEl.addEventListener('input', () => {
-      this.updateClearInputButtonVisibility();
+      this.updateInputPresentation();
     });
 
     inputEl.addEventListener('keydown', (event) => {
       if (event.key === 'Escape') {
         this.handleEscape();
+        return;
+      }
+      if (
+        event.key === 'Enter' &&
+        !event.shiftKey &&
+        !event.altKey &&
+        !event.ctrlKey &&
+        !event.metaKey &&
+        !event.isComposing
+      ) {
+        event.preventDefault();
+        form.requestSubmit();
       }
     });
 
@@ -80,7 +96,24 @@ export class TextInputController {
       this.handleClearInput();
     });
 
-    this.updateClearInputButtonVisibility();
+    if (typeof ResizeObserver !== 'undefined') {
+      this.resizeObserver = new ResizeObserver((entries) => {
+        const width = entries[0]?.contentRect.width;
+        if (typeof width !== 'number' || width === this.observedWidth) {
+          return;
+        }
+        this.observedWidth = width;
+        this.autosizeInput();
+      });
+      this.resizeObserver.observe(inputEl.parentElement ?? inputEl);
+    }
+
+    this.updateInputPresentation();
+  }
+
+  dispose(): void {
+    this.resizeObserver?.disconnect();
+    this.resizeObserver = null;
   }
 
   private handleEscape(): void {
@@ -89,7 +122,7 @@ export class TextInputController {
     // If there's text in the input, clear it
     if (inputEl.value.length > 0) {
       inputEl.value = '';
-      this.updateClearInputButtonVisibility();
+      this.updateInputPresentation();
       return;
     }
 
@@ -99,9 +132,19 @@ export class TextInputController {
     }
   }
 
-  updateClearInputButtonVisibility(): void {
+  updateInputPresentation(): void {
     const hasContent = this.options.inputEl.value.length > 0;
     this.options.clearInputButtonEl.style.visibility = hasContent ? 'visible' : 'hidden';
+    this.autosizeInput();
+  }
+
+  private autosizeInput(): void {
+    const { inputEl } = this.options;
+    if (inputEl.value.length === 0) {
+      inputEl.style.height = '';
+      return;
+    }
+    autosizeTextarea(inputEl);
   }
 
   sendUserText(rawText: string): void {
@@ -170,7 +213,7 @@ export class TextInputController {
     }
 
     this.options.inputEl.value = '';
-    this.updateClearInputButtonVisibility();
+    this.updateInputPresentation();
     this.options.onAfterSend?.();
   }
 
@@ -181,7 +224,7 @@ export class TextInputController {
       this.options.stopPushToTalk();
       setTimeout(() => {
         inputEl.value = '';
-        this.updateClearInputButtonVisibility();
+        this.updateInputPresentation();
         inputEl.focus();
         void this.options.startPushToTalk();
       }, 100);
@@ -189,7 +232,7 @@ export class TextInputController {
     }
 
     inputEl.value = '';
-    this.updateClearInputButtonVisibility();
+    this.updateInputPresentation();
     inputEl.focus();
   }
 }
