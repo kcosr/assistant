@@ -157,7 +157,7 @@ describe('registerBuiltInSessionTools', () => {
     };
   }
 
-  it('registers voice_speak and voice_ask with agent-facing descriptions', async () => {
+  it('registers the voice interaction tools with agent-facing descriptions', async () => {
     const host = createHost();
 
     const tools = await host.listTools();
@@ -173,6 +173,10 @@ describe('registerBuiltInSessionTools', () => {
         expect.objectContaining({
           name: 'voice_ask',
           description: expect.stringContaining('spoken reply is expected'),
+        }),
+        expect.objectContaining({
+          name: 'interaction_end',
+          description: expect.stringContaining('automatically listen'),
         }),
       ]),
     );
@@ -204,6 +208,24 @@ describe('registerBuiltInSessionTools', () => {
       host.callTool('voice_ask', '{"text":"What should I do next?"}', ctx),
     ).resolves.toEqual({
       accepted: true,
+    });
+  });
+
+  it('accepts interaction_end with an optional reason', async () => {
+    const host = createHost();
+    const ctx = createContext();
+
+    await expect(host.callTool('interaction_end', '{}', ctx)).resolves.toEqual({
+      ok: true,
+      ending: true,
+      reason: 'agent_end',
+    });
+    await expect(
+      host.callTool('interaction_end', '{"reason":" user_request "}', ctx),
+    ).resolves.toEqual({
+      ok: true,
+      ending: true,
+      reason: 'user_request',
     });
   });
 

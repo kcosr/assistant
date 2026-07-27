@@ -33,6 +33,7 @@ import {
 } from './attachments/constants';
 import { createNotificationRecord } from '../../plugins/core/notifications/server/service';
 import { createWebSearchToolDefinition } from './tools/webSearch';
+import { INTERACTION_END_TOOL_NAME, INTERACTION_END_TOOL_PARAMETERS } from './interactionEndTool';
 
 interface AgentMessageArgs {
   agentId: string;
@@ -146,7 +147,10 @@ function parseAttachmentSendArgs(raw: unknown): AttachmentSendArgs {
   const title = parseOptionalTrimmedString(obj, 'title');
   const fileName = parseOptionalTrimmedString(obj, 'fileName');
   if (!fileName) {
-    throw createToolError('invalid_arguments', 'fileName is required and must be a non-empty string');
+    throw createToolError(
+      'invalid_arguments',
+      'fileName is required and must be a non-empty string',
+    );
   }
   const contentType = parseOptionalTrimmedString(obj, 'contentType');
 
@@ -259,10 +263,7 @@ async function materializeAttachmentBytes(
   }
 }
 
-async function resolveAttachmentPath(
-  rawPath: string,
-  ctx: ToolContext,
-): Promise<string> {
+async function resolveAttachmentPath(rawPath: string, ctx: ToolContext): Promise<string> {
   if (path.isAbsolute(rawPath)) {
     return rawPath;
   }
@@ -294,9 +295,7 @@ function buildAttachmentPreview(options: {
 
   const fullText = options.bytes.toString('utf8');
   const previewText =
-    fullText.length > options.maxChars
-      ? fullText.slice(0, options.maxChars)
-      : fullText;
+    fullText.length > options.maxChars ? fullText.slice(0, options.maxChars) : fullText;
   return {
     previewType,
     previewText,
@@ -919,28 +918,31 @@ export async function handleAgentMessage(
     agent.capabilityDenylist,
   );
 
-  const { availableTools, chatTools, agentTools, availableSkills } = await resolveAgentToolExposureForHost({
-    scopedToolHost,
-    agent,
-    sessionHub,
-    toolContext: {
-      signal: ctx.signal,
-      sessionId,
-      ...(ctx.toolCallId ? { toolCallId: ctx.toolCallId } : {}),
-      ...(ctx.turnId ? { turnId: ctx.turnId } : {}),
-      ...(ctx.requestId ? { requestId: ctx.requestId } : {}),
-      ...(ctx.responseId ? { responseId: ctx.responseId } : {}),
-      agentRegistry,
-      sessionIndex,
-      envConfig,
+  const { availableTools, chatTools, agentTools, availableSkills } =
+    await resolveAgentToolExposureForHost({
+      scopedToolHost,
+      agent,
       sessionHub,
-      baseToolHost,
-      ...(eventStore ? { eventStore } : {}),
-      ...(ctx.searchService ? { searchService: ctx.searchService } : {}),
-      ...(ctx.scheduledSessionService ? { scheduledSessionService: ctx.scheduledSessionService } : {}),
-      ...(ctx.forwardChunksTo ? { forwardChunksTo: ctx.forwardChunksTo } : {}),
-    },
-  });
+      toolContext: {
+        signal: ctx.signal,
+        sessionId,
+        ...(ctx.toolCallId ? { toolCallId: ctx.toolCallId } : {}),
+        ...(ctx.turnId ? { turnId: ctx.turnId } : {}),
+        ...(ctx.requestId ? { requestId: ctx.requestId } : {}),
+        ...(ctx.responseId ? { responseId: ctx.responseId } : {}),
+        agentRegistry,
+        sessionIndex,
+        envConfig,
+        sessionHub,
+        baseToolHost,
+        ...(eventStore ? { eventStore } : {}),
+        ...(ctx.searchService ? { searchService: ctx.searchService } : {}),
+        ...(ctx.scheduledSessionService
+          ? { scheduledSessionService: ctx.scheduledSessionService }
+          : {}),
+        ...(ctx.forwardChunksTo ? { forwardChunksTo: ctx.forwardChunksTo } : {}),
+      },
+    });
 
   // Forward tool output chunks to the caller session if we have the caller's tool call ID
   const forwardChunksTo =
@@ -1227,6 +1229,18 @@ export function registerBuiltInSessionTools(options: {
   });
 
   options.host.registerTool({
+    name: INTERACTION_END_TOOL_NAME,
+    description:
+      'End the current interactive exchange after completing the current response. Use when the user says the interaction can stop or no further reply is needed. Clients that automatically listen for another voice turn will remain idle.',
+    parameters: INTERACTION_END_TOOL_PARAMETERS,
+    handler: async (args) => {
+      const obj = asObject(args);
+      const reason = parseOptionalTrimmedString(obj, 'reason') ?? 'agent_end';
+      return { ok: true, ending: true, reason };
+    },
+  });
+
+  options.host.registerTool({
     name: 'attachment_send',
     description:
       'Send a persistent attachment bubble to the user. Stores one attachment owned by this tool call and returns replayable metadata plus download/open paths. Provide exactly one content source: text for UTF-8 text, dataBase64 for arbitrary bytes, or path for an existing readable local file.',
@@ -1243,7 +1257,8 @@ export function registerBuiltInSessionTools(options: {
         },
         contentType: {
           type: 'string',
-          description: 'Optional MIME type override. When omitted, it is inferred from fileName or path.',
+          description:
+            'Optional MIME type override. When omitted, it is inferred from fileName or path.',
         },
         text: {
           type: 'string',

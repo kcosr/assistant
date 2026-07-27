@@ -189,8 +189,9 @@ adb -s <device> exec-out run-as com.assistant.app cat files/voice-runtime.log
 adb -s <device> exec-out run-as com.assistant.work cat files/voice-runtime.log
 ```
 
-  For immediate live tracing, `adb logcat -d | rg 'AssistantVoice(RuntimeService|Plugin|EventLog|MicStreamer)'`
-  is still the fastest first pass.
+For immediate live tracing, `adb logcat -d | rg 'AssistantVoice(RuntimeService|Plugin|EventLog|MicStreamer)'`
+is still the fastest first pass.
+
 - The recognition start cue is an arming cue that plays with a short native media preroll, fully
   drains, then waits a brief settle delay before native mic startup begins. The completion cue is
   deferred until recording has actually stopped, capture focus has been released, and a longer
@@ -214,6 +215,10 @@ adb -s <device> exec-out run-as com.assistant.work cat files/voice-runtime.log
   notifications to autoplay through native playback. Session-attention replies are not read aloud
   in `Manual`, but when `Auto Listen` is enabled the native runtime can start recognition
   automatically after a final assistant reply arrives.
+- When a text agent calls `interaction_end`, the native runtime correlates that tool call with the
+  final response from the same request. The response can still play normally, but Auto Listen is
+  suppressed afterward. The signal is request-scoped and does not disable later manual microphone
+  starts or Auto Listen on subsequent turns.
 - Durable session-linked notifications expose `Play` and `Speak` actions both from the Android
   system notification shade and from the in-app Notifications panel cards. Manual actions
   reconstruct fresh local queue items from the stored notification, jump ahead of automatic work,

@@ -1,14 +1,13 @@
 import { describe, expect, it } from 'vitest';
 
 import type { Tool } from '../tools';
+import { INTERACTION_END_TOOL_NAME, isInteractionEndTool } from '../interactionEndTool';
 
 import {
-  REALTIME_END_SESSION_TOOL_NAME,
-  buildRealtimeEndSessionTool,
+  buildRealtimeInteractionEndTool,
   buildRealtimeInstructions,
   buildRealtimeToolsFromHost,
   filterToolsForVoiceRealtime,
-  isRealtimeEndSessionTool,
   isToolAllowedForVoiceRealtime,
   toRealtimeFunctionTools,
 } from './listsTools';
@@ -18,6 +17,11 @@ const sampleTools: Tool[] = [
   { name: 'lists_item_move', description: 'Move item', parameters: { type: 'object' } },
   { name: 'notes_list', description: 'List notes', parameters: { type: 'object' } },
   { name: 'bash', description: 'Shell', parameters: { type: 'object' } },
+  {
+    name: INTERACTION_END_TOOL_NAME,
+    description: 'End this interaction',
+    parameters: { type: 'object' },
+  },
 ];
 
 describe('filterToolsForVoiceRealtime', () => {
@@ -35,13 +39,12 @@ describe('filterToolsForVoiceRealtime', () => {
   });
 
   it('supports exact names and star', () => {
-    expect(filterToolsForVoiceRealtime(sampleTools, ['bash'], undefined).map((t) => t.name)).toEqual([
-      'bash',
-    ]);
-    expect(filterToolsForVoiceRealtime(sampleTools, ['*'], ['bash', 'notes_*']).map((t) => t.name)).toEqual([
-      'lists_list',
-      'lists_item_move',
-    ]);
+    expect(
+      filterToolsForVoiceRealtime(sampleTools, ['bash'], undefined).map((t) => t.name),
+    ).toEqual(['bash']);
+    expect(
+      filterToolsForVoiceRealtime(sampleTools, ['*'], ['bash', 'notes_*']).map((t) => t.name),
+    ).toEqual(['lists_list', 'lists_item_move', INTERACTION_END_TOOL_NAME]);
   });
 });
 
@@ -50,12 +53,25 @@ describe('isToolAllowedForVoiceRealtime', () => {
     expect(isToolAllowedForVoiceRealtime('lists_list', undefined, undefined)).toBe(false);
   });
 
-  it('always allows the built-in end-session tool', () => {
-    expect(isRealtimeEndSessionTool(REALTIME_END_SESSION_TOOL_NAME)).toBe(true);
-    expect(isToolAllowedForVoiceRealtime(REALTIME_END_SESSION_TOOL_NAME, undefined, undefined)).toBe(
-      true,
+  it('applies the configured lists to interaction_end', () => {
+    expect(isInteractionEndTool(INTERACTION_END_TOOL_NAME)).toBe(true);
+    expect(isToolAllowedForVoiceRealtime(INTERACTION_END_TOOL_NAME, undefined, undefined)).toBe(
+      false,
     );
-    expect(isToolAllowedForVoiceRealtime(REALTIME_END_SESSION_TOOL_NAME, [], ['*'])).toBe(true);
+    expect(
+      isToolAllowedForVoiceRealtime(
+        INTERACTION_END_TOOL_NAME,
+        [INTERACTION_END_TOOL_NAME],
+        undefined,
+      ),
+    ).toBe(true);
+    expect(
+      isToolAllowedForVoiceRealtime(
+        INTERACTION_END_TOOL_NAME,
+        [INTERACTION_END_TOOL_NAME],
+        [INTERACTION_END_TOOL_NAME],
+      ),
+    ).toBe(false);
   });
 
   it('allows matching names and honors denylist', () => {
@@ -68,27 +84,27 @@ describe('isToolAllowedForVoiceRealtime', () => {
 });
 
 describe('buildRealtimeToolsFromHost', () => {
-  it('always appends realtime_end_session even with empty allowlist', async () => {
+  it('returns no tools when the allowlist is omitted', async () => {
     const tools = await buildRealtimeToolsFromHost({
       listTools: async () => sampleTools,
       toolAllowlist: undefined,
       toolDenylist: undefined,
     });
-    expect(tools.map((t) => t.name)).toEqual([REALTIME_END_SESSION_TOOL_NAME]);
-    expect(tools[0]).toEqual(buildRealtimeEndSessionTool());
+    expect(tools).toEqual([]);
   });
 
-  it('appends end session after filtered host tools', async () => {
+  it('uses the Realtime-specific interaction_end description when allowlisted', async () => {
     const tools = await buildRealtimeToolsFromHost({
       listTools: async () => sampleTools,
-      toolAllowlist: ['lists_*'],
+      toolAllowlist: ['lists_*', INTERACTION_END_TOOL_NAME],
       toolDenylist: undefined,
     });
     expect(tools.map((t) => t.name)).toEqual([
       'lists_list',
       'lists_item_move',
-      REALTIME_END_SESSION_TOOL_NAME,
+      INTERACTION_END_TOOL_NAME,
     ]);
+    expect(tools[2]).toEqual(buildRealtimeInteractionEndTool());
   });
 });
 
@@ -116,6 +132,7 @@ describe('buildRealtimeInstructions', () => {
   it('uses default prompt when override omitted', () => {
     const text = buildRealtimeInstructions('');
     expect(text).toContain('Assistant realtime voice agent');
+    expect(text).toContain('call interaction_end');
     expect(text).toContain('No prior conversation context.');
   });
 });

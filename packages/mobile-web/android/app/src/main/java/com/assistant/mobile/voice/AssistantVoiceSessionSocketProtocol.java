@@ -92,7 +92,8 @@ final class AssistantVoiceSessionSocketProtocol {
         if (AssistantVoiceConfig.AUDIO_MODE_RESPONSE.equals(normalizedAudioMode)) {
             return "{"
                 + "\"serverMessageTypes\":[\"transcript_event\"],"
-                + "\"chatEventTypes\":[\"assistant_done\"],"
+                + "\"chatEventTypes\":[\"tool_call\",\"assistant_done\"],"
+                + "\"toolNames\":[\"interaction_end\"],"
                 + "\"messagePhases\":[\"final_answer\"]"
                 + "}";
         }
@@ -100,14 +101,14 @@ final class AssistantVoiceSessionSocketProtocol {
             return "{"
                 + "\"serverMessageTypes\":[\"transcript_event\"],"
                 + "\"chatEventTypes\":[\"tool_call\",\"assistant_done\"],"
-                + "\"toolNames\":[\"voice_speak\",\"voice_ask\"],"
+                + "\"toolNames\":[\"voice_speak\",\"voice_ask\",\"interaction_end\"],"
                 + "\"messagePhases\":[\"final_answer\"]"
                 + "}";
         }
         return "{"
             + "\"serverMessageTypes\":[\"transcript_event\"],"
             + "\"chatEventTypes\":[\"tool_call\"],"
-            + "\"toolNames\":[\"voice_speak\",\"voice_ask\"]"
+            + "\"toolNames\":[\"voice_speak\",\"voice_ask\",\"interaction_end\"]"
             + "}";
     }
 
