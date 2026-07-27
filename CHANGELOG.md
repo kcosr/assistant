@@ -8,6 +8,7 @@
 
 ### Added
 
+- Added a unified `interaction_end` tool for text and Realtime agents, including Android Auto Listen suppression for the completed turn when an agent ends the interaction. ([#118](https://github.com/kcosr/assistant/pull/118))
 - Added a Realtime mic mute toggle FAB stacked above the floating microphone control so uplink audio can be muted while keeping the duplex call active. ([#116](https://github.com/kcosr/assistant/pull/116))
 - Added Realtime-specific persistent notification controls for Realtime mode (Start call + Mute/Unmute when idle; Mute/Unmute + End call when live) instead of Thread speak/mode/media-button actions. ([#116](https://github.com/kcosr/assistant/pull/116))
 - Added Realtime speakerphone preference (default on) so duplex voice uses the phone loudspeaker when no Bluetooth headset is connected, instead of the quiet earpiece. ([#114](https://github.com/kcosr/assistant/pull/114))
