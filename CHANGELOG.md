@@ -34,6 +34,7 @@
 
 ### Changed
 
+- Changed the chat composer to grow with wrapped or multiline text up to a compact height limit, with Enter to send and Shift+Enter to add a newline. ([#119](https://github.com/kcosr/assistant/pull/119))
 - Updated the Earendil Pi dependency suite to 0.82.1 and migrated the agent server to Pi's current provider-owned, ESM-only runtime APIs. ([#117](https://github.com/kcosr/assistant/pull/117))
 - Changed scheduled-sessions wake-up tools to support multiple current-session wake-ups with create/update/cancel-by-id operations, capped active wake-ups, and redacted admin-panel visibility for other sessions. ([#110](https://github.com/kcosr/assistant/pull/110))
 - Changed Android native voice Manual mode so Auto Listen can start speech recognition after final assistant messages without playing assistant TTS. ([#109](https://github.com/kcosr/assistant/pull/109))
