@@ -105,6 +105,7 @@ describe('buildRealtimeToolsFromHost', () => {
       INTERACTION_END_TOOL_NAME,
     ]);
     expect(tools[2]).toEqual(buildRealtimeInteractionEndTool());
+    expect(tools[2]?.description).toContain('A spoken acknowledgment does not end the call');
   });
 });
 
@@ -132,7 +133,8 @@ describe('buildRealtimeInstructions', () => {
   it('uses default prompt when override omitted', () => {
     const text = buildRealtimeInstructions('');
     expect(text).toContain('Assistant realtime voice agent');
-    expect(text).toContain('call interaction_end');
+    expect(text).toContain('you MUST call interaction_end');
+    expect(text).toContain('A spoken acknowledgment does not end the call');
     expect(text).toContain('No prior conversation context.');
   });
 });

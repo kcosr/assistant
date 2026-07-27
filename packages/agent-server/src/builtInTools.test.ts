@@ -176,7 +176,7 @@ describe('registerBuiltInSessionTools', () => {
         }),
         expect.objectContaining({
           name: 'interaction_end',
-          description: expect.stringContaining('automatically listen'),
+          description: expect.stringContaining('A textual acknowledgment'),
         }),
       ]),
     );

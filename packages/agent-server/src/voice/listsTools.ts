@@ -13,7 +13,7 @@ export function buildRealtimeInteractionEndTool(): RealtimeFunctionTool {
     type: 'function',
     name: INTERACTION_END_TOOL_NAME,
     description:
-      'End the current realtime voice call immediately. Use when the user wants to hang up, stop, or end the conversation. Prefer a brief spoken goodbye first when natural, then call this tool.',
+      'End the current realtime voice call immediately. You MUST call this tool when the user indicates the call or conversation should end, including phrases such as "stop", "stop now", "you can stop", "stop our interaction", "we are done", or "that is all". A spoken acknowledgment does not end the call. If a brief goodbye is natural, say it before calling this tool.',
     parameters: INTERACTION_END_TOOL_PARAMETERS,
   };
 }
@@ -113,7 +113,7 @@ export function buildRealtimeInstructions(
           'Speak concisely. Prefer short confirmations after mutations.',
           'You may only use the provided tools. Never invent tool names.',
           'Prefer title or name lookup fields when the user refers to items by name.',
-          'When the user wants to hang up, stop, or end the call, call interaction_end. A short goodbye first is fine; the call ends when that tool runs.',
+          'When the user indicates that the call or conversation should end—including "stop", "stop now", "you can stop", "stop our interaction", "we are done", or "that is all"—you MUST call interaction_end. A spoken acknowledgment does not end the call. If a short goodbye is natural, say it before calling the tool.',
           'Do not claim you can control Thread voice, notifications, or coding agents unless those tools are provided.',
         ].join('\n');
 

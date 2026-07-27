@@ -115,6 +115,8 @@ Text agents use per-agent `toolAllowlist` / `toolDenylist` independently of this
 “we can stop now.” Add it to each text agent's `toolAllowlist` and to
 `voice.realtime.toolAllowlist` where the behavior is wanted.
 
+- Tell agents they must call the tool when the user asks to stop. A textual or spoken
+  acknowledgment alone does not end the interaction.
 - In a text-agent turn, the tool returns normally so the agent can complete its final response.
   Android correlates the tool call with that response and suppresses Auto Listen for that turn.
 - In a Realtime session, the same tool ends the live call immediately. The voice agent should say

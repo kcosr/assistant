@@ -1231,7 +1231,7 @@ export function registerBuiltInSessionTools(options: {
   options.host.registerTool({
     name: INTERACTION_END_TOOL_NAME,
     description:
-      'End the current interactive exchange after completing the current response. Use when the user says the interaction can stop or no further reply is needed. Clients that automatically listen for another voice turn will remain idle.',
+      'End the current interaction after completing the current response. You MUST call this tool when the user indicates the conversation or voice interaction should end, including phrases such as "stop", "stop now", "you can stop", "stop our interaction", "we are done", or "that is all". A textual acknowledgment such as "Stopped" does not end the interaction. Clients that automatically listen for another voice turn will remain idle after this tool is called.',
     parameters: INTERACTION_END_TOOL_PARAMETERS,
     handler: async (args) => {
       const obj = asObject(args);
