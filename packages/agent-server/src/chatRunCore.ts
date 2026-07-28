@@ -1644,6 +1644,21 @@ export async function runChatCompletionCore(
           } else if (event.message.role === 'toolResult') {
             appendToolResultMessage(piReplayAccumulator, event.message);
             appendToolResultMessage(state.chatMessages, event.message);
+          } else if (event.message.role === 'user' && event.message !== promptMessage) {
+            const content =
+              typeof event.message.content === 'string'
+                ? event.message.content
+                : event.message.content
+                    .filter((block) => block.type === 'text')
+                    .map((block) => block.text)
+                    .join('');
+            const replayMessage: ChatCompletionMessage = {
+              role: 'user',
+              content,
+              historyTimestampMs: event.message.timestamp,
+            };
+            piReplayAccumulator.push(replayMessage);
+            state.chatMessages.push(replayMessage);
           }
           return;
         }

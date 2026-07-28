@@ -62,6 +62,7 @@ export interface ServerMessageHandlerOptions {
   scrollMessageIntoView: (container: HTMLElement, element: HTMLElement) => void;
   syncSessionRequestActivityUi: (sessionId: string, hasActiveRequest: boolean) => void;
   setStatus: (element: HTMLElement, text: string) => void;
+  showToast: (text: string) => void;
   setTtsStatus: (text: string) => void;
   focusInputForSession: (sessionId: string) => void;
   isMobileViewport: () => boolean;
@@ -431,6 +432,10 @@ export class ServerMessageHandler {
         if (indicator) {
           indicator.remove();
         }
+        break;
+      }
+      case 'message_steered': {
+        this.options.showToast('Steering message sent');
         break;
       }
       case 'session_ready': {

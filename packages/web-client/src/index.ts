@@ -138,6 +138,7 @@ import { ToolOutputPreferencesClient } from './utils/toolOutputPreferences';
 import { ThinkingPreferencesClient } from './utils/thinkingPreferences';
 import { PluginSettingsClient } from './utils/pluginSettingsClient';
 import { PluginBundleLoader } from './utils/pluginBundleLoader';
+import { showToast } from './utils/toast';
 import { ICONS } from './utils/icons';
 import {
   formatSessionLabel,
@@ -5429,6 +5430,7 @@ async function main(): Promise<void> {
       syncSessionContext();
     },
     setStatus,
+    showToast,
     setTtsStatus,
     focusInputForSession: (sessionId) => {
       const runtime = getChatInputRuntimeForSession(sessionId);
