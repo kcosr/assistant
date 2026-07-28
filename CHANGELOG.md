@@ -54,6 +54,7 @@
 
 ### Fixed
 
+- Fixed Android Back navigation so closed pinned Sessions/Agents panels are never opened, while an otherwise unhandled Back press swaps between the two most recently active regular workspace panels. ([#121](https://github.com/kcosr/assistant/pull/121))
 - Added Realtime OpenAI sideband WebSocket ping + TCP keepalive (60s) to reduce idle NAT drops, and log ping/pong counts on close; Android logs WebRTC ice/connection state when a session fails so phone↔OpenAI can be correlated with server sideband closes. ([#116](https://github.com/kcosr/assistant/pull/116))
 - Improved Realtime sideband logging so unexpected WebSocket closes record code, wasClean, reason text, and intentional vs peer/network drop (helps distinguish OpenAI hangup from path failures). ([#116](https://github.com/kcosr/assistant/pull/116))
 - Fixed Realtime mode preference persistence across app restarts so WebView localStorage defaults do not overwrite native `voiceRuntimeMode` on cold start. ([#116](https://github.com/kcosr/assistant/pull/116))
