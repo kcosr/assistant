@@ -330,6 +330,25 @@ export async function handleTextInputWithChatCompletions(options: {
   const requestId = randomUUID();
 
   if (state.activeChatRun) {
+    const activeAgentId = state.summary.agentId;
+    const activeAgent = activeAgentId
+      ? sessionHub.getAgentRegistry().getAgent(activeAgentId)
+      : undefined;
+    const { provider: activeProvider } = resolveChatProvider(activeAgent);
+    if (activeProvider === 'pi' && state.piAgentRuntime) {
+      state.piAgentRuntime.agent.steer({
+        role: 'user',
+        content: text,
+        timestamp: Date.now(),
+      });
+      connection.sendServerMessageFromHub({
+        type: 'message_steered',
+        sessionId,
+        ...(message.clientMessageId ? { clientMessageId: message.clientMessageId } : {}),
+      });
+      return;
+    }
+
     const queuedMessage: ClientTextInputMessage = { ...message, text };
     try {
       await sessionHub.queueMessage({

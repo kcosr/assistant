@@ -450,6 +450,189 @@ describe('handleTextInputWithChatCompletions (pi)', () => {
     });
   });
 
+  it('sends input directly to Pi steering while a Pi run is active', async () => {
+    const steer = vi.fn();
+    const queueMessage = vi.fn();
+    const sendServerMessageFromHub = vi.fn();
+    const agentRegistry = new AgentRegistry([
+      {
+        agentId: 'pi-agent',
+        displayName: 'Pi',
+        description: 'Pi',
+        chat: { provider: 'pi', models: ['openai-codex/gpt-5.4'] },
+      },
+    ]);
+    const sessionHub: SessionHub = {
+      getAgentRegistry: () => agentRegistry,
+      queueMessage,
+    } as unknown as SessionHub;
+    const state: LogicalSessionState = {
+      summary: {
+        sessionId: 's1',
+        agentId: 'pi-agent',
+        createdAt: '',
+        updatedAt: '',
+        deleted: false,
+      },
+      chatMessages: [],
+      messageQueue: [],
+      activeChatRun: {
+        responseId: 'r1',
+        abortController: new AbortController(),
+        accumulatedText: '',
+      },
+      piAgentRuntime: {
+        agent: { steer } as never,
+        requestConfig: {},
+      },
+    };
+
+    await handleTextInputWithChatCompletions({
+      message: {
+        type: 'text_input',
+        text: 'Change direction',
+        sessionId: 's1',
+        clientMessageId: 'client-1',
+      },
+      state,
+      sessionId: 's1',
+      connection: { sendServerMessageFromHub } as never,
+      sessionHub,
+      config: createEnvConfig(),
+      chatCompletionTools: [],
+      outputMode: 'text',
+      clientAudioCapabilities: undefined,
+      ttsBackendFactory: null,
+      handleChatToolCalls: async () => undefined,
+      setActiveRunState: () => undefined,
+      clearActiveRunState: () => undefined,
+      sendError: vi.fn(),
+      log: () => undefined,
+      eventStore: createTestEventStore(),
+    });
+
+    expect(steer).toHaveBeenCalledWith({
+      role: 'user',
+      content: 'Change direction',
+      timestamp: expect.any(Number),
+    });
+    expect(queueMessage).not.toHaveBeenCalled();
+    expect(sendServerMessageFromHub).toHaveBeenCalledWith({
+      type: 'message_steered',
+      sessionId: 's1',
+      clientMessageId: 'client-1',
+    });
+  });
+
+  it('keeps a Pi-consumed steering message in canonical history without broadcasting it', async () => {
+    vi.mocked(resolvePiSdkModel).mockResolvedValue({
+      model: { id: 'gpt-5.4', provider: 'openai-codex', api: 'openai-responses' } as never,
+      providerId: 'openai-codex',
+      modelId: 'gpt-5.4',
+    });
+
+    const steeringMessage = {
+      role: 'user' as const,
+      content: 'Focus on permissions',
+      timestamp: 1234,
+    };
+    const assistantMessage = createAssistantMessage({ text: 'Redirected result' });
+    mockPiAgentPrompt.mockImplementationOnce(async ({ emit }) => {
+      await emit({ type: 'message_start', message: steeringMessage });
+      await emit({ type: 'message_end', message: steeringMessage });
+      await emit({
+        type: 'message_update',
+        message: assistantMessage,
+        assistantMessageEvent: {
+          type: 'text_delta',
+          contentIndex: 0,
+          delta: 'Redirected result',
+          partial: assistantMessage,
+        },
+      });
+      await emit({ type: 'message_end', message: assistantMessage });
+      await emit({ type: 'turn_end', message: assistantMessage, toolResults: [] });
+    });
+
+    const broadcast: ServerMessage[] = [];
+    const agentRegistry = new AgentRegistry([
+      {
+        agentId: 'pi',
+        displayName: 'Pi',
+        description: 'Pi',
+        chat: { provider: 'pi', models: ['openai-codex/gpt-5.4'] },
+      },
+    ]);
+    const sessionHub: SessionHub = {
+      getAgentRegistry: () => agentRegistry,
+      broadcastToSession: (_sessionId: string, message: ServerMessage) => {
+        broadcast.push(message);
+      },
+      broadcastToSessionExcluding: () => undefined,
+      updateSessionAttributes: async () => undefined,
+      recordSessionActivity: async () => undefined,
+      queueMessage: async () => {
+        throw new Error('queueMessage should not be called in this test');
+      },
+      dequeueMessageById: async () => undefined,
+      processNextQueuedMessage: async () => false,
+      getPiSessionWriter: () => undefined,
+    } as unknown as SessionHub;
+    const state: LogicalSessionState = {
+      summary: {
+        sessionId: 's1',
+        agentId: 'pi',
+        createdAt: '',
+        updatedAt: '',
+        deleted: false,
+      },
+      chatMessages: [{ role: 'system', content: 'System prompt' }],
+      messageQueue: [],
+    };
+
+    await handleTextInputWithChatCompletions({
+      message: { type: 'text_input', text: 'Initial request', sessionId: 's1' },
+      state,
+      sessionId: 's1',
+      connection: {} as never,
+      sessionHub,
+      config: createEnvConfig(),
+      chatCompletionTools: [],
+      outputMode: 'text',
+      clientAudioCapabilities: undefined,
+      ttsBackendFactory: null,
+      handleChatToolCalls: async () => undefined,
+      setActiveRunState: () => undefined,
+      clearActiveRunState: () => undefined,
+      sendError: () => undefined,
+      log: () => undefined,
+      eventStore: createTestEventStore(),
+    });
+
+    expect(state.chatMessages).toEqual(
+      expect.arrayContaining([
+        {
+          role: 'user',
+          content: 'Focus on permissions',
+          historyTimestampMs: 1234,
+        },
+      ]),
+    );
+    expect(
+      broadcast.some(
+        (message) => message.type === 'user_message' && message.text === 'Focus on permissions',
+      ),
+    ).toBe(false);
+    expect(
+      broadcast.some(
+        (message) =>
+          message.type === 'transcript_event' &&
+          message.event.chatEventType === 'user_message' &&
+          message.event.payload['text'] === 'Focus on permissions',
+      ),
+    ).toBe(false);
+  });
+
   it('uses the canonical Pi transcript for replay and records only the final answer text', async () => {
     const cwd = await fs.mkdtemp(path.join(os.tmpdir(), 'assistant-pi-replay-'));
     const baseDir = path.join(os.homedir(), '.pi', 'agent', 'sessions', encodePiCwd(cwd));

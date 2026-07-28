@@ -234,6 +234,16 @@ describe('server message validation', () => {
     expect(parsed).toEqual(message);
   });
 
+  it('accepts a message_steered acknowledgement', () => {
+    const message: ServerMessage = {
+      type: 'message_steered',
+      sessionId: 'session-1',
+      clientMessageId: 'client-1',
+    };
+
+    expect(validateServerMessage(message)).toEqual(message);
+  });
+
   it('accepts a transcript_event message', () => {
     const message: ServerMessage = {
       type: 'transcript_event',

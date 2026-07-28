@@ -53,6 +53,7 @@ function makeHandler(overrides: Partial<ServerMessageHandlerOptions> = {}) {
       sessionRequestActivity.set(normalized, hasActiveRequest);
     },
     setStatus: () => {},
+    showToast: () => {},
     setTtsStatus: () => {},
     focusInputForSession: () => {},
     isMobileViewport: () => false,
@@ -82,6 +83,19 @@ function makeHandler(overrides: Partial<ServerMessageHandlerOptions> = {}) {
 }
 
 describe('ServerMessageHandler typing indicator', () => {
+  it('shows a transient acknowledgement for accepted steering messages', async () => {
+    const showToast = vi.fn();
+    const { handler } = makeHandler({ showToast });
+
+    await handler.handle({
+      type: 'message_steered',
+      sessionId: 's-1',
+      clientMessageId: 'client-1',
+    });
+
+    expect(showToast).toHaveBeenCalledWith('Steering message sent');
+  });
+
   it('resets active turn state on reconnect cleanup', async () => {
     const { handler, typingIndicators } = makeHandler();
 

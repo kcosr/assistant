@@ -39,6 +39,7 @@ const SERVER_MESSAGE_TYPE_VALUES = [
   'error',
   'message_queued',
   'message_dequeued',
+  'message_steered',
   'output_cancelled',
   'open_url',
   'subscribed',
@@ -790,6 +791,12 @@ export const ServerMessageDequeuedMessageSchema = z.object({
   sessionId: z.string().optional(),
 });
 
+export const ServerMessageSteeredMessageSchema = z.object({
+  type: z.literal('message_steered'),
+  sessionId: z.string(),
+  clientMessageId: z.string().optional(),
+});
+
 export const ServerOutputCancelledMessageSchema = z.object({
   type: z.literal('output_cancelled'),
   sessionId: z.string().optional(),
@@ -916,6 +923,7 @@ export const ServerMessageSchema = z.discriminatedUnion('type', [
   ServerErrorMessageSchema,
   ServerMessageQueuedMessageSchema,
   ServerMessageDequeuedMessageSchema,
+  ServerMessageSteeredMessageSchema,
   ServerOutputCancelledMessageSchema,
   ServerOpenUrlMessageSchema,
   ServerSubscribedMessageSchema,
@@ -950,6 +958,7 @@ export type ServerPongMessage = z.infer<typeof ServerPongMessageSchema>;
 export type ServerErrorMessage = z.infer<typeof ServerErrorMessageSchema>;
 export type ServerMessageQueuedMessage = z.infer<typeof ServerMessageQueuedMessageSchema>;
 export type ServerMessageDequeuedMessage = z.infer<typeof ServerMessageDequeuedMessageSchema>;
+export type ServerMessageSteeredMessage = z.infer<typeof ServerMessageSteeredMessageSchema>;
 export type ServerOutputCancelledMessage = z.infer<typeof ServerOutputCancelledMessageSchema>;
 export type ServerOpenUrlMessage = z.infer<typeof ServerOpenUrlMessageSchema>;
 export type ServerPanelEventMessage = z.infer<typeof PanelEventEnvelopeSchema>;

@@ -14,6 +14,7 @@ Browser-based chat client for the AI Assistant.
 ## Features
 
 - Autosizing multiline text input with streaming response display
+- Pi steering for messages submitted while the agent is active, acknowledged with a transient toast
 - Voice input via Web Speech API (browser speech recognition)
 - Audio output via server-generated TTS
 - Session management (create, switch, delete)
@@ -127,6 +128,7 @@ All session-specific messages include `sessionId` field.
 | `tool_call_start`   | Tool call started                      |
 | `tool_output_delta` | Tool output streaming                  |
 | `tool_result`       | Tool call complete                     |
+| `message_steered`   | Pi accepted mid-run steering input     |
 | `modes_updated`     | Acknowledge mode change                |
 | `error`             | Error with code and message            |
 | `output_cancelled`  | Confirm output cancellation            |
