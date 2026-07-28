@@ -262,6 +262,26 @@ export class PanelWorkspaceController {
     return true;
   }
 
+  navigateToPreviousPanel(): boolean {
+    this.pruneFocusHistory();
+    const isEligible = (panelId: string): boolean =>
+      !!this.layout.panels[panelId] &&
+      containsPanelId(this.layout.layout, panelId) &&
+      !this.modalPanelIds.has(panelId) &&
+      !this.isPanelPinned(panelId);
+    const regularHistory = this.focusHistory.filter(isEligible);
+    const currentPanelId =
+      this.activePanelId && isEligible(this.activePanelId)
+        ? this.activePanelId
+        : (regularHistory[0] ?? null);
+    const previousPanelId = regularHistory.find((panelId) => panelId !== currentPanelId) ?? null;
+    if (!previousPanelId) {
+      return false;
+    }
+    this.activatePanel(previousPanelId);
+    return true;
+  }
+
   applyLayoutPreset(preset: PanelLayoutPreset): void {
     const nextRoot = buildPanelLayoutPreset(this.layout.layout, preset);
     const normalized = this.normalizeLayout({ ...this.layout, layout: nextRoot });
