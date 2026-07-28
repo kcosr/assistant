@@ -88,6 +88,99 @@ describe('PanelWorkspaceController focus history', () => {
     expect(workspace.getActivePanelId()).toBe('time-1');
   });
 
+  it('swaps between the two most recently focused workspace panels', () => {
+    const registry = new PanelRegistry();
+    registry.register({ type: 'time-tracker', title: 'Time Tracker' }, createStubPanel);
+    registry.register({ type: 'notes', title: 'Notes' }, createStubPanel);
+
+    const host = new PanelHostController({ registry });
+    const root = document.createElement('div');
+    document.body.appendChild(root);
+
+    const workspace = new PanelWorkspaceController({
+      root,
+      registry,
+      host,
+      loadLayout: () => buildLayout(),
+    });
+    host.setPanelWorkspace(workspace);
+    workspace.attach();
+
+    workspace.focusPanel('time-1');
+    workspace.focusPanel('notes-1');
+
+    expect(workspace.navigateToPreviousPanel()).toBe(true);
+    expect(workspace.getActivePanelId()).toBe('time-1');
+
+    expect(workspace.navigateToPreviousPanel()).toBe(true);
+    expect(workspace.getActivePanelId()).toBe('notes-1');
+  });
+
+  it('excludes pinned header panels from previous-panel navigation', () => {
+    const registry = new PanelRegistry();
+    registry.register({ type: 'time-tracker', title: 'Time Tracker' }, createStubPanel);
+    registry.register({ type: 'notes', title: 'Notes' }, createStubPanel);
+    registry.register({ type: 'sessions', title: 'Sessions' }, createStubPanel);
+
+    const host = new PanelHostController({ registry });
+    const root = document.createElement('div');
+    document.body.appendChild(root);
+
+    const layout: LayoutPersistence = {
+      layout: pane('pane-1', ['time-1', 'notes-1'], 'notes-1'),
+      panels: {
+        'time-1': { panelId: 'time-1', panelType: 'time-tracker' },
+        'notes-1': { panelId: 'notes-1', panelType: 'notes' },
+        'sessions-1': { panelId: 'sessions-1', panelType: 'sessions' },
+      },
+      headerPanels: ['sessions-1'],
+      headerPanelSizes: {},
+    };
+    const workspace = new PanelWorkspaceController({
+      root,
+      registry,
+      host,
+      loadLayout: () => layout,
+    });
+    host.setPanelWorkspace(workspace);
+    workspace.attach();
+
+    workspace.focusPanel('time-1');
+    workspace.focusPanel('notes-1');
+    workspace.focusPanel('sessions-1');
+
+    expect(workspace.navigateToPreviousPanel()).toBe(true);
+    expect(workspace.getActivePanelId()).toBe('time-1');
+    expect(workspace.getOpenHeaderPanelId()).toBeNull();
+  });
+
+  it('returns false when there is no previous regular workspace panel', () => {
+    const registry = new PanelRegistry();
+    registry.register({ type: 'notes', title: 'Notes' }, createStubPanel);
+
+    const host = new PanelHostController({ registry });
+    const root = document.createElement('div');
+    document.body.appendChild(root);
+
+    const layout: LayoutPersistence = {
+      layout: pane('pane-1', ['notes-1']),
+      panels: { 'notes-1': { panelId: 'notes-1', panelType: 'notes' } },
+      headerPanels: [],
+      headerPanelSizes: {},
+    };
+    const workspace = new PanelWorkspaceController({
+      root,
+      registry,
+      host,
+      loadLayout: () => layout,
+    });
+    host.setPanelWorkspace(workspace);
+    workspace.attach();
+
+    expect(workspace.navigateToPreviousPanel()).toBe(false);
+    expect(workspace.getActivePanelId()).toBe('notes-1');
+  });
+
   it('adds newly created panels to focus history', () => {
     const registry = new PanelRegistry();
     registry.register({ type: 'time-tracker', title: 'Time Tracker' }, createStubPanel);

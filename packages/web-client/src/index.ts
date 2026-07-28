@@ -5718,15 +5718,10 @@ async function main(): Promise<void> {
     if (closeModalPanel()) {
       return true;
     }
-    if (panelWorkspace && isMobileViewport() && panelWorkspace.isPanelTypeOpen('sessions')) {
-      panelWorkspace.togglePanel('sessions');
-      return true;
-    }
     if (keyboardNavigationController?.cancelNavigationModes()) {
       return true;
     }
-    if (commandPaletteController) {
-      commandPaletteController.open();
+    if (panelWorkspace && isMobileViewport() && panelWorkspace.navigateToPreviousPanel()) {
       return true;
     }
     return false;

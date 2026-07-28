@@ -15,6 +15,7 @@ Browser-based chat client for the AI Assistant.
 
 - Autosizing multiline text input with streaming response display
 - Pi steering for messages submitted while the agent is active, acknowledged with a transient toast
+- Android Back dismisses open UI first, then swaps between the two most recently active workspace panels
 - Voice input via Web Speech API (browser speech recognition)
 - Audio output via server-generated TTS
 - Session management (create, switch, delete)
