@@ -10,6 +10,8 @@ import android.os.Build;
 import android.os.Bundle;
 import android.view.KeyEvent;
 
+import androidx.core.app.NotificationCompat;
+
 import com.assistant.mobile.R;
 
 import org.junit.Test;
@@ -219,20 +221,22 @@ public final class AssistantVoiceRuntimeServiceTest {
 
     @Test
     @Config(sdk = Build.VERSION_CODES.N)
-    public void buildNotificationUsesPublicVisibilityDefaultPriorityAndServiceCategory() {
+    public void buildActiveThreadNotificationIsPromotedWithOnlyStop() {
         Context context = RuntimeEnvironment.getApplication();
 
         Notification notification = AssistantVoiceRuntimeService.buildNotification(
             context,
-            AssistantVoiceRuntimeService.STATE_IDLE,
+            AssistantVoiceRuntimeService.STATE_LISTENING,
             "Daily Assistant",
             createActivityPendingIntent(context, "launch"),
             createServicePendingIntent(context, "listen"),
             createServicePendingIntent(context, "stop"),
+            createServicePendingIntent(context, "skip"),
             createServicePendingIntent(context, "cycle-mode"),
             createServicePendingIntent(context, "toggle"),
+            false,
             true,
-            true,
+            false,
             AssistantVoiceConfig.AUDIO_MODE_TOOL,
             false
         );
@@ -241,24 +245,57 @@ public final class AssistantVoiceRuntimeServiceTest {
         assertEquals(AssistantVoiceRuntimeService.NOTIFICATION_PRIORITY, notification.priority);
         assertEquals(AssistantVoiceRuntimeService.NOTIFICATION_VISIBILITY, notification.visibility);
         assertEquals(AssistantVoiceRuntimeService.NOTIFICATION_CATEGORY, notification.category);
-        assertEquals("Voice (Idle)", String.valueOf(extras.getCharSequence(Notification.EXTRA_TITLE)));
         assertEquals(
-            "Daily Assistant",
-            String.valueOf(extras.getCharSequence(Notification.EXTRA_TEXT))
+            "Listening",
+            String.valueOf(extras.getCharSequence(Notification.EXTRA_TITLE))
         );
+        assertNull(extras.getCharSequence(Notification.EXTRA_TEXT));
+        assertTrue(NotificationCompat.isRequestPromotedOngoing(notification));
+        assertEquals(
+            context.getString(R.string.assistant_voice_notification_chip_text),
+            NotificationCompat.getShortCriticalText(notification)
+        );
+        assertNull(extras.getString(Notification.EXTRA_TEMPLATE));
         assertNotNull(notification.actions);
-        assertEquals(3, notification.actions.length);
+        assertEquals(1, notification.actions.length);
         assertEquals(
             context.getString(R.string.assistant_voice_notification_action_stop),
             notification.actions[0].title
         );
+    }
+
+    @Test
+    @Config(sdk = Build.VERSION_CODES.N)
+    public void buildSpeakingNotificationShowsSkipAndStopForPendingAutoListen() {
+        Context context = RuntimeEnvironment.getApplication();
+
+        Notification notification = AssistantVoiceRuntimeService.buildNotification(
+            context,
+            AssistantVoiceRuntimeService.STATE_SPEAKING,
+            "Daily Assistant",
+            createActivityPendingIntent(context, "launch"),
+            createServicePendingIntent(context, "listen"),
+            createServicePendingIntent(context, "stop"),
+            createServicePendingIntent(context, "skip"),
+            createServicePendingIntent(context, "cycle-mode"),
+            createServicePendingIntent(context, "toggle"),
+            false,
+            true,
+            true,
+            AssistantVoiceConfig.AUDIO_MODE_RESPONSE,
+            false
+        );
+
+        assertTrue(NotificationCompat.isRequestPromotedOngoing(notification));
+        assertNotNull(notification.actions);
+        assertEquals(2, notification.actions.length);
         assertEquals(
-            R.drawable.ic_notification_media_buttons_disabled,
-            notification.actions[1].icon
+            context.getString(R.string.assistant_voice_notification_action_skip),
+            notification.actions[0].title
         );
         assertEquals(
-            R.drawable.ic_notification_mode_tool,
-            notification.actions[2].icon
+            context.getString(R.string.assistant_voice_notification_action_stop),
+            notification.actions[1].title
         );
     }
 
@@ -300,41 +337,41 @@ public final class AssistantVoiceRuntimeServiceTest {
 
     @Test
     @Config(sdk = Build.VERSION_CODES.N)
-    public void buildNotificationOmitsBodyWhenThereIsNoSessionTitle() {
+    public void buildIdleThreadNotificationIsPromotedWithOnlyStart() {
         Context context = RuntimeEnvironment.getApplication();
 
         Notification notification = AssistantVoiceRuntimeService.buildNotification(
             context,
-            AssistantVoiceRuntimeService.STATE_LISTENING,
+            AssistantVoiceRuntimeService.STATE_IDLE,
             "",
             createActivityPendingIntent(context, "launch"),
             createServicePendingIntent(context, "listen"),
             createServicePendingIntent(context, "stop"),
+            createServicePendingIntent(context, "skip"),
             createServicePendingIntent(context, "cycle-mode"),
             createServicePendingIntent(context, "toggle"),
             true,
+            false,
             false,
             AssistantVoiceConfig.AUDIO_MODE_RESPONSE,
             true
         );
 
         assertEquals(
-            "Voice (Listening)",
+            "Idle",
             String.valueOf(notification.extras.getCharSequence(Notification.EXTRA_TITLE))
         );
         assertNull(notification.extras.getCharSequence(Notification.EXTRA_TEXT));
-        assertEquals(3, notification.actions.length);
+        assertTrue(NotificationCompat.isRequestPromotedOngoing(notification));
         assertEquals(
-            context.getString(R.string.assistant_voice_notification_action_speak),
+            context.getString(R.string.assistant_voice_notification_chip_text),
+            NotificationCompat.getShortCriticalText(notification)
+        );
+        assertNull(notification.extras.getString(Notification.EXTRA_TEMPLATE));
+        assertEquals(1, notification.actions.length);
+        assertEquals(
+            context.getString(R.string.assistant_voice_notification_action_start),
             notification.actions[0].title
-        );
-        assertEquals(
-            R.drawable.ic_notification_media_buttons_enabled,
-            notification.actions[1].icon
-        );
-        assertEquals(
-            R.drawable.ic_notification_mode_response,
-            notification.actions[2].icon
         );
     }
 
@@ -422,7 +459,7 @@ public final class AssistantVoiceRuntimeServiceTest {
 
     @Test
     @Config(sdk = Build.VERSION_CODES.N)
-    public void buildRealtimeNotificationShowsMuteAndEndCallWhenActive() {
+    public void buildActiveRealtimeNotificationIsPromotedWithOnlyStop() {
         Context context = RuntimeEnvironment.getApplication();
 
         Notification unmuted = AssistantVoiceRuntimeService.buildRealtimeNotification(
@@ -436,22 +473,21 @@ public final class AssistantVoiceRuntimeServiceTest {
             false
         );
         assertEquals(
-            "Voice (Realtime)",
+            "Realtime",
             String.valueOf(unmuted.extras.getCharSequence(Notification.EXTRA_TITLE))
         );
+        assertNull(unmuted.extras.getCharSequence(Notification.EXTRA_TEXT));
+        assertTrue(NotificationCompat.isRequestPromotedOngoing(unmuted));
         assertEquals(
-            context.getString(R.string.assistant_voice_notification_realtime_body),
-            String.valueOf(unmuted.extras.getCharSequence(Notification.EXTRA_TEXT))
+            context.getString(R.string.assistant_voice_notification_chip_text),
+            NotificationCompat.getShortCriticalText(unmuted)
         );
+        assertNull(unmuted.extras.getString(Notification.EXTRA_TEMPLATE));
         assertNotNull(unmuted.actions);
-        assertEquals(2, unmuted.actions.length);
+        assertEquals(1, unmuted.actions.length);
         assertEquals(
-            context.getString(R.string.assistant_voice_notification_action_mute),
+            context.getString(R.string.assistant_voice_notification_action_stop),
             unmuted.actions[0].title
-        );
-        assertEquals(
-            context.getString(R.string.assistant_voice_notification_action_end_call),
-            unmuted.actions[1].title
         );
 
         Notification muted = AssistantVoiceRuntimeService.buildRealtimeNotification(
@@ -465,22 +501,19 @@ public final class AssistantVoiceRuntimeServiceTest {
             true
         );
         assertEquals(
-            "Voice (Realtime · Muted)",
+            "Realtime · Muted",
             String.valueOf(muted.extras.getCharSequence(Notification.EXTRA_TITLE))
         );
         assertEquals(
-            context.getString(R.string.assistant_voice_notification_action_unmute),
+            context.getString(R.string.assistant_voice_notification_action_stop),
             muted.actions[0].title
         );
-        assertEquals(
-            context.getString(R.string.assistant_voice_notification_realtime_body_muted),
-            String.valueOf(muted.extras.getCharSequence(Notification.EXTRA_TEXT))
-        );
+        assertNull(muted.extras.getCharSequence(Notification.EXTRA_TEXT));
     }
 
     @Test
     @Config(sdk = Build.VERSION_CODES.N)
-    public void buildRealtimeNotificationShowsStartAndMuteWhenIdle() {
+    public void buildIdleRealtimeNotificationIsPromotedWithOnlyStart() {
         Context context = RuntimeEnvironment.getApplication();
 
         Notification idle = AssistantVoiceRuntimeService.buildRealtimeNotification(
@@ -494,17 +527,20 @@ public final class AssistantVoiceRuntimeServiceTest {
             false
         );
         assertEquals(
-            "Voice (Realtime · Idle)",
+            "Realtime · Idle",
             String.valueOf(idle.extras.getCharSequence(Notification.EXTRA_TITLE))
         );
-        assertEquals(2, idle.actions.length);
+        assertNull(idle.extras.getCharSequence(Notification.EXTRA_TEXT));
+        assertTrue(NotificationCompat.isRequestPromotedOngoing(idle));
         assertEquals(
-            context.getString(R.string.assistant_voice_notification_action_start_call),
-            idle.actions[0].title
+            context.getString(R.string.assistant_voice_notification_chip_text),
+            NotificationCompat.getShortCriticalText(idle)
         );
+        assertNull(idle.extras.getString(Notification.EXTRA_TEMPLATE));
+        assertEquals(1, idle.actions.length);
         assertEquals(
-            context.getString(R.string.assistant_voice_notification_action_mute),
-            idle.actions[1].title
+            context.getString(R.string.assistant_voice_notification_action_start),
+            idle.actions[0].title
         );
     }
 
@@ -559,14 +595,17 @@ public final class AssistantVoiceRuntimeServiceTest {
             createActivityPendingIntent(context, "launch"),
             createServicePendingIntent(context, "listen"),
             createServicePendingIntent(context, "stop"),
+            createServicePendingIntent(context, "skip"),
             createServicePendingIntent(context, "cycle-mode"),
             createServicePendingIntent(context, "toggle"),
+            false,
             false,
             false,
             AssistantVoiceConfig.AUDIO_MODE_RESPONSE,
             false
         );
 
+        assertFalse(NotificationCompat.isRequestPromotedOngoing(notification));
         assertEquals(2, notification.actions.length);
         assertEquals(
             R.drawable.ic_notification_media_buttons_disabled,
@@ -1109,6 +1148,29 @@ public final class AssistantVoiceRuntimeServiceTest {
         );
         assertFalse(
             AssistantVoiceRuntimeService.shouldDrainQueueAfterStop("voice_mode_disabled")
+        );
+    }
+
+    @Test
+    @Config(sdk = Build.VERSION_CODES.N)
+    public void skipContinuesToRecognitionWhileStopSuppressesTheFollowup() {
+        assertTrue(
+            AssistantVoiceRuntimeService.shouldContinueToRecognitionAfterInteractionControl(
+                true,
+                true
+            )
+        );
+        assertFalse(
+            AssistantVoiceRuntimeService.shouldContinueToRecognitionAfterInteractionControl(
+                false,
+                true
+            )
+        );
+        assertFalse(
+            AssistantVoiceRuntimeService.shouldContinueToRecognitionAfterInteractionControl(
+                true,
+                false
+            )
         );
     }
 

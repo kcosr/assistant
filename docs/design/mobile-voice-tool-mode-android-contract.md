@@ -203,6 +203,19 @@ v1 requirements:
   on the lock screen
 - notification title should surface the runtime state directly, e.g. `Voice (Listening)`
 - notification body should show the resolved preferred or active session title when available
+- while voice controls are enabled and a Thread session or Realtime start action is available,
+  keep a promoted-ongoing standard notification visible with state-dependent actions:
+  `Start` while idle, `Stop` during Thread recognition or a Realtime call, and `Skip` plus `Stop`
+  during Thread playback that has a pending recognition follow-up
+- promoted voice notifications should provide short `Voice` critical text so Android renders a
+  visibly expanded status chip rather than an icon-only compact representation
+- promoted notifications should use only the current state as their title and omit session/body
+  text, leaving Android's app header, the state, and the state-dependent action
+- during Thread playback, `Skip` stops TTS and preserves the current item's pending recognition
+  transition, while `Stop` stops TTS and suppresses that transition without disabling Auto Listen
+  globally; `Stop` still cancels active recognition or ends the active Realtime call according to
+  native ownership
+- disabled, connecting, or otherwise unavailable Start states remain ordinary notifications
 - automatic reconnect while enabled
 - service may start immediately when voice mode is enabled
 - service should not arm prompt playback until it has valid selected-session state
