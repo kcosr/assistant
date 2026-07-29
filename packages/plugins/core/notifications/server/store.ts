@@ -45,10 +45,7 @@ function normalizeSource(value: unknown): NotificationSource {
   }
 }
 
-function normalizeVoiceMode(
-  value: unknown,
-  tts: boolean,
-): NotificationVoiceMode {
+function normalizeVoiceMode(value: unknown, tts: boolean): NotificationVoiceMode {
   switch (value) {
     case 'speak':
     case 'speak_then_listen':
@@ -90,6 +87,9 @@ function normalizeStoredNotification(value: NotificationRecord): NotificationRec
     ),
     sessionActivitySeq: normalizeNullableNumber(
       (value as NotificationRecord & { sessionActivitySeq?: unknown }).sessionActivitySeq,
+    ),
+    turnOriginId: normalizeNullableString(
+      (value as NotificationRecord & { turnOriginId?: unknown }).turnOriginId,
     ),
   };
 }
@@ -194,6 +194,7 @@ export class NotificationsStore {
       ttsText?: string | null;
       sourceEventId?: string | null;
       sessionActivitySeq?: number | null;
+      turnOriginId?: string | null;
     },
     source: NotificationSource,
   ): Promise<NotificationRecord> {
@@ -213,6 +214,7 @@ export class NotificationsStore {
       ttsText?: string | null;
       sourceEventId?: string | null;
       sessionActivitySeq?: number | null;
+      turnOriginId?: string | null;
     },
     source: NotificationSource,
   ): Promise<NotificationMutationResult<NotificationRecord>> {
@@ -235,6 +237,7 @@ export class NotificationsStore {
         ttsText: input.ttsText ?? null,
         sourceEventId: input.sourceEventId ?? null,
         sessionActivitySeq: input.sessionActivitySeq ?? null,
+        turnOriginId: input.turnOriginId ?? null,
       };
 
       this.data.notifications.unshift(record);
@@ -257,6 +260,7 @@ export class NotificationsStore {
       ttsText?: string | null;
       sourceEventId?: string | null;
       sessionActivitySeq?: number | null;
+      turnOriginId?: string | null;
     },
     source: NotificationSource,
   ): Promise<NotificationRecord> {
@@ -275,6 +279,7 @@ export class NotificationsStore {
       ttsText?: string | null;
       sourceEventId?: string | null;
       sessionActivitySeq?: number | null;
+      turnOriginId?: string | null;
     },
     source: NotificationSource,
   ): Promise<NotificationMutationResult<NotificationRecord>> {
@@ -309,6 +314,7 @@ export class NotificationsStore {
               ttsText: input.ttsText ?? null,
               sourceEventId: input.sourceEventId ?? null,
               sessionActivitySeq: input.sessionActivitySeq ?? null,
+              turnOriginId: input.turnOriginId ?? null,
             }
           : {
               id: crypto.randomUUID(),
@@ -325,6 +331,7 @@ export class NotificationsStore {
               ttsText: input.ttsText ?? null,
               sourceEventId: input.sourceEventId ?? null,
               sessionActivitySeq: input.sessionActivitySeq ?? null,
+              turnOriginId: input.turnOriginId ?? null,
             };
 
       if (existingIndex >= 0) {

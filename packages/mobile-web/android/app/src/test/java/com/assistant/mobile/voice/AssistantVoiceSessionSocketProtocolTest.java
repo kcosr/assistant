@@ -128,7 +128,8 @@ public final class AssistantVoiceSessionSocketProtocolTest {
             + "\"chatEventType\":\"assistant_done\","
             + "\"payload\":{"
             + "\"phase\":\"final_answer\","
-            + "\"text\":\"Final response text\""
+            + "\"text\":\"Final response text\","
+            + "\"turnOriginId\":\"android-process-1\""
             + "}"
             + "}"
             + "}";
@@ -142,6 +143,7 @@ public final class AssistantVoiceSessionSocketProtocolTest {
         assertTrue("Final response text".equals(prompt.text));
         assertTrue("response-2".equals(prompt.toolCallId));
         assertTrue("request-2".equals(prompt.requestId));
+        assertTrue("android-process-1".equals(prompt.turnOriginId));
     }
 
     @Test

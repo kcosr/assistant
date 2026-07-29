@@ -16,10 +16,8 @@ describe('notifications service', () => {
     await mkdir(tempDir, { recursive: true });
 
     try {
-      const sourceA =
-        (await import('./service?instance=source-a')) as typeof import('./service');
-      const sourceB =
-        (await import('./service?instance=source-b')) as typeof import('./service');
+      const sourceA = (await import('./service?instance=source-a')) as typeof import('./service');
+      const sourceB = (await import('./service?instance=source-b')) as typeof import('./service');
 
       sourceA.initializeNotificationsService(tempDir);
       await sourceB.createNotificationRecord({
@@ -32,6 +30,7 @@ describe('notifications service', () => {
           voiceMode: 'speak_then_listen',
           ttsText: 'Final answer',
           sourceEventId: 'response-1',
+          turnOriginId: 'android-process-1',
         },
         source: 'system',
       });
@@ -42,6 +41,7 @@ describe('notifications service', () => {
         kind: 'session_attention',
         sessionId: 'sess-1',
         sourceEventId: 'response-1',
+        turnOriginId: 'android-process-1',
       });
 
       sourceB.shutdownNotificationsService();

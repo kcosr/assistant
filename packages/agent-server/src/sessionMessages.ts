@@ -30,6 +30,7 @@ export type SessionMessageInput = {
   timeoutSeconds: number;
   inputType?: SessionMessageInputType;
   durationMs?: number;
+  turnOriginId?: string;
   webhook?: SessionMessageWebhook;
 };
 
@@ -364,6 +365,7 @@ export async function startSessionMessage(options: {
         sessionId: input.sessionId,
         state,
         text: content,
+        ...(input.turnOriginId ? { turnOriginId: input.turnOriginId } : {}),
         sessionHub,
         envConfig,
         chatCompletionTools: chatTools,
@@ -445,6 +447,7 @@ export async function startSessionMessage(options: {
         state,
         text: content,
         responseId,
+        ...(input.turnOriginId ? { turnOriginId: input.turnOriginId } : {}),
         sessionHub,
         envConfig,
         chatCompletionTools: chatTools,

@@ -47,6 +47,7 @@ function createAudioModeSelect(): HTMLSelectElement {
 function createVoiceSettingsInputs(): {
   audioModeSelectEl: HTMLSelectElement;
   autoListenCheckboxEl: HTMLInputElement;
+  localResponseVoiceOnlyCheckboxEl: HTMLInputElement;
   standaloneNotificationPlaybackCheckboxEl: HTMLInputElement;
   notificationTitlePlaybackCheckboxEl: HTMLInputElement;
   voiceAdapterBaseUrlInputEl: HTMLInputElement;
@@ -89,6 +90,7 @@ function createVoiceSettingsInputs(): {
   return {
     audioModeSelectEl: createAudioModeSelect(),
     autoListenCheckboxEl: document.createElement('input'),
+    localResponseVoiceOnlyCheckboxEl: document.createElement('input'),
     standaloneNotificationPlaybackCheckboxEl: document.createElement('input'),
     notificationTitlePlaybackCheckboxEl: document.createElement('input'),
     voiceAdapterBaseUrlInputEl: document.createElement('input'),
@@ -116,6 +118,7 @@ function createInitialVoiceSettings(overrides?: Partial<VoiceSettings>): VoiceSe
     realtimeListsInstanceId: 'default',
     audioMode: 'off',
     autoListenEnabled: false,
+    localResponseVoiceOnlyEnabled: false,
     standaloneNotificationPlaybackEnabled: false,
     notificationTitlePlaybackEnabled: false,
     voiceAdapterBaseUrl: 'https://assistant/agent-voice-adapter',
@@ -328,6 +331,7 @@ describe('AssistantNativeVoiceBridge', () => {
     const target = {
       getState: vi.fn(async () => ({ state: 'listening' })),
       listInputDevices: vi.fn(async () => [{ id: '7', label: 'USB mic [id:7]' }]),
+      skipCurrentPlayback: vi.fn(),
       stopCurrentInteraction: vi.fn(),
       startManualListen: vi.fn(),
       addListener: vi.fn((_eventName: string, _listener: (payload: unknown) => void) => ({
@@ -346,8 +350,10 @@ describe('AssistantNativeVoiceBridge', () => {
 
     expect(state).toEqual({ state: 'listening' });
     expect(inputDevices).toEqual([{ id: '7', label: 'USB mic [id:7]' }]);
+    expect(bridge.skipCurrentPlayback()).toBe(true);
     expect(bridge.stopCurrentInteraction()).toBe(true);
     expect(bridge.startManualListen('session-a')).toBe(true);
+    expect(target.skipCurrentPlayback).toHaveBeenCalledTimes(1);
     expect(target.stopCurrentInteraction).toHaveBeenCalledTimes(1);
     expect(target.startManualListen).toHaveBeenCalledWith({ sessionId: 'session-a' });
     expect(target.addListener).toHaveBeenCalledTimes(2);
@@ -397,16 +403,22 @@ describe('AssistantNativeVoiceBridge', () => {
     expect(inputs.voiceMicInputSelectEl.options).toHaveLength(3);
     expect(inputs.voiceMicInputSelectEl.options[1]?.value).toBe('7');
     expect(inputs.voiceMicInputSelectEl.options[2]?.value).toBe('11');
+    expect(inputs.localResponseVoiceOnlyCheckboxEl.checked).toBe(false);
+    expect(inputs.localResponseVoiceOnlyCheckboxEl.disabled).toBe(false);
 
     controller.setVoiceSettings({
       ...controller.voiceSettings,
       selectedMicDeviceId: '11',
+      localResponseVoiceOnlyEnabled: true,
     });
 
     expect(controller.voiceSettings.selectedMicDeviceId).toBe('11');
+    expect(controller.voiceSettings.localResponseVoiceOnlyEnabled).toBe(true);
     expect(inputs.voiceMicInputSelectEl.value).toBe('11');
+    expect(inputs.localResponseVoiceOnlyCheckboxEl.checked).toBe(true);
     expect(JSON.parse(localStorage.getItem('test-voice-settings') ?? '{}')).toMatchObject({
       selectedMicDeviceId: '11',
+      localResponseVoiceOnlyEnabled: true,
     });
   });
 
@@ -864,6 +876,7 @@ describe('SpeechAudioController.micButtonState', () => {
       micButtonEl: document.createElement('button'),
       audioModeSelectEl: createAudioModeSelect(),
       autoListenCheckboxEl: autoListenCheckbox,
+      localResponseVoiceOnlyCheckboxEl: document.createElement('input'),
       standaloneNotificationPlaybackCheckboxEl: document.createElement('input'),
       notificationTitlePlaybackCheckboxEl: document.createElement('input'),
       voiceAdapterBaseUrlInputEl: document.createElement('input'),
@@ -1069,8 +1082,9 @@ describe('SpeechAudioController.micButtonState', () => {
 });
 
 describe('SpeechAudioController.nativeFabControl', () => {
-  it('starts and stops native voice from the floating button helpers', async () => {
+  it('starts native voice and routes the speaking FAB to skip while listening uses stop', async () => {
     const startManualListen = vi.fn();
+    const skipCurrentPlayback = vi.fn();
     const stopCurrentInteraction = vi.fn();
     const controller = new SpeechAudioController({
       speechFeaturesEnabled: true,
@@ -1097,6 +1111,7 @@ describe('SpeechAudioController.nativeFabControl', () => {
       nativeVoiceBridge: new AssistantNativeVoiceBridge(() => ({
         AssistantNativeVoice: {
           startManualListen,
+          skipCurrentPlayback,
           stopCurrentInteraction,
         },
       })),
@@ -1105,6 +1120,12 @@ describe('SpeechAudioController.nativeFabControl', () => {
     controller.setAudioMode('tool');
     await expect(controller.startVoiceFromFab()).resolves.toBe(true);
     expect(startManualListen).toHaveBeenCalledWith({ sessionId: 'session-123' });
+
+    controller.setNativeRuntimeState('speaking');
+    expect(controller.getVoiceFabState()).toEqual({ enabled: true, mode: 'speaking' });
+    expect(controller.stopVoiceFromFab()).toBe(true);
+    expect(skipCurrentPlayback).toHaveBeenCalledTimes(1);
+    expect(stopCurrentInteraction).not.toHaveBeenCalled();
 
     controller.setNativeRuntimeState('listening');
     expect(controller.getVoiceFabState()).toEqual({ enabled: true, mode: 'listening' });

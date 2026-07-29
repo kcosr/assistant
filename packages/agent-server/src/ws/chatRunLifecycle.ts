@@ -95,8 +95,9 @@ function buildAssistantDoneEvents(options: {
   responseId: string;
   fullText: string;
   piSdkMessage: PiSdkMessage | undefined;
+  turnOriginId?: string;
 }): ChatEvent[] {
-  const { sessionId, turnId, responseId, fullText, piSdkMessage } = options;
+  const { sessionId, turnId, responseId, fullText, piSdkMessage, turnOriginId } = options;
   const base = createChatEventBase({
     sessionId,
     ...(turnId ? { turnId } : {}),
@@ -114,6 +115,7 @@ function buildAssistantDoneEvents(options: {
           text: block.text,
           ...(block.phase ? { phase: block.phase } : {}),
           ...(block.textSignature ? { textSignature: block.textSignature } : {}),
+          ...(turnOriginId ? { turnOriginId } : {}),
         },
       }));
   }
@@ -125,7 +127,7 @@ function buildAssistantDoneEvents(options: {
       ...base,
       id: randomUUID(),
       type: 'assistant_done',
-      payload: { text: fullText },
+      payload: { text: fullText, ...(turnOriginId ? { turnOriginId } : {}) },
     },
   ];
 }
@@ -295,6 +297,7 @@ export async function handleTextInputWithChatCompletions(options: {
   }
 
   let text = message.text.trim();
+  const turnOriginId = message.turnOriginId?.trim() || undefined;
   if (!text) {
     sendError('empty_text', 'Text input must not be empty');
     return;
@@ -481,6 +484,7 @@ export async function handleTextInputWithChatCompletions(options: {
     const callbackUrl = buildExternalCallbackUrl({
       callbackBaseUrl: external.callbackBaseUrl,
       sessionId,
+      ...(turnOriginId ? { turnOriginId } : {}),
     });
 
     try {
@@ -528,6 +532,7 @@ export async function handleTextInputWithChatCompletions(options: {
     abortController,
     accumulatedText: '',
     ...(turnId ? { turnId } : {}),
+    ...(turnOriginId ? { turnOriginId } : {}),
     ...(ttsSession ? { ttsSession } : {}),
   };
 
@@ -553,6 +558,7 @@ export async function handleTextInputWithChatCompletions(options: {
         payload: {
           text: partialText,
           interrupted: true,
+          ...(run.turnOriginId ? { turnOriginId: run.turnOriginId } : {}),
         },
       },
     ];
@@ -662,6 +668,7 @@ export async function handleTextInputWithChatCompletions(options: {
           responseId,
           fullText,
           piSdkMessage: runResult.piSdkMessage,
+          ...(turnOriginId ? { turnOriginId } : {}),
         }) as Array<Extract<ChatEvent, { type: 'assistant_done' }>>;
         for (const event of events) {
           logDebugChatEventRecord({
@@ -686,7 +693,7 @@ export async function handleTextInputWithChatCompletions(options: {
             },
           });
         }
-        void appendAndBroadcastChatEvents(
+        await appendAndBroadcastChatEvents(
           {
             ...(eventStore ? { eventStore } : {}),
             sessionHub,
@@ -719,6 +726,7 @@ export async function handleTextInputWithChatCompletions(options: {
         text: visibleAssistant.text,
         sessionHub,
         summary: notificationSummary,
+        ...(turnOriginId ? { turnOriginId } : {}),
       });
       const assistantTimestampMs =
         (runResult.piSdkMessage &&

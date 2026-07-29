@@ -29,6 +29,7 @@ describe('getWebClientElements', () => {
     expect(elements?.voiceRuntimeModeSelect?.id).toBe('voice-runtime-mode-select');
     expect(elements?.audioModeSelect?.id).toBe('audio-mode-select');
     expect(elements?.autoListenCheckbox?.id).toBe('auto-listen-checkbox');
+    expect(elements?.localResponseVoiceOnlyCheckbox?.id).toBe('local-response-voice-only-checkbox');
     expect(elements?.standaloneNotificationPlaybackCheckbox?.id).toBe(
       'standalone-notification-playback-checkbox',
     );

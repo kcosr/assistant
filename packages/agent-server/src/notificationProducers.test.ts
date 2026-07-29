@@ -23,7 +23,11 @@ describe('notification producers', () => {
     await mkdir(tempDir, { recursive: true });
     initializeNotificationsService(tempDir);
     sessionIndex = new SessionIndex(path.join(tempDir, 'sessions.json'));
-    await sessionIndex.createSession({ agentId: 'agent-1', sessionId: 'sess-1', name: 'Demo session' });
+    await sessionIndex.createSession({
+      agentId: 'agent-1',
+      sessionId: 'sess-1',
+      name: 'Demo session',
+    });
   });
 
   afterEach(async () => {
@@ -43,6 +47,7 @@ describe('notification producers', () => {
       sessionHub,
       sessionIndex,
       summary: { revision: 6 } as any,
+      turnOriginId: 'android-process-1',
     });
 
     const { notifications } = await getNotificationsStore().list();
@@ -56,6 +61,7 @@ describe('notification producers', () => {
       sourceEventId: 'response-1',
       sessionActivitySeq: 6,
       sessionTitle: 'Demo session',
+      turnOriginId: 'android-process-1',
     });
     expect(sessionHub.broadcastToAll).toHaveBeenCalledWith(
       expect.objectContaining({

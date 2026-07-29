@@ -1,8 +1,5 @@
 import { normalizeAudioMode, type AudioMode } from './audioMode';
-import {
-  normalizeVoiceRuntimeMode,
-  type VoiceRuntimeMode,
-} from './voiceRuntimeMode';
+import { normalizeVoiceRuntimeMode, type VoiceRuntimeMode } from './voiceRuntimeMode';
 
 export const DEFAULT_VOICE_ADAPTER_BASE_URL = 'https://assistant/agent-voice-adapter';
 export const DEFAULT_RECOGNITION_START_TIMEOUT_MS = 30_000;
@@ -30,6 +27,7 @@ export interface VoiceSettings {
   realtimeListsInstanceId: string;
   audioMode: AudioMode;
   autoListenEnabled: boolean;
+  localResponseVoiceOnlyEnabled: boolean;
   standaloneNotificationPlaybackEnabled: boolean;
   notificationTitlePlaybackEnabled: boolean;
   voiceAdapterBaseUrl: string;
@@ -160,6 +158,7 @@ export function createDefaultVoiceSettings(options?: {
     realtimeListsInstanceId: 'default',
     audioMode: isAndroid ? 'tool' : 'off',
     autoListenEnabled: isAndroid,
+    localResponseVoiceOnlyEnabled: isAndroid,
     standaloneNotificationPlaybackEnabled: isAndroid,
     notificationTitlePlaybackEnabled: false,
     voiceAdapterBaseUrl: DEFAULT_VOICE_ADAPTER_BASE_URL,
@@ -203,7 +202,8 @@ export function normalizeVoiceSettings(
         ? record['realtimeSpeakerphone']
         : defaults.realtimeSpeakerphone,
     realtimeListsInstanceId:
-      normalizeOptionalString(record['realtimeListsInstanceId']) || defaults.realtimeListsInstanceId,
+      normalizeOptionalString(record['realtimeListsInstanceId']) ||
+      defaults.realtimeListsInstanceId,
     audioMode: normalizeAudioMode(
       typeof record['audioMode'] === 'string' ? record['audioMode'] : defaults.audioMode,
     ),
@@ -211,6 +211,10 @@ export function normalizeVoiceSettings(
       typeof record['autoListenEnabled'] === 'boolean'
         ? record['autoListenEnabled']
         : defaults.autoListenEnabled,
+    localResponseVoiceOnlyEnabled:
+      typeof record['localResponseVoiceOnlyEnabled'] === 'boolean'
+        ? record['localResponseVoiceOnlyEnabled']
+        : defaults.localResponseVoiceOnlyEnabled,
     standaloneNotificationPlaybackEnabled:
       typeof record['standaloneNotificationPlaybackEnabled'] === 'boolean'
         ? record['standaloneNotificationPlaybackEnabled']
@@ -264,6 +268,7 @@ export function areVoiceSettingsEqual(left: VoiceSettings, right: VoiceSettings)
     left.realtimeListsInstanceId === right.realtimeListsInstanceId &&
     left.audioMode === right.audioMode &&
     left.autoListenEnabled === right.autoListenEnabled &&
+    left.localResponseVoiceOnlyEnabled === right.localResponseVoiceOnlyEnabled &&
     left.standaloneNotificationPlaybackEnabled === right.standaloneNotificationPlaybackEnabled &&
     left.notificationTitlePlaybackEnabled === right.notificationTitlePlaybackEnabled &&
     left.voiceAdapterBaseUrl === right.voiceAdapterBaseUrl &&

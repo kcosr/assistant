@@ -3,8 +3,9 @@ import { randomUUID } from 'node:crypto';
 export function buildExternalCallbackUrl(options: {
   callbackBaseUrl: string;
   sessionId: string;
+  turnOriginId?: string;
 }): string {
-  const { callbackBaseUrl, sessionId } = options;
+  const { callbackBaseUrl, sessionId, turnOriginId } = options;
   const url = new URL(callbackBaseUrl);
 
   const basePath = url.pathname.endsWith('/') ? url.pathname : `${url.pathname}/`;
@@ -12,6 +13,9 @@ export function buildExternalCallbackUrl(options: {
   const joined = `${basePath}${sessionPath.replace(/^\//, '')}`.replace(/\/{2,}/g, '/');
 
   url.pathname = joined;
+  if (turnOriginId) {
+    url.searchParams.set('turnOriginId', turnOriginId);
+  }
   return url.toString();
 }
 

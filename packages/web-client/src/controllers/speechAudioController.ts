@@ -77,6 +77,7 @@ export type AssistantNativeVoiceRuntimeState =
 
 export interface AssistantNativeVoiceStatePayload {
   state?: string;
+  turnOriginId?: string;
   /** Live Realtime uplink mute (persisted by the native service). */
   realtimeMuted?: boolean;
   activeSessionId?: string | null;
@@ -106,6 +107,7 @@ export interface AssistantNativeVoiceBridgeTarget {
   retargetActiveRecognition?: (args: AssistantNativeVoiceStartListenArgs) => void | Promise<void>;
   setSessionTitles?: (args: AssistantNativeVoiceSessionTitlesArgs) => void | Promise<void>;
   setAssistantBaseUrl?: (args: AssistantNativeVoiceUrlArgs) => void | Promise<void>;
+  skipCurrentPlayback?: () => void | Promise<void>;
   stopCurrentInteraction?: () => void | Promise<void>;
   startManualListen?: (args?: AssistantNativeVoiceStartListenArgs) => void | Promise<void>;
   startRealtime?: () => void | Promise<void>;
@@ -211,6 +213,10 @@ export class AssistantNativeVoiceBridge {
     return this.invoke('stopCurrentInteraction');
   }
 
+  skipCurrentPlayback(): boolean {
+    return this.invoke('skipCurrentPlayback');
+  }
+
   startManualListen(sessionId?: string | null): boolean {
     return this.invoke('startManualListen', { sessionId: sessionId ?? null });
   }
@@ -270,9 +276,7 @@ export class AssistantNativeVoiceBridge {
     });
   }
 
-  addOpenSessionListener(
-    listener: (payload: { sessionId: string }) => void,
-  ): (() => void) | null {
+  addOpenSessionListener(listener: (payload: { sessionId: string }) => void): (() => void) | null {
     return this.addListener('openSession', (payload) => {
       const sessionId =
         typeof (payload as { sessionId?: unknown } | null)?.sessionId === 'string'
@@ -393,6 +397,7 @@ export interface SpeechAudioControllerOptions {
   micButtonEl: HTMLButtonElement;
   audioModeSelectEl: HTMLSelectElement;
   autoListenCheckboxEl: HTMLInputElement;
+  localResponseVoiceOnlyCheckboxEl: HTMLInputElement;
   standaloneNotificationPlaybackCheckboxEl: HTMLInputElement;
   notificationTitlePlaybackCheckboxEl: HTMLInputElement;
   voiceAdapterBaseUrlInputEl: HTMLInputElement;
@@ -1040,6 +1045,8 @@ export class SpeechAudioController {
   private syncVoiceSettingsInputs(): void {
     this.options.audioModeSelectEl.value = this.currentVoiceSettings.audioMode;
     this.options.autoListenCheckboxEl.checked = this.currentVoiceSettings.autoListenEnabled;
+    this.options.localResponseVoiceOnlyCheckboxEl.checked =
+      this.currentVoiceSettings.localResponseVoiceOnlyEnabled;
     this.options.standaloneNotificationPlaybackCheckboxEl.checked =
       this.currentVoiceSettings.standaloneNotificationPlaybackEnabled;
     this.options.notificationTitlePlaybackCheckboxEl.checked =
@@ -1084,6 +1091,7 @@ export class SpeechAudioController {
     const supportsNativeVoiceSettings = Boolean(this.options.useNativeVoiceRuntime);
     this.options.audioModeSelectEl.disabled = !supportsAudioOutput;
     this.options.autoListenCheckboxEl.disabled = !supportsAudioOutput;
+    this.options.localResponseVoiceOnlyCheckboxEl.disabled = !supportsNativeVoiceSettings;
     this.options.standaloneNotificationPlaybackCheckboxEl.disabled = !supportsNativeVoiceSettings;
     this.options.notificationTitlePlaybackCheckboxEl.disabled = !supportsNativeVoiceSettings;
     this.options.voiceAdapterBaseUrlInputEl.disabled = !supportsNativeVoiceSettings;
@@ -1505,6 +1513,10 @@ export class SpeechAudioController {
       this.options.nativeVoiceBridge?.stopRealtime();
       return true;
     }
+    if (this.isNativeSpeaking()) {
+      this.options.nativeVoiceBridge?.skipCurrentPlayback();
+      return true;
+    }
     if (this.isNativeInteractionActive()) {
       this.options.nativeVoiceBridge?.stopCurrentInteraction();
       return true;
@@ -1559,7 +1571,12 @@ export class SpeechAudioController {
     const micButton = this.options.micButtonEl;
     if (this.buttonMode === 'stop-only') {
       const hasActiveTurn = this.options.isOutputActive();
-      micButton.classList.remove('recording', 'interrupting', 'native-speaking', 'native-listening');
+      micButton.classList.remove(
+        'recording',
+        'interrupting',
+        'native-speaking',
+        'native-listening',
+      );
       micButton.classList.toggle('stopping', hasActiveTurn);
       micButton.classList.add('stop-only');
       micButton.classList.toggle('stop-only-active', hasActiveTurn);
@@ -1606,7 +1623,8 @@ export class SpeechAudioController {
         this.isSpeechInputActive ||
         this.isTtsPlaying ||
         this.options.isOutputActive() ||
-        (!this.speechInputDisabledReason && (this.hasSpeechInput || this.isNativeRuntimeAvailable())))
+        (!this.speechInputDisabledReason &&
+          (this.hasSpeechInput || this.isNativeRuntimeAvailable())))
     ) {
       micButton.disabled = false;
     }
@@ -1717,9 +1735,9 @@ export class SpeechAudioController {
 
   private isNativeRealtimeActive(): boolean {
     return (
-      this.isNativeRuntimeAvailable()
-      && (this.nativeRuntimeState === 'realtime_active'
-        || this.nativeRuntimeState === 'realtime_connecting')
+      this.isNativeRuntimeAvailable() &&
+      (this.nativeRuntimeState === 'realtime_active' ||
+        this.nativeRuntimeState === 'realtime_connecting')
     );
   }
 

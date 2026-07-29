@@ -37,6 +37,34 @@ import static org.junit.Assert.assertFalse;
 public final class AssistantVoiceRuntimeServiceTest {
     @Test
     @Config(sdk = Build.VERSION_CODES.N)
+    public void foreignResponseConsumesInteractionEndBeforeOriginRejection() {
+        AssistantVoiceInteractionEndTracker tracker = new AssistantVoiceInteractionEndTracker(4);
+        tracker.remember("session-1", "request-1");
+        AssistantVoicePromptEvent foreignResponse = new AssistantVoicePromptEvent(
+            "event-1",
+            "session-1",
+            "request-1",
+            "response-1",
+            "assistant_response",
+            "Answer",
+            "other-device"
+        );
+
+        AssistantVoiceRuntimeService.AssistantResponseAdmission admission =
+            AssistantVoiceRuntimeService.evaluateAssistantResponseAdmission(
+                foreignResponse,
+                tracker,
+                true,
+                "this-device"
+            );
+
+        assertFalse(admission.admitted);
+        assertTrue(admission.suppressAutoListen);
+        assertFalse(tracker.consume("session-1", "request-1"));
+    }
+
+    @Test
+    @Config(sdk = Build.VERSION_CODES.N)
     public void manualAutoListenQueueItemsDedupAcrossPromptAndNotificationSources() {
         AssistantVoiceQueueItem promptItem = AssistantVoiceQueueItem.fromManualAutoListenPrompt(
             new AssistantVoicePromptEvent(
@@ -44,7 +72,8 @@ public final class AssistantVoiceRuntimeServiceTest {
                 "session-1",
                 "response-prompt",
                 "assistant_response",
-                "Answer"
+                "Answer",
+                ""
             ),
             "Session 1"
         );
@@ -60,7 +89,8 @@ public final class AssistantVoiceRuntimeServiceTest {
             "speak_then_listen",
             "Answer",
             "different-source-event",
-            Integer.valueOf(7)
+            Integer.valueOf(7),
+            ""
         ).toManualAutoListenQueueItem("Session 1");
         AssistantVoiceQueueItem otherSessionItem = AssistantVoiceQueueItem.fromManualAutoListenPrompt(
             new AssistantVoicePromptEvent(
@@ -68,7 +98,8 @@ public final class AssistantVoiceRuntimeServiceTest {
                 "session-2",
                 "response-other",
                 "assistant_response",
-                "Answer"
+                "Answer",
+                ""
             ),
             "Session 2"
         );
@@ -84,7 +115,8 @@ public final class AssistantVoiceRuntimeServiceTest {
             "speak_then_listen",
             "Answer",
             "response-2",
-            Integer.valueOf(8)
+            Integer.valueOf(8),
+            ""
         ).toManualMicQueueItem();
 
         assertTrue(AssistantVoiceRuntimeService.shouldDedupManualAutoListenQueueItem(
@@ -120,7 +152,8 @@ public final class AssistantVoiceRuntimeServiceTest {
             "speak_then_listen",
             "Answer",
             "response-1",
-            Integer.valueOf(7)
+            Integer.valueOf(7),
+            ""
         ).toManualAutoListenQueueItem("Session 1");
 
         assertEquals(
@@ -159,6 +192,16 @@ public final class AssistantVoiceRuntimeServiceTest {
             "turn-1",
             intent.getStringExtra(AssistantVoiceRuntimeService.EXTRA_PLAY_TEXT_SOURCE_EVENT_ID)
         );
+    }
+
+    @Test
+    @Config(sdk = Build.VERSION_CODES.N)
+    public void skipCurrentPlaybackIntentUsesDedicatedServiceAction() {
+        Context context = RuntimeEnvironment.getApplication();
+
+        Intent intent = AssistantVoiceRuntimeService.skipCurrentPlaybackIntent(context);
+
+        assertEquals(AssistantVoiceRuntimeService.ACTION_SKIP_CURRENT_PLAYBACK, intent.getAction());
     }
 
     @Test
@@ -390,7 +433,8 @@ public final class AssistantVoiceRuntimeServiceTest {
             "speak",
             "Alternate speech",
             "event-tool",
-            null
+            null,
+            ""
         );
 
         assertTrue(
@@ -436,7 +480,8 @@ public final class AssistantVoiceRuntimeServiceTest {
             "speak",
             "Reply body",
             "event-1",
-            Integer.valueOf(4)
+            Integer.valueOf(4),
+            ""
         );
 
         assertEquals(
@@ -1520,6 +1565,7 @@ public final class AssistantVoiceRuntimeServiceTest {
             audioMode,
             AssistantVoiceConfig.DEFAULT_RUNTIME_MODE,
             true,
+            AssistantVoiceConfig.DEFAULT_LOCAL_RESPONSE_VOICE_ONLY_ENABLED,
             "",
             AssistantVoiceConfig.DEFAULT_RECOGNITION_START_TIMEOUT_MS,
             AssistantVoiceConfig.DEFAULT_RECOGNITION_COMPLETION_TIMEOUT_MS,

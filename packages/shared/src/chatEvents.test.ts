@@ -72,6 +72,7 @@ describe('chat event validation', () => {
         phase: 'final_answer',
         textSignature: '{"v":1,"id":"msg-1","phase":"final_answer"}',
         interrupted: true,
+        turnOriginId: 'android-process-1',
       },
     };
 
@@ -81,6 +82,7 @@ describe('chat event validation', () => {
       expect(result.data.payload.text).toBe('Done.');
       expect(result.data.payload.phase).toBe('final_answer');
       expect(result.data.payload.interrupted).toBe(true);
+      expect(result.data.payload.turnOriginId).toBe('android-process-1');
     }
   });
 

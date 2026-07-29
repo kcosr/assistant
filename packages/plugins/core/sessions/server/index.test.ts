@@ -63,6 +63,13 @@ describe('sessions plugin operations', () => {
         minimum: 0,
       }),
     );
+    expect(properties['turnOriginId']).toEqual(
+      expect.objectContaining({
+        type: 'string',
+        minLength: 1,
+        maxLength: 128,
+      }),
+    );
     expect(inputSchema?.allOf).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -1248,6 +1255,7 @@ describe('sessions plugin operations', () => {
         mode: 'async',
         inputType: 'audio',
         durationMs: 4200,
+        turnOriginId: 'android-process-1',
       },
       ctx,
     );
@@ -1260,6 +1268,7 @@ describe('sessions plugin operations', () => {
           mode: 'async',
           inputType: 'audio',
           durationMs: 4200,
+          turnOriginId: 'android-process-1',
         }),
       }),
     );

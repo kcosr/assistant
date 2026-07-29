@@ -29,7 +29,8 @@ public final class AssistantVoiceNotificationEventParserTest {
             + "\"sessionId\":\"session-1\","
             + "\"sessionTitle\":\"My Session\","
             + "\"sourceEventId\":\"response-1\","
-            + "\"sessionActivitySeq\":4"
+            + "\"sessionActivitySeq\":4,"
+            + "\"turnOriginId\":\"android-process-1\""
             + "}"
             + "}"
             + "}";
@@ -45,6 +46,7 @@ public final class AssistantVoiceNotificationEventParserTest {
         assertEquals("Speak me", update.notification.resolveSpokenText(false));
         assertEquals("My Session: Speak me", update.notification.resolveSpokenText(true));
         assertEquals(Integer.valueOf(4), update.notification.sessionActivitySeq);
+        assertEquals("android-process-1", update.notification.turnOriginId);
     }
 
     @Test

@@ -15,7 +15,8 @@ public final class AssistantVoiceQueueItemTest {
             "session-1",
             "call-1",
             "voice_ask",
-            "Question?"
+            "Question?",
+            ""
         );
 
         AssistantVoiceQueueItem item = AssistantVoiceQueueItem.fromPrompt(
@@ -39,7 +40,8 @@ public final class AssistantVoiceQueueItemTest {
             "session-2",
             "response-2",
             "assistant_response",
-            "Answer"
+            "Answer",
+            ""
         );
 
         AssistantVoiceQueueItem item = AssistantVoiceQueueItem.fromPrompt(
@@ -58,7 +60,7 @@ public final class AssistantVoiceQueueItemTest {
     public void fromPromptReturnsNullWithoutSessionOrSpeech() {
         assertNull(
             AssistantVoiceQueueItem.fromPrompt(
-                new AssistantVoicePromptEvent("event-3", "", "", "voice_speak", "Hello"),
+                new AssistantVoicePromptEvent("event-3", "", "", "voice_speak", "Hello", ""),
                 true,
                 false,
                 ""
@@ -66,7 +68,7 @@ public final class AssistantVoiceQueueItemTest {
         );
         assertNull(
             AssistantVoiceQueueItem.fromPrompt(
-                new AssistantVoicePromptEvent("event-4", "session-4", "", "voice_speak", " "),
+                new AssistantVoicePromptEvent("event-4", "session-4", "", "voice_speak", " ", ""),
                 true,
                 false,
                 ""
@@ -81,7 +83,8 @@ public final class AssistantVoiceQueueItemTest {
             "session-5",
             "response-5",
             "assistant_response",
-            "Answer"
+            "Answer",
+            ""
         );
 
         AssistantVoiceQueueItem item = AssistantVoiceQueueItem.fromPrompt(
@@ -103,7 +106,8 @@ public final class AssistantVoiceQueueItemTest {
             "session-6",
             "call-6",
             "voice_ask",
-            "Question?"
+            "Question?",
+            ""
         );
 
         AssistantVoiceQueueItem item = AssistantVoiceQueueItem.fromPrompt(
@@ -124,7 +128,8 @@ public final class AssistantVoiceQueueItemTest {
             "session-7",
             "response-7",
             "assistant_response",
-            "Answer"
+            "Answer",
+            ""
         );
 
         AssistantVoiceQueueItem item = AssistantVoiceQueueItem.fromManualAutoListenPrompt(
@@ -147,7 +152,14 @@ public final class AssistantVoiceQueueItemTest {
     @Test
     public void fromManualAutoListenPromptIgnoresNonAssistantPrompts() {
         assertNull(AssistantVoiceQueueItem.fromManualAutoListenPrompt(
-            new AssistantVoicePromptEvent("event-8", "session-8", "call-8", "voice_ask", "Question?"),
+            new AssistantVoicePromptEvent(
+                "event-8",
+                "session-8",
+                "call-8",
+                "voice_ask",
+                "Question?",
+                ""
+            ),
             "Session 8"
         ));
     }
@@ -166,7 +178,8 @@ public final class AssistantVoiceQueueItemTest {
             "speak_then_listen",
             "Reply body",
             "event-1",
-            Integer.valueOf(7)
+            Integer.valueOf(7),
+            ""
         );
 
         AssistantVoiceQueueItem item = notification.toManualMicQueueItem();
@@ -192,7 +205,8 @@ public final class AssistantVoiceQueueItemTest {
             "speak_then_listen",
             "Reply body",
             "response-auto",
-            Integer.valueOf(9)
+            Integer.valueOf(9),
+            ""
         );
 
         AssistantVoiceQueueItem item = notification.toManualAutoListenQueueItem("Session Auto");
@@ -223,7 +237,8 @@ public final class AssistantVoiceQueueItemTest {
             "speak",
             "Alternate speech",
             "event-tool",
-            null
+            null,
+            ""
         );
 
         AssistantVoiceQueueItem automaticItem = notification.toAutomaticQueueItem(true, false, null);
@@ -252,7 +267,8 @@ public final class AssistantVoiceQueueItemTest {
             "speak",
             "Speak me",
             "event-2",
-            Integer.valueOf(3)
+            Integer.valueOf(3),
+            ""
         );
 
         AssistantVoiceQueueItem item = notification.toAutomaticQueueItem(

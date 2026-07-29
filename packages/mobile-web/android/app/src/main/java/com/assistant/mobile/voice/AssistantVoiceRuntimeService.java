@@ -48,6 +48,16 @@ import okhttp3.WebSocket;
 import okhttp3.WebSocketListener;
 
 public final class AssistantVoiceRuntimeService extends Service {
+    static final class AssistantResponseAdmission {
+        final boolean admitted;
+        final boolean suppressAutoListen;
+
+        AssistantResponseAdmission(boolean admitted, boolean suppressAutoListen) {
+            this.admitted = admitted;
+            this.suppressAutoListen = suppressAutoListen;
+        }
+    }
+
     private static final String TAG = "AssistantVoiceRuntime";
     public static final String STATE_DISABLED = "disabled";
     public static final String STATE_CONNECTING = "connecting";
@@ -91,6 +101,7 @@ public final class AssistantVoiceRuntimeService extends Service {
     static final String EXTRA_NOTIFICATION_TTS_TEXT = "notificationTtsText";
     static final String EXTRA_NOTIFICATION_SOURCE_EVENT_ID = "notificationSourceEventId";
     static final String EXTRA_NOTIFICATION_SESSION_ACTIVITY_SEQ = "notificationSessionActivitySeq";
+    static final String EXTRA_NOTIFICATION_TURN_ORIGIN_ID = "notificationTurnOriginId";
 
     static final String BROADCAST_STATE_CHANGED = "com.assistant.mobile.voice.STATE_CHANGED";
     static final String BROADCAST_RUNTIME_ERROR = "com.assistant.mobile.voice.RUNTIME_ERROR";
@@ -319,6 +330,7 @@ public final class AssistantVoiceRuntimeService extends Service {
         intent.putExtra(EXTRA_NOTIFICATION_VOICE_MODE, notification.voiceMode);
         intent.putExtra(EXTRA_NOTIFICATION_TTS_TEXT, notification.ttsText);
         intent.putExtra(EXTRA_NOTIFICATION_SOURCE_EVENT_ID, notification.sourceEventId);
+        intent.putExtra(EXTRA_NOTIFICATION_TURN_ORIGIN_ID, notification.turnOriginId);
         if (notification.sessionActivitySeq != null) {
             intent.putExtra(EXTRA_NOTIFICATION_SESSION_ACTIVITY_SEQ, notification.sessionActivitySeq);
         }
@@ -1918,6 +1930,12 @@ public final class AssistantVoiceRuntimeService extends Service {
             );
             return;
         }
+        AssistantResponseAdmission responseAdmission = evaluateAssistantResponseAdmission(
+            prompt,
+            interactionEndTracker,
+            config.localResponseVoiceOnlyEnabled,
+            AssistantVoiceTurnOrigin.get()
+        );
         if (config.ttsPreferredSessionOnly
             && !config.preferredVoiceSessionId.isEmpty()
             && !prompt.sessionId.equals(config.preferredVoiceSessionId)) {
@@ -1928,9 +1946,15 @@ public final class AssistantVoiceRuntimeService extends Service {
             );
             return;
         }
-        boolean suppressAutoListen =
-            prompt.isAssistantResponse()
-                && interactionEndTracker.consume(prompt.sessionId, prompt.requestId);
+        if (!responseAdmission.admitted) {
+            Log.d(
+                TAG,
+                "handlePromptEvent skipped non-local assistant response sessionId="
+                    + safe(prompt.sessionId)
+            );
+            return;
+        }
+        boolean suppressAutoListen = responseAdmission.suppressAutoListen;
         boolean autoListenForPrompt = config.autoListenEnabled && !suppressAutoListen;
         boolean idle = !hasActiveInteraction() && !isManualPreemptStopInFlight();
         boolean shouldAutoListenAfterManualAssistantMessage =
@@ -1983,6 +2007,26 @@ public final class AssistantVoiceRuntimeService extends Service {
             return;
         }
         enqueueQueueItem(item, false);
+    }
+
+    static AssistantResponseAdmission evaluateAssistantResponseAdmission(
+        AssistantVoicePromptEvent prompt,
+        AssistantVoiceInteractionEndTracker interactionEndTracker,
+        boolean localResponseVoiceOnlyEnabled,
+        String localTurnOriginId
+    ) {
+        if (prompt == null || !prompt.isAssistantResponse()) {
+            return new AssistantResponseAdmission(true, false);
+        }
+        boolean suppressAutoListen =
+            interactionEndTracker != null
+                && interactionEndTracker.consume(prompt.sessionId, prompt.requestId);
+        boolean admitted = AssistantVoiceInteractionRules.shouldAdmitAutomaticResponse(
+            localResponseVoiceOnlyEnabled,
+            localTurnOriginId,
+            prompt.turnOriginId
+        );
+        return new AssistantResponseAdmission(admitted, suppressAutoListen);
     }
 
     private void applyDurableNotificationSnapshot(List<AssistantVoiceNotificationRecord> notifications) {
@@ -2138,6 +2182,18 @@ public final class AssistantVoiceRuntimeService extends Service {
     }
 
     private void enqueueAutomaticNotification(AssistantVoiceNotificationRecord notification) {
+        if (!AssistantVoiceInteractionRules.shouldAdmitAutomaticNotification(
+                config.localResponseVoiceOnlyEnabled,
+                AssistantVoiceTurnOrigin.get(),
+                notification
+            )) {
+            Log.d(
+                TAG,
+                "enqueueAutomaticNotification skipped non-local assistant response notificationId="
+                    + safe(notification.id)
+            );
+            return;
+        }
         boolean shouldAutoplayNotification =
             AssistantVoiceInteractionRules.shouldAutoplayNotification(
                 config.audioMode,
@@ -3613,6 +3669,7 @@ public final class AssistantVoiceRuntimeService extends Service {
                 body.put("mode", "async");
                 body.put("inputType", "audio");
                 body.put("durationMs", durationMs);
+                body.put("turnOriginId", AssistantVoiceTurnOrigin.get());
                 postJson(AssistantVoiceUrlUtils.assistantSessionMessageUrl(config.assistantBaseUrl), body);
                 recordVoiceEvent("recognition_submit_sent", details);
                 mainHandler.post(() -> clearPendingRecognitionSubmit("submit_sent", true));
@@ -3984,7 +4041,8 @@ public final class AssistantVoiceRuntimeService extends Service {
             intent.getStringExtra(EXTRA_NOTIFICATION_VOICE_MODE),
             intent.getStringExtra(EXTRA_NOTIFICATION_TTS_TEXT),
             intent.getStringExtra(EXTRA_NOTIFICATION_SOURCE_EVENT_ID),
-            sessionActivitySeq
+            sessionActivitySeq,
+            intent.getStringExtra(EXTRA_NOTIFICATION_TURN_ORIGIN_ID)
         );
     }
 

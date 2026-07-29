@@ -32,6 +32,44 @@ describe('client message validation', () => {
     expect(() => validateClientMessage(invalid)).toThrow();
   });
 
+  it('accepts a text_input message with an ephemeral turn origin', () => {
+    const message: ClientMessage = {
+      type: 'text_input',
+      sessionId: 'session-1',
+      text: 'hello',
+      turnOriginId: 'android-process-1',
+    };
+
+    expect(validateClientMessage(message)).toEqual(message);
+  });
+
+  it('normalizes and bounds text_input turn origins', () => {
+    expect(
+      validateClientMessage({
+        type: 'text_input',
+        sessionId: 'session-1',
+        text: 'hello',
+        turnOriginId: '  android-process-1  ',
+      }),
+    ).toMatchObject({ turnOriginId: 'android-process-1' });
+    expect(() =>
+      validateClientMessage({
+        type: 'text_input',
+        sessionId: 'session-1',
+        text: 'hello',
+        turnOriginId: '   ',
+      }),
+    ).toThrow();
+    expect(() =>
+      validateClientMessage({
+        type: 'text_input',
+        sessionId: 'session-1',
+        text: 'hello',
+        turnOriginId: 'x'.repeat(129),
+      }),
+    ).toThrow();
+  });
+
   it('safe validation returns success result for valid message', () => {
     const raw = {
       type: 'hello',
@@ -366,6 +404,7 @@ describe('server message validation', () => {
         ttsText: 'Answer',
         sourceEventId: 'response-1',
         sessionActivitySeq: 12,
+        turnOriginId: 'android-process-1',
       },
     };
 

@@ -3,11 +3,7 @@ import type { ServerMessage } from '@assistant/shared';
 import type { SessionHub } from '../../../../agent-server/src/sessionHub';
 import type { SessionIndex, SessionSummary } from '../../../../agent-server/src/sessionIndex';
 import { NotificationsStore } from './store';
-import type {
-  CreateNotificationInput,
-  NotificationRecord,
-  NotificationSource,
-} from './types';
+import type { CreateNotificationInput, NotificationRecord, NotificationSource } from './types';
 
 const PANEL_TYPE = 'notifications';
 
@@ -91,14 +87,14 @@ async function resolveSessionTitle(
   }
 }
 
-function resolvePersistedSessionTitle(summary: SessionTitleSummary | null | undefined): string | null {
+function resolvePersistedSessionTitle(
+  summary: SessionTitleSummary | null | undefined,
+): string | null {
   const name = typeof summary?.name === 'string' ? summary.name.trim() : '';
   if (name) {
     return name;
   }
-  const attrs = summary?.attributes as
-    | { core?: { autoTitle?: string | null } }
-    | undefined;
+  const attrs = summary?.attributes as { core?: { autoTitle?: string | null } } | undefined;
   const autoTitle = typeof attrs?.core?.autoTitle === 'string' ? attrs.core.autoTitle.trim() : '';
   return autoTitle || null;
 }
@@ -200,6 +196,9 @@ export async function createNotificationRecord(options: {
           : {}),
         ...(options.input.sessionActivitySeq !== undefined
           ? { sessionActivitySeq: options.input.sessionActivitySeq }
+          : {}),
+        ...(options.input.turnOriginId !== undefined
+          ? { turnOriginId: options.input.turnOriginId }
           : {}),
       },
       options.source,

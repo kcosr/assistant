@@ -47,6 +47,7 @@ describe('NotificationsStore', () => {
         ttsText: 'Speak me',
         sourceEventId: 'event-1',
         sessionActivitySeq: 7,
+        turnOriginId: 'android-process-1',
       },
       'cli',
     );
@@ -59,6 +60,7 @@ describe('NotificationsStore', () => {
     expect(n.ttsText).toBe('Speak me');
     expect(n.sourceEventId).toBe('event-1');
     expect(n.sessionActivitySeq).toBe(7);
+    expect(n.turnOriginId).toBe('android-process-1');
     expect(n.source).toBe('cli');
     expect(n.readAt).toBeNull();
   });
@@ -74,6 +76,7 @@ describe('NotificationsStore', () => {
     expect(n.ttsText).toBeNull();
     expect(n.sourceEventId).toBeNull();
     expect(n.sessionActivitySeq).toBeNull();
+    expect(n.turnOriginId).toBeNull();
   });
 
   it('upserts singleton session attention by session', async () => {
@@ -88,6 +91,7 @@ describe('NotificationsStore', () => {
         ttsText: 'First answer',
         sourceEventId: 'response-1',
         sessionActivitySeq: 4,
+        turnOriginId: 'android-process-1',
       },
       'system',
     );
@@ -102,6 +106,7 @@ describe('NotificationsStore', () => {
         ttsText: 'Second answer',
         sourceEventId: 'response-2',
         sessionActivitySeq: 5,
+        turnOriginId: 'android-process-2',
       },
       'system',
     );
@@ -116,6 +121,7 @@ describe('NotificationsStore', () => {
       source: 'system',
       sourceEventId: 'response-2',
       sessionActivitySeq: 5,
+      turnOriginId: 'android-process-2',
     });
   });
 

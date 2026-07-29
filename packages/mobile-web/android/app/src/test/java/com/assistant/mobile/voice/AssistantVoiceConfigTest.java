@@ -137,6 +137,26 @@ public final class AssistantVoiceConfigTest {
     }
 
     @Test
+    public void localResponseVoiceOnlyDefaultsOnAndUpdatesFromVoiceSettings() throws Exception {
+        Context context = RuntimeEnvironment.getApplication();
+        context
+            .getSharedPreferences("assistant_voice_runtime", Context.MODE_PRIVATE)
+            .edit()
+            .clear()
+            .commit();
+
+        assertTrue(AssistantVoiceConfig.load(context).localResponseVoiceOnlyEnabled);
+
+        AssistantVoiceConfig updated = createConfig(1.0f).withVoiceSettings(
+            new JSONObject().put("localResponseVoiceOnlyEnabled", false)
+        );
+
+        assertFalse(updated.localResponseVoiceOnlyEnabled);
+        AssistantVoiceConfig.save(context, updated);
+        assertFalse(AssistantVoiceConfig.load(context).localResponseVoiceOnlyEnabled);
+    }
+
+    @Test
     public void withRealtimeMuteOnStartUpdatesOnlyThatField() {
         AssistantVoiceConfig base = createConfig(1.0f);
         assertFalse(base.realtimeMuteOnStart);
@@ -211,6 +231,7 @@ public final class AssistantVoiceConfigTest {
             audioMode,
             AssistantVoiceConfig.DEFAULT_RUNTIME_MODE,
             true,
+            AssistantVoiceConfig.DEFAULT_LOCAL_RESPONSE_VOICE_ONLY_ENABLED,
             "",
             AssistantVoiceConfig.DEFAULT_RECOGNITION_START_TIMEOUT_MS,
             AssistantVoiceConfig.DEFAULT_RECOGNITION_COMPLETION_TIMEOUT_MS,
@@ -320,6 +341,7 @@ public final class AssistantVoiceConfigTest {
             AssistantVoiceConfig.AUDIO_MODE_TOOL,
             AssistantVoiceConfig.DEFAULT_RUNTIME_MODE,
             true,
+            AssistantVoiceConfig.DEFAULT_LOCAL_RESPONSE_VOICE_ONLY_ENABLED,
             "",
             AssistantVoiceConfig.DEFAULT_RECOGNITION_START_TIMEOUT_MS,
             AssistantVoiceConfig.DEFAULT_RECOGNITION_COMPLETION_TIMEOUT_MS,

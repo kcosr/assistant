@@ -50,6 +50,18 @@ describe('externalAgents helpers', () => {
       }),
     ).toBe('http://example.test/prefix/external/sessions/EXTERNAL-1/messages');
   });
+
+  it('carries the initiating turn origin in the callback URL', () => {
+    expect(
+      buildExternalCallbackUrl({
+        callbackBaseUrl: 'http://example.test/api',
+        sessionId: 'EXTERNAL-1',
+        turnOriginId: 'android-process-1',
+      }),
+    ).toBe(
+      'http://example.test/api/external/sessions/EXTERNAL-1/messages?turnOriginId=android-process-1',
+    );
+  });
 });
 
 describe('ws external forwarding', () => {

@@ -32,6 +32,7 @@ final class AssistantVoiceEventParser {
                     requestId,
                     toolCallId,
                     toolName,
+                    "",
                     ""
                 );
             }
@@ -50,13 +51,15 @@ final class AssistantVoiceEventParser {
                 requestId,
                 toolCallId,
                 toolName,
-                text
+                text,
+                ""
             );
         }
 
         if ("assistant_done".equals(eventType)) {
             String phase = trim(findStringField(payloadJson, "phase", 0));
             String text = trim(findStringField(payloadJson, "text", 0));
+            String turnOriginId = trim(findStringField(payloadJson, "turnOriginId", 0));
             String responseId = trim(findStringField(eventJson, "responseId", 0));
             if (!text.isEmpty() && (phase.isEmpty() || "final_answer".equals(phase))) {
                 return new AssistantVoicePromptEvent(
@@ -65,7 +68,8 @@ final class AssistantVoiceEventParser {
                     requestId,
                     responseId,
                     "assistant_response",
-                    text
+                    text,
+                    turnOriginId
                 );
             }
         }

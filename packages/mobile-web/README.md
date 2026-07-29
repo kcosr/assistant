@@ -206,6 +206,12 @@ is still the fastest first pass.
   `voice_speak` and `voice_ask` remain append-only notifications with explicit `voiceMode`
   metadata. Auto-listen-capable items carry a server-generated session activity sequence so stale
   queued asks can be invalidated before recognition begins.
+- The Android-only `Only voice responses started on this device` setting is enabled by default.
+  Typed and spoken turns submitted from the current Android app process carry an ephemeral origin
+  identifier; automatic final-response TTS and Auto Listen run only when the reply carries the same
+  identifier. Restarting the app intentionally invalidates in-flight ownership. This filter does
+  not affect external notifications, `voice_speak`, `voice_ask`, or manual `Play` / microphone
+  actions, and it can be disabled to restore response behavior for turns started elsewhere.
 - Voice settings also include a `Read notification title before speech text` toggle. When enabled,
   notification playback prepends the notification title before the configured `ttsText` or body
   content using a spoken `Title: ...` join, which is especially useful for standalone CLI/HTTP/tool
@@ -222,6 +228,8 @@ is still the fastest first pass.
 - During TTS that has a pending Auto Listen follow-up, the promoted foreground notification shows
   `Skip` and `Stop`: `Skip` ends playback and advances into recognition, while `Stop` ends playback
   and suppresses that item's recognition transition without disabling Auto Listen globally.
+- The in-app floating speaker button and headset media button retain Skip behavior during TTS:
+  interrupting playback advances into the pending recognition follow-up instead of suppressing it.
 - Durable session-linked notifications expose `Play` and `Speak` actions both from the Android
   system notification shade and from the in-app Notifications panel cards. Manual actions
   reconstruct fresh local queue items from the stored notification, jump ahead of automatic work,

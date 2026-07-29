@@ -614,6 +614,14 @@ export function createPlugin(_options: PluginFactoryArgs): PluginModule {
           );
         }
 
+        const turnOriginId =
+          parsed['turnOriginId'] === undefined
+            ? undefined
+            : requireNonEmptyString(parsed['turnOriginId'], 'turnOriginId');
+        if (turnOriginId && turnOriginId.length > 128) {
+          throw new ToolError('invalid_arguments', 'turnOriginId must be at most 128 characters');
+        }
+
         let webhook:
           | {
               url: string;
@@ -659,6 +667,7 @@ export function createPlugin(_options: PluginFactoryArgs): PluginModule {
             timeoutSeconds,
             inputType,
             ...(durationMs !== undefined ? { durationMs } : {}),
+            ...(turnOriginId ? { turnOriginId } : {}),
             ...(webhook ? { webhook } : {}),
           },
           sessionIndex,

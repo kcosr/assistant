@@ -42,6 +42,8 @@ export interface TextInputControllerOptions {
   } | null;
   getActivePanelContextAttributes?: () => Record<string, string> | null;
   getSessionId: () => string | null;
+  getTurnOriginId?: () => string | null;
+  resolveTurnOriginId?: () => Promise<string | null>;
   ensureChatPanelForSession?: (sessionId: string) => void;
   getSocket: () => WebSocket | null;
   onBeforeSend: () => void;
@@ -56,6 +58,9 @@ export interface TextInputControllerOptions {
 }
 
 export class TextInputController {
+  private turnOriginHydrationComplete = false;
+  private turnOriginHydrationPending = false;
+
   private resizeObserver: ResizeObserver | null = null;
   private observedWidth: number | null = null;
 
@@ -161,6 +166,32 @@ export class TextInputController {
       });
       return;
     }
+    const turnOriginId = this.options.getTurnOriginId?.()?.trim() ?? '';
+    if (turnOriginId) {
+      this.turnOriginHydrationComplete = true;
+    }
+    if (!turnOriginId && this.options.resolveTurnOriginId && !this.turnOriginHydrationComplete) {
+      if (this.turnOriginHydrationPending) {
+        return;
+      }
+      this.turnOriginHydrationPending = true;
+      const inputValueBeforeHydration = this.options.inputEl.value;
+      void this.options
+        .resolveTurnOriginId()
+        .catch(() => null)
+        .then(() => {
+          this.turnOriginHydrationComplete = true;
+          this.turnOriginHydrationPending = false;
+          if (
+            this.options.getSessionId() !== sessionId ||
+            this.options.inputEl.value !== inputValueBeforeHydration
+          ) {
+            return;
+          }
+          this.sendUserText(rawText);
+        });
+      return;
+    }
 
     // User bubble is rendered by ChatRenderer when user_message event arrives
     // Show sidebar typing indicator while waiting for response
@@ -180,7 +211,9 @@ export class TextInputController {
       activeContextItemName: this.options.getActiveContextItemName(),
       activeContextItemDescription: this.options.getActiveContextItemDescription(),
       selectedItemIds: this.options.getSelectedItemIds(),
-      selectedItemTitles: this.options.getSelectedItemTitles ? this.options.getSelectedItemTitles() : [],
+      selectedItemTitles: this.options.getSelectedItemTitles
+        ? this.options.getSelectedItemTitles()
+        : [],
       contextAttributes: this.options.getActivePanelContextAttributes?.() ?? null,
       buildContextLine: this.options.buildContextLine,
     });
@@ -190,12 +223,12 @@ export class TextInputController {
       window.crypto && typeof window.crypto.randomUUID === 'function'
         ? window.crypto.randomUUID()
         : `msg_${Date.now().toString(36)}_${Math.random().toString(16).slice(2)}`;
-
     const message: ClientTextInputMessage = {
       type: 'text_input',
       text: textWithContext,
       clientMessageId,
       sessionId,
+      ...(turnOriginId ? { turnOriginId } : {}),
     };
 
     socket.send(JSON.stringify(message));

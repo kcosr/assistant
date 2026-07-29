@@ -1214,7 +1214,12 @@ describe('handleTextInputWithChatCompletions (pi)', () => {
     } as unknown as LogicalSessionState;
 
     await handleTextInputWithChatCompletions({
-      message: { type: 'text_input', text: 'Current request', sessionId: 's1' },
+      message: {
+        type: 'text_input',
+        text: 'Current request',
+        sessionId: 's1',
+        turnOriginId: 'android-process-1',
+      },
       state,
       sessionId: 's1',
       connection: {} as never,
@@ -1239,6 +1244,7 @@ describe('handleTextInputWithChatCompletions (pi)', () => {
         responseId: expect.any(String),
         text: 'Stored final answer',
         summary: expect.objectContaining({ revision: 104 }),
+        turnOriginId: 'android-process-1',
       }),
     );
     expect(recordSessionActivity.mock.invocationCallOrder[0]).toBeLessThan(

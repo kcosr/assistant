@@ -13,6 +13,7 @@ final class AssistantVoiceNotificationRecord {
     final String ttsText;
     final String sourceEventId;
     final Integer sessionActivitySeq;
+    final String turnOriginId;
 
     AssistantVoiceNotificationRecord(
         String id,
@@ -26,7 +27,8 @@ final class AssistantVoiceNotificationRecord {
         String voiceMode,
         String ttsText,
         String sourceEventId,
-        Integer sessionActivitySeq
+        Integer sessionActivitySeq,
+        String turnOriginId
     ) {
         this.id = trim(id);
         this.kind = trim(kind);
@@ -40,6 +42,7 @@ final class AssistantVoiceNotificationRecord {
         this.ttsText = trim(ttsText);
         this.sourceEventId = trim(sourceEventId);
         this.sessionActivitySeq = sessionActivitySeq;
+        this.turnOriginId = trim(turnOriginId);
     }
 
     boolean isUnread() {
@@ -52,6 +55,10 @@ final class AssistantVoiceNotificationRecord {
 
     boolean isSessionAttention() {
         return "session_attention".equals(kind);
+    }
+
+    boolean isAssistantResponseNotification() {
+        return isSessionAttention() && "system".equals(source);
     }
 
     String resolveSpokenText(boolean includeTitle) {

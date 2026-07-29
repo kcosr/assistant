@@ -183,6 +183,12 @@
             "minimum": 0,
             "description": "Required when inputType is \"audio\". Recognition duration in milliseconds for the spoken submit."
           },
+          "turnOriginId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "description": "Optional ephemeral client-process identifier copied to the resulting assistant response."
+          },
           "timeout": {
             "type": "number",
             "description": "Timeout in seconds for sync mode."

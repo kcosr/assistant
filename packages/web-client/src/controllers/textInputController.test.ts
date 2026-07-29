@@ -124,4 +124,98 @@ describe('TextInputController', () => {
     };
     expect(payload.text).toBe('<context panel-id="panel-1" />\nhello');
   });
+
+  it('tags typed submissions with the native turn origin when available', () => {
+    const { controller, socket } = createController({
+      getTurnOriginId: () => '  process-origin-1  ',
+    });
+
+    controller.sendUserText('hello');
+
+    const payload = JSON.parse(vi.mocked(socket.send).mock.calls[0]?.[0] as string) as {
+      turnOriginId?: string;
+    };
+    expect(payload.turnOriginId).toBe('process-origin-1');
+  });
+
+  it('omits an empty native turn origin', () => {
+    const { controller, socket } = createController({
+      getTurnOriginId: () => '   ',
+    });
+
+    controller.sendUserText('hello');
+
+    const payload = JSON.parse(vi.mocked(socket.send).mock.calls[0]?.[0] as string) as {
+      turnOriginId?: string;
+    };
+    expect(payload).not.toHaveProperty('turnOriginId');
+  });
+
+  it('waits for native origin hydration before sending a cold-start submission', async () => {
+    let turnOriginId: string | null = null;
+    let resolveHydration!: (value: string | null) => void;
+    const hydration = new Promise<string | null>((resolve) => {
+      resolveHydration = resolve;
+    });
+    const { controller, socket } = createController({
+      getTurnOriginId: () => turnOriginId,
+      resolveTurnOriginId: () => hydration,
+    });
+
+    controller.sendUserText('hello');
+    controller.sendUserText('hello');
+    expect(socket.send).not.toHaveBeenCalled();
+
+    turnOriginId = 'process-origin-1';
+    resolveHydration(turnOriginId);
+    await hydration;
+    await Promise.resolve();
+
+    expect(socket.send).toHaveBeenCalledTimes(1);
+    const payload = JSON.parse(vi.mocked(socket.send).mock.calls[0]?.[0] as string) as {
+      turnOriginId?: string;
+    };
+    expect(payload.turnOriginId).toBe('process-origin-1');
+  });
+
+  it('keeps a cold-start submission local when the session changes during hydration', async () => {
+    let sessionId = 'session-1';
+    let resolveHydration!: (value: string | null) => void;
+    const hydration = new Promise<string | null>((resolve) => {
+      resolveHydration = resolve;
+    });
+    const { controller, socket, inputEl } = createController({
+      getSessionId: () => sessionId,
+      getTurnOriginId: () => null,
+      resolveTurnOriginId: () => hydration,
+    });
+    inputEl.value = 'hello';
+
+    controller.sendUserText(inputEl.value);
+    sessionId = 'session-2';
+    inputEl.value = 'new draft';
+    resolveHydration(null);
+    await hydration;
+    await Promise.resolve();
+
+    expect(socket.send).not.toHaveBeenCalled();
+    expect(inputEl.value).toBe('new draft');
+  });
+
+  it('sends without an origin when native hydration completes without one', async () => {
+    const { controller, socket } = createController({
+      getTurnOriginId: () => null,
+      resolveTurnOriginId: async () => null,
+    });
+
+    controller.sendUserText('hello');
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(socket.send).toHaveBeenCalledTimes(1);
+    const payload = JSON.parse(vi.mocked(socket.send).mock.calls[0]?.[0] as string) as {
+      turnOriginId?: string;
+    };
+    expect(payload).not.toHaveProperty('turnOriginId');
+  });
 });

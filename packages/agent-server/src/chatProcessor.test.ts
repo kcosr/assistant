@@ -452,6 +452,7 @@ describe('processUserMessage stream event emission', () => {
       sessionId: 's1',
       state,
       text: 'hi',
+      turnOriginId: 'android-process-1',
       sessionHub,
       envConfig: {
         apiKey: 'test-api-key',
@@ -490,6 +491,9 @@ describe('processUserMessage stream event emission', () => {
     expect(chunkTexts).toEqual(['Hello', ' world']);
     const doneEvent = events.find((event) => event.type === 'assistant_done');
     expect(doneEvent?.payload?.text).toBe('Hello world');
+    expect(doneEvent?.type === 'assistant_done' ? doneEvent.payload.turnOriginId : undefined).toBe(
+      'android-process-1',
+    );
 
     expect(broadcast.some((message) => message.type === 'text_done')).toBe(true);
   });
@@ -1074,6 +1078,7 @@ describe('processUserMessage stream event emission', () => {
         sessionId: 's1',
         state,
         text: 'hi',
+        turnOriginId: 'android-process-1',
         sessionHub,
         envConfig: {
           apiKey: 'test-api-key',
@@ -1115,6 +1120,7 @@ describe('processUserMessage stream event emission', () => {
         sessionId: 's1',
         text: 'Final answer',
         summary: expect.objectContaining({ revision: 103 }),
+        turnOriginId: 'android-process-1',
       }),
     );
   });
