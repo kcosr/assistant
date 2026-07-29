@@ -8,6 +8,7 @@
 
 ### Added
 
+- Added promoted Android voice notifications with persistent Start/Stop controls and distinct Skip/Stop actions during TTS so users can either advance into Auto Listen or suppress that follow-up. ([#122](https://github.com/kcosr/assistant/pull/122))
 - Added native Pi steering for messages submitted during an active run, with silent context persistence and a transient client acknowledgement instead of Assistant-side queue rendering. ([#120](https://github.com/kcosr/assistant/pull/120))
 - Added a unified `interaction_end` tool for text and Realtime agents, including Android Auto Listen suppression for the completed turn when an agent ends the interaction. ([#118](https://github.com/kcosr/assistant/pull/118))
 - Added a Realtime mic mute toggle FAB stacked above the floating microphone control so uplink audio can be muted while keeping the duplex call active. ([#116](https://github.com/kcosr/assistant/pull/116))

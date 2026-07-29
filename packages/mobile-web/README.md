@@ -219,6 +219,9 @@ is still the fastest first pass.
   final response from the same request. The response can still play normally, but Auto Listen is
   suppressed afterward. The signal is request-scoped and does not disable later manual microphone
   starts or Auto Listen on subsequent turns.
+- During TTS that has a pending Auto Listen follow-up, the promoted foreground notification shows
+  `Skip` and `Stop`: `Skip` ends playback and advances into recognition, while `Stop` ends playback
+  and suppresses that item's recognition transition without disabling Auto Listen globally.
 - Durable session-linked notifications expose `Play` and `Speak` actions both from the Android
   system notification shade and from the in-app Notifications panel cards. Manual actions
   reconstruct fresh local queue items from the stored notification, jump ahead of automatic work,

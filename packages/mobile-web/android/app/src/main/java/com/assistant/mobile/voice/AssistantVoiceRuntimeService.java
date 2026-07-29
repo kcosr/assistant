@@ -59,6 +59,7 @@ public final class AssistantVoiceRuntimeService extends Service {
     static final String ACTION_APPLY_CONFIG = "com.assistant.mobile.voice.APPLY_CONFIG";
     static final String ACTION_STOP_SERVICE = "com.assistant.mobile.voice.STOP_SERVICE";
     static final String ACTION_STOP_CURRENT_INTERACTION = "com.assistant.mobile.voice.STOP_CURRENT_INTERACTION";
+    static final String ACTION_SKIP_CURRENT_PLAYBACK = "com.assistant.mobile.voice.SKIP_CURRENT_PLAYBACK";
     static final String ACTION_START_MANUAL_LISTEN = "com.assistant.mobile.voice.START_MANUAL_LISTEN";
     static final String ACTION_RETARGET_ACTIVE_RECOGNITION =
         "com.assistant.mobile.voice.RETARGET_ACTIVE_RECOGNITION";
@@ -234,6 +235,11 @@ public final class AssistantVoiceRuntimeService extends Service {
     public static Intent stopCurrentInteractionIntent(Context context) {
         return new Intent(context, AssistantVoiceRuntimeService.class)
             .setAction(ACTION_STOP_CURRENT_INTERACTION);
+    }
+
+    public static Intent skipCurrentPlaybackIntent(Context context) {
+        return new Intent(context, AssistantVoiceRuntimeService.class)
+            .setAction(ACTION_SKIP_CURRENT_PLAYBACK);
     }
 
     public static Intent startManualListenIntent(Context context, String sessionId) {
@@ -471,7 +477,12 @@ public final class AssistantVoiceRuntimeService extends Service {
         }
         if (ACTION_STOP_CURRENT_INTERACTION.equals(action)) {
             recordVoiceEvent("service_action_stop_current_interaction", null);
-            handleUserStopRequest("notification_stop");
+            handleUserStopAndSuppressRequest("notification_stop");
+            return START_STICKY;
+        }
+        if (ACTION_SKIP_CURRENT_PLAYBACK.equals(action)) {
+            recordVoiceEvent("service_action_skip_current_playback", null);
+            handleUserSkipRequest("notification_skip");
             return START_STICKY;
         }
         if (ACTION_START_MANUAL_LISTEN.equals(action)) {
@@ -803,7 +814,7 @@ public final class AssistantVoiceRuntimeService extends Service {
             Log.d(TAG, "handleMediaSessionStop ignored: media buttons disabled");
             return;
         }
-        handleUserStopRequest("media_button");
+        handleUserSkipRequest("media_button");
     }
 
     /**
@@ -824,14 +835,21 @@ public final class AssistantVoiceRuntimeService extends Service {
         startManualListen(sessionId == null ? "" : sessionId);
     }
 
-    /**
-     * Shared stop entry for headset media buttons and the notification Stop action.
-     */
-    private void handleUserStopRequest(String reason) {
+    private void handleUserSkipRequest(String reason) {
+        handleUserInteractionControl(true, reason);
+    }
+
+    private void handleUserStopAndSuppressRequest(String reason) {
+        handleUserInteractionControl(false, reason);
+    }
+
+    private void handleUserInteractionControl(boolean continueToRecognition, String reason) {
         Log.d(
             TAG,
-            "handleUserStopRequest reason="
+            "handleUserInteractionControl reason="
                 + safe(reason)
+                + " continueToRecognition="
+                + continueToRecognition
                 + " runtimeState="
                 + runtimeState
                 + " runtimeMode="
@@ -847,7 +865,20 @@ public final class AssistantVoiceRuntimeService extends Service {
             stopRealtimeCall(reason);
             return;
         }
-        stopCurrentInteraction(isPromptPlaybackActive(), "manual_stop");
+        stopCurrentInteraction(
+            shouldContinueToRecognitionAfterInteractionControl(
+                continueToRecognition,
+                isPromptPlaybackActive()
+            ),
+            "manual_stop"
+        );
+    }
+
+    static boolean shouldContinueToRecognitionAfterInteractionControl(
+        boolean continueRequested,
+        boolean promptPlaybackActive
+    ) {
+        return continueRequested && promptPlaybackActive;
     }
 
     private boolean isRealtimeMediaInteractionActive() {
@@ -1017,6 +1048,18 @@ public final class AssistantVoiceRuntimeService extends Service {
             launchIntent,
             PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT
         );
+        PendingIntent stopInteractionPendingIntent = PendingIntent.getService(
+            this,
+            2,
+            stopCurrentInteractionIntent(this),
+            PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT
+        );
+        PendingIntent skipPlaybackPendingIntent = PendingIntent.getService(
+            this,
+            5,
+            skipCurrentPlaybackIntent(this),
+            PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT
+        );
 
         // Realtime preference: Realtime chrome whether idle or in a call (not Thread speak/mode).
         // Exception: Thread SPEAKING/LISTENING (e.g. notification replay) still needs Stop chrome.
@@ -1033,18 +1076,12 @@ public final class AssistantVoiceRuntimeService extends Service {
                 PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT
             );
             if (callActive) {
-                PendingIntent endCallPendingIntent = PendingIntent.getService(
-                    this,
-                    5,
-                    stopRealtimeIntent(this),
-                    PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT
-                );
                 return buildRealtimeNotification(
                     this,
                     state,
                     launchPendingIntent,
                     muteTogglePendingIntent,
-                    endCallPendingIntent,
+                    stopInteractionPendingIntent,
                     null,
                     true,
                     mutedForUi
@@ -1075,12 +1112,6 @@ public final class AssistantVoiceRuntimeService extends Service {
             startManualListenIntent(this, null),
             PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT
         );
-        PendingIntent stopInteractionPendingIntent = PendingIntent.getService(
-            this,
-            2,
-            stopCurrentInteractionIntent(this),
-            PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT
-        );
         PendingIntent cycleAudioModePendingIntent = PendingIntent.getService(
             this,
             3,
@@ -1109,6 +1140,15 @@ public final class AssistantVoiceRuntimeService extends Service {
             !activeSttRequestId.isEmpty(),
             realtimeActive
         );
+        boolean showSkipAction =
+            isPromptPlaybackActive()
+                && !activeVoiceSessionId.isEmpty()
+                && (activeQueueItem != null
+                    ? activeQueueItem.startsListeningAfterPlayback()
+                    : AssistantVoiceInteractionRules.shouldStartRecognitionAfterPlayback(
+                        activePromptToolName,
+                        config.autoListenEnabled
+                    ));
         String notificationSessionTitle = resolveNotificationSessionTitle();
 
         return buildNotification(
@@ -1118,10 +1158,12 @@ public final class AssistantVoiceRuntimeService extends Service {
             launchPendingIntent,
             startListenPendingIntent,
             stopInteractionPendingIntent,
+            skipPlaybackPendingIntent,
             cycleAudioModePendingIntent,
             toggleMediaButtonsPendingIntent,
             showSpeakAction,
             showStopAction,
+            showSkipAction,
             displayedAudioMode,
             config.mediaButtonsEnabled
         );
@@ -1129,7 +1171,7 @@ public final class AssistantVoiceRuntimeService extends Service {
 
     /**
      * Realtime-mode foreground notification (preference is Realtime, not only while a call is live).
-     * Idle: Start call + Mute/Unmute (mute-on-start). Active: Mute/Unmute + End call.
+     * Idle: Start. Active: Stop.
      * Thread speak / audio-mode / media-button actions are omitted in this mode.
      */
     static Notification buildRealtimeNotification(
@@ -1137,45 +1179,60 @@ public final class AssistantVoiceRuntimeService extends Service {
         String state,
         PendingIntent launchPendingIntent,
         PendingIntent muteTogglePendingIntent,
-        PendingIntent endCallPendingIntent,
+        PendingIntent stopInteractionPendingIntent,
         PendingIntent startCallPendingIntent,
         boolean callActive,
         boolean muted
     ) {
+        String stateLabel = formatNotificationStateLabel(context, state, muted, true, callActive);
+        boolean showPromotedControl = callActive || startCallPendingIntent != null;
         NotificationCompat.Builder builder = new NotificationCompat.Builder(context, NOTIFICATION_CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_btn_speak_now)
             .setContentTitle(
-                context.getString(
-                    R.string.assistant_voice_notification_title,
-                    formatNotificationStateLabel(context, state, muted, true, callActive)
-                )
-            )
-            .setContentText(
-                context.getString(
-                    callActive
-                        ? (muted
-                            ? R.string.assistant_voice_notification_realtime_body_muted
-                            : R.string.assistant_voice_notification_realtime_body)
-                        : (muted
-                            ? R.string.assistant_voice_notification_realtime_body_muted
-                            : R.string.assistant_voice_notification_realtime_body_idle)
-                )
+                showPromotedControl
+                    ? stateLabel
+                    : context.getString(R.string.assistant_voice_notification_title, stateLabel)
             )
             .setContentIntent(launchPendingIntent)
             .setPriority(NOTIFICATION_PRIORITY)
             .setVisibility(NOTIFICATION_VISIBILITY)
             .setCategory(NOTIFICATION_CATEGORY)
+            .setOnlyAlertOnce(true)
             .setOngoing(true);
 
-        int compactCount = 0;
-        if (!callActive && startCallPendingIntent != null) {
+        if (callActive && stopInteractionPendingIntent != null) {
+            builder.addAction(
+                R.drawable.ic_notification_stop,
+                context.getString(R.string.assistant_voice_notification_action_stop),
+                stopInteractionPendingIntent
+            );
+            builder.setShortCriticalText(
+                context.getString(R.string.assistant_voice_notification_chip_text)
+            );
+            builder.setRequestPromotedOngoing(true);
+            return builder.build();
+        }
+
+        if (startCallPendingIntent != null) {
             builder.addAction(
                 android.R.drawable.ic_btn_speak_now,
-                context.getString(R.string.assistant_voice_notification_action_start_call),
+                context.getString(R.string.assistant_voice_notification_action_start),
                 startCallPendingIntent
             );
-            compactCount += 1;
+            builder.setShortCriticalText(
+                context.getString(R.string.assistant_voice_notification_chip_text)
+            );
+            builder.setRequestPromotedOngoing(true);
+            return builder.build();
         }
+
+        builder.setContentText(
+            context.getString(
+                muted
+                    ? R.string.assistant_voice_notification_realtime_body_muted
+                    : R.string.assistant_voice_notification_realtime_body_idle
+            )
+        );
         // Icon reflects current state (muted → mic-off), matching the in-app mute FAB.
         // Label still describes the action taken on tap (Mute / Unmute).
         builder.addAction(
@@ -1187,20 +1244,7 @@ public final class AssistantVoiceRuntimeService extends Service {
             ),
             muteTogglePendingIntent
         );
-        compactCount += 1;
-        if (callActive && endCallPendingIntent != null) {
-            builder.addAction(
-                R.drawable.ic_notification_stop,
-                context.getString(R.string.assistant_voice_notification_action_end_call),
-                endCallPendingIntent
-            );
-            compactCount += 1;
-        }
-        builder.setStyle(
-            compactCount >= 3
-                ? new MediaStyle().setShowActionsInCompactView(0, 1, 2)
-                : new MediaStyle().setShowActionsInCompactView(0, 1)
-        );
+        builder.setStyle(new MediaStyle().setShowActionsInCompactView(0));
         return builder.build();
     }
 
@@ -1211,46 +1255,66 @@ public final class AssistantVoiceRuntimeService extends Service {
         PendingIntent launchPendingIntent,
         PendingIntent startListenPendingIntent,
         PendingIntent stopInteractionPendingIntent,
+        PendingIntent skipPlaybackPendingIntent,
         PendingIntent cycleAudioModePendingIntent,
         PendingIntent toggleMediaButtonsPendingIntent,
         boolean showSpeakAction,
         boolean showStopAction,
+        boolean showSkipAction,
         String audioMode,
         boolean mediaButtonsEnabled
     ) {
+        String stateLabel = formatNotificationStateLabel(context, state);
+        boolean showPromotedControl = showStopAction || showSpeakAction;
         NotificationCompat.Builder builder = new NotificationCompat.Builder(context, NOTIFICATION_CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_btn_speak_now)
             .setContentTitle(
-                context.getString(
-                    R.string.assistant_voice_notification_title,
-                    formatNotificationStateLabel(context, state)
-                )
+                showPromotedControl
+                    ? stateLabel
+                    : context.getString(R.string.assistant_voice_notification_title, stateLabel)
             )
             .setContentIntent(launchPendingIntent)
             .setPriority(NOTIFICATION_PRIORITY)
             .setVisibility(NOTIFICATION_VISIBILITY)
             .setCategory(NOTIFICATION_CATEGORY)
+            .setOnlyAlertOnce(true)
             .setOngoing(true);
         String normalizedSessionTitle = trim(sessionTitle);
-        if (!normalizedSessionTitle.isEmpty()) {
+        if (!showPromotedControl && !normalizedSessionTitle.isEmpty()) {
             builder.setContentText(normalizedSessionTitle);
         }
         String displayedAudioMode = resolveDisplayedNotificationAudioMode(state, audioMode);
         int compactActionCount = 0;
         if (showStopAction) {
+            if (showSkipAction) {
+                builder.addAction(
+                    R.drawable.ic_notification_skip,
+                    context.getString(R.string.assistant_voice_notification_action_skip),
+                    skipPlaybackPendingIntent
+                );
+            }
             builder.addAction(
                 R.drawable.ic_notification_stop,
                 context.getString(R.string.assistant_voice_notification_action_stop),
                 stopInteractionPendingIntent
             );
-            compactActionCount += 1;
-        } else if (showSpeakAction) {
+            builder.setShortCriticalText(
+                context.getString(R.string.assistant_voice_notification_chip_text)
+            );
+            builder.setRequestPromotedOngoing(true);
+            return builder.build();
+        }
+        if (showSpeakAction) {
             builder.addAction(
                 android.R.drawable.ic_btn_speak_now,
-                context.getString(R.string.assistant_voice_notification_action_speak),
+                context.getString(R.string.assistant_voice_notification_action_start),
                 startListenPendingIntent
             );
-            compactActionCount += 1;
+            builder.setShortCriticalText(
+                context.getString(R.string.assistant_voice_notification_chip_text)
+            );
+            builder.setRequestPromotedOngoing(true);
+            return builder.build();
         }
         builder.addAction(
             resolveNotificationMediaButtonsActionIcon(mediaButtonsEnabled),
