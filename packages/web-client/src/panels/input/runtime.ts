@@ -33,6 +33,8 @@ export interface InputRuntimeOptions {
   elements: InputRuntimeElements;
   getChatRuntime?: () => ChatRuntime | null;
   getSelectedSessionId: () => string | null;
+  getTurnOriginId?: () => string | null;
+  resolveTurnOriginId?: () => Promise<string | null>;
   getChatRuntimeForSession: (sessionId: string) => ChatRuntime | null;
   getSocket: () => WebSocket | null;
   setStatus: (text: string) => void;
@@ -73,6 +75,7 @@ export interface InputRuntimeOptions {
   cancelQueuedMessage: (messageId: string) => void;
   audioModeSelectEl: HTMLSelectElement;
   autoListenCheckboxEl: HTMLInputElement;
+  localResponseVoiceOnlyCheckboxEl: HTMLInputElement;
   standaloneNotificationPlaybackCheckboxEl: HTMLInputElement;
   notificationTitlePlaybackCheckboxEl: HTMLInputElement;
   voiceAdapterBaseUrlInputEl: HTMLInputElement;
@@ -239,6 +242,8 @@ export function createInputRuntime(options: InputRuntimeOptions): InputRuntime {
       ? { getActivePanelContextAttributes: options.getActivePanelContextAttributes }
       : {}),
     getSessionId: options.getSelectedSessionId,
+    ...(options.getTurnOriginId ? { getTurnOriginId: options.getTurnOriginId } : {}),
+    ...(options.resolveTurnOriginId ? { resolveTurnOriginId: options.resolveTurnOriginId } : {}),
     getSocket: options.getSocket,
     onBeforeSend: () => {
       // Native voice is app-global on Android, so a typed send in another panel
@@ -338,6 +343,7 @@ export function createInputRuntime(options: InputRuntimeOptions): InputRuntime {
     micButtonEl: elements.micButtonEl,
     audioModeSelectEl: options.audioModeSelectEl,
     autoListenCheckboxEl: options.autoListenCheckboxEl,
+    localResponseVoiceOnlyCheckboxEl: options.localResponseVoiceOnlyCheckboxEl,
     standaloneNotificationPlaybackCheckboxEl: options.standaloneNotificationPlaybackCheckboxEl,
     notificationTitlePlaybackCheckboxEl: options.notificationTitlePlaybackCheckboxEl,
     voiceAdapterBaseUrlInputEl: options.voiceAdapterBaseUrlInputEl,

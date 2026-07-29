@@ -7,15 +7,17 @@ final class AssistantVoicePromptEvent {
     final String toolCallId;
     final String toolName;
     final String text;
+    final String turnOriginId;
 
     AssistantVoicePromptEvent(
         String eventId,
         String sessionId,
         String toolCallId,
         String toolName,
-        String text
+        String text,
+        String turnOriginId
     ) {
-        this(eventId, sessionId, "", toolCallId, toolName, text);
+        this(eventId, sessionId, "", toolCallId, toolName, text, turnOriginId);
     }
 
     AssistantVoicePromptEvent(
@@ -24,7 +26,8 @@ final class AssistantVoicePromptEvent {
         String requestId,
         String toolCallId,
         String toolName,
-        String text
+        String text,
+        String turnOriginId
     ) {
         this.eventId = eventId;
         this.sessionId = sessionId;
@@ -32,6 +35,7 @@ final class AssistantVoicePromptEvent {
         this.toolCallId = toolCallId;
         this.toolName = toolName;
         this.text = text;
+        this.turnOriginId = trim(turnOriginId);
     }
 
     boolean isToolPrompt() {
@@ -48,5 +52,9 @@ final class AssistantVoicePromptEvent {
 
     boolean startsListeningAfterPlayback() {
         return "voice_ask".equals(toolName);
+    }
+
+    private static String trim(String value) {
+        return value == null ? "" : value.trim();
     }
 }

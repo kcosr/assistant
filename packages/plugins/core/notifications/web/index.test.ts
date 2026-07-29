@@ -48,6 +48,7 @@ describe('notifications panel', () => {
       ttsText: null,
       sourceEventId: null,
       sessionActivitySeq: null,
+      turnOriginId: null,
       ...overrides,
     };
   }

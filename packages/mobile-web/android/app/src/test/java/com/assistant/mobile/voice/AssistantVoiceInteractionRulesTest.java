@@ -14,20 +14,122 @@ public final class AssistantVoiceInteractionRulesTest {
     }
 
     @Test
+    public void localResponseFilterRequiresMatchingNonEmptyOriginWhenEnabled() {
+        assertTrue(AssistantVoiceInteractionRules.shouldAdmitAutomaticResponse(
+            true,
+            "android-process-1",
+            "android-process-1"
+        ));
+        assertFalse(AssistantVoiceInteractionRules.shouldAdmitAutomaticResponse(
+            true,
+            "android-process-1",
+            "android-process-2"
+        ));
+        assertFalse(AssistantVoiceInteractionRules.shouldAdmitAutomaticResponse(
+            true,
+            "android-process-1",
+            ""
+        ));
+        assertTrue(AssistantVoiceInteractionRules.shouldAdmitAutomaticResponse(
+            false,
+            "android-process-1",
+            "android-process-2"
+        ));
+    }
+
+    @Test
+    public void identifiesOnlySystemSessionAttentionAsAssistantResponseNotification() {
+        AssistantVoiceNotificationRecord responseNotification =
+            new AssistantVoiceNotificationRecord(
+                "response",
+                "session_attention",
+                "system",
+                "Latest reply",
+                "Answer",
+                "",
+                "session-1",
+                "Session",
+                "speak_then_listen",
+                "",
+                "event-1",
+                1,
+                "android-process-1"
+            );
+        AssistantVoiceNotificationRecord externalNotification =
+            new AssistantVoiceNotificationRecord(
+                "external",
+                "notification",
+                "system",
+                "Reminder",
+                "External event",
+                "",
+                "",
+                "",
+                "speak",
+                "",
+                "",
+                null,
+                ""
+            );
+        AssistantVoiceNotificationRecord toolSessionAttention =
+            new AssistantVoiceNotificationRecord(
+                "tool",
+                "session_attention",
+                "tool",
+                "Prompt",
+                "Tool event",
+                "",
+                "session-1",
+                "Session",
+                "speak",
+                "",
+                "event-2",
+                2,
+                ""
+            );
+
+        assertTrue(responseNotification.isAssistantResponseNotification());
+        assertFalse(externalNotification.isAssistantResponseNotification());
+        assertFalse(toolSessionAttention.isAssistantResponseNotification());
+        assertFalse(AssistantVoiceInteractionRules.shouldAdmitAutomaticNotification(
+            true,
+            "this-device",
+            responseNotification
+        ));
+        assertTrue(AssistantVoiceInteractionRules.shouldAdmitAutomaticNotification(
+            true,
+            "this-device",
+            externalNotification
+        ));
+        assertTrue(AssistantVoiceInteractionRules.shouldAdmitAutomaticNotification(
+            true,
+            "this-device",
+            toolSessionAttention
+        ));
+        assertTrue(AssistantVoiceInteractionRules.shouldAdmitAutomaticNotification(
+            false,
+            "this-device",
+            responseNotification
+        ));
+    }
+
+    @Test
     public void autoplaysOnlyMatchingEventKindsWhileIdle() {
         AssistantVoicePromptEvent toolPrompt = new AssistantVoicePromptEvent(
             "event-1",
             "session-1",
             "call-1",
             "voice_ask",
-            "Question?"
+            "Question?",
+            ""
         );
         AssistantVoicePromptEvent assistantResponse = new AssistantVoicePromptEvent(
             "event-2",
             "session-1",
             "",
             "assistant_response",
-            "Answer"
+            "Answer",
+            ""
         );
 
         assertTrue(AssistantVoiceInteractionRules.shouldAutoplayEvent(
@@ -59,14 +161,16 @@ public final class AssistantVoiceInteractionRulesTest {
             "session-1",
             "call-1",
             "voice_ask",
-            "Question?"
+            "Question?",
+            ""
         );
         AssistantVoicePromptEvent assistantResponse = new AssistantVoicePromptEvent(
             "event-2",
             "session-1",
             "",
             "assistant_response",
-            "Answer"
+            "Answer",
+            ""
         );
 
         assertFalse(AssistantVoiceInteractionRules.shouldAutoplayEvent(
@@ -95,7 +199,8 @@ public final class AssistantVoiceInteractionRulesTest {
             "speak_then_listen",
             "",
             "event-1",
-            4
+            4,
+            ""
         );
         AssistantVoiceNotificationRecord toolNotification = new AssistantVoiceNotificationRecord(
             "notif-tool",
@@ -109,7 +214,8 @@ public final class AssistantVoiceInteractionRulesTest {
             "speak_then_listen",
             "",
             "event-2",
-            5
+            5,
+            ""
         );
 
         assertFalse(AssistantVoiceInteractionRules.shouldAutoplayNotification(
@@ -192,14 +298,16 @@ public final class AssistantVoiceInteractionRulesTest {
             "session-1",
             "response-1",
             "assistant_response",
-            "Answer"
+            "Answer",
+            ""
         );
         AssistantVoicePromptEvent toolPrompt = new AssistantVoicePromptEvent(
             "event-2",
             "session-1",
             "call-1",
             "voice_ask",
-            "Question?"
+            "Question?",
+            ""
         );
 
         assertTrue(AssistantVoiceInteractionRules.shouldAutoListenAfterManualAssistantMessage(
@@ -248,7 +356,8 @@ public final class AssistantVoiceInteractionRulesTest {
             "speak_then_listen",
             "",
             "event-1",
-            4
+            4,
+            ""
         );
         AssistantVoiceNotificationRecord readResponseNotification = new AssistantVoiceNotificationRecord(
             "notif-read",
@@ -262,7 +371,8 @@ public final class AssistantVoiceInteractionRulesTest {
             "speak_then_listen",
             "",
             "event-2",
-            5
+            5,
+            ""
         );
         AssistantVoiceNotificationRecord sessionlessNotification = new AssistantVoiceNotificationRecord(
             "notif-sessionless",
@@ -276,7 +386,8 @@ public final class AssistantVoiceInteractionRulesTest {
             "speak_then_listen",
             "",
             "event-3",
-            null
+            null,
+            ""
         );
 
         assertTrue(AssistantVoiceInteractionRules.shouldAutoListenAfterManualAssistantNotification(
@@ -320,7 +431,8 @@ public final class AssistantVoiceInteractionRulesTest {
             "speak_then_listen",
             "",
             "event-1",
-            4
+            4,
+            ""
         );
         AssistantVoiceNotificationRecord toolNotification = new AssistantVoiceNotificationRecord(
             "notif-tool",
@@ -334,7 +446,8 @@ public final class AssistantVoiceInteractionRulesTest {
             "speak_then_listen",
             "",
             "event-2",
-            5
+            5,
+            ""
         );
         AssistantVoiceNotificationRecord readToolNotification = new AssistantVoiceNotificationRecord(
             "notif-read",
@@ -348,7 +461,8 @@ public final class AssistantVoiceInteractionRulesTest {
             "speak",
             "",
             "event-3",
-            6
+            6,
+            ""
         );
 
         assertTrue(AssistantVoiceInteractionRules.shouldAutoplayNotification(

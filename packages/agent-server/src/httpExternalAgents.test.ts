@@ -2,7 +2,7 @@ import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
 
-import { afterAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { ChatEvent, CombinedPluginManifest, ServerMessage } from '@assistant/shared';
 
 import { AgentRegistry } from './agents';
@@ -13,6 +13,11 @@ import type { ToolHost } from './tools';
 import type { EventStore } from './events';
 import manifestJson from '../../plugins/core/sessions/manifest.json';
 import { createPlugin as createSessionsPlugin } from '../../plugins/core/sessions/server';
+import {
+  getNotificationsStore,
+  initializeNotificationsService,
+  shutdownNotificationsService,
+} from '../../plugins/core/notifications/server/service';
 
 function createTempFile(prefix: string): string {
   return path.join(os.tmpdir(), `${prefix}-${Date.now()}-${Math.random().toString(16)}.jsonl`);
@@ -209,10 +214,15 @@ async function httpRequest(
 describe('external agents HTTP endpoints', () => {
   const servers: http.Server[] = [];
 
+  beforeAll(() => {
+    initializeNotificationsService(createTempDir('http-external-notifications'));
+  });
+
   afterAll(async () => {
     for (const server of servers) {
       await new Promise<void>((resolve) => server.close(() => resolve()));
     }
+    shutdownNotificationsService();
   });
 
   it('requires sessionId for external agents and validates format', async () => {
@@ -398,7 +408,7 @@ describe('external agents HTTP endpoints', () => {
       method: 'POST',
       hostname: '127.0.0.1',
       port,
-      path: '/external/sessions/EXTERNAL-REUSE/messages',
+      path: '/external/sessions/EXTERNAL-REUSE/messages?turnOriginId=android-process-1',
       headers: { 'Content-Type': 'text/plain' },
       body: 'Hello *world*',
     });
@@ -412,6 +422,18 @@ describe('external agents HTTP endpoints', () => {
         (event as { payload?: { text?: string } }).payload?.text === 'Hello *world*',
     );
     expect(assistantDone).toBeTruthy();
+    expect(
+      assistantDone?.type === 'assistant_done' ? assistantDone.payload.turnOriginId : undefined,
+    ).toBe('android-process-1');
+    const notification = (await getNotificationsStore().list()).notifications.find(
+      (entry) => entry.sessionId === 'EXTERNAL-REUSE',
+    );
+    expect(notification).toMatchObject({
+      kind: 'session_attention',
+      source: 'system',
+      sourceEventId: expect.any(String),
+      turnOriginId: 'android-process-1',
+    });
 
     const broadcastMessages = sessionHub.broadcasts
       .filter((entry) => entry.sessionId === 'EXTERNAL-REUSE')

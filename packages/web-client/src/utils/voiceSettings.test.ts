@@ -24,8 +24,13 @@ describe('voiceSettings', () => {
     expect(createDefaultVoiceSettings().startupPreRollMs).toBe(512);
     expect(createDefaultVoiceSettings().standaloneNotificationPlaybackEnabled).toBe(false);
     expect(createDefaultVoiceSettings().notificationTitlePlaybackEnabled).toBe(false);
+    expect(createDefaultVoiceSettings().localResponseVoiceOnlyEnabled).toBe(false);
     expect(
-      createDefaultVoiceSettings({ isCapacitorAndroid: true }).standaloneNotificationPlaybackEnabled,
+      createDefaultVoiceSettings({ isCapacitorAndroid: true })
+        .standaloneNotificationPlaybackEnabled,
+    ).toBe(true);
+    expect(
+      createDefaultVoiceSettings({ isCapacitorAndroid: true }).localResponseVoiceOnlyEnabled,
     ).toBe(true);
   });
 
@@ -69,8 +74,9 @@ describe('voiceSettings', () => {
   });
 
   it('preserves the recognize stop command setting', () => {
-    expect(normalizeVoiceSettings({ recognizeStopCommandEnabled: false }).recognizeStopCommandEnabled)
-      .toBe(false);
+    expect(
+      normalizeVoiceSettings({ recognizeStopCommandEnabled: false }).recognizeStopCommandEnabled,
+    ).toBe(false);
   });
 
   it('preserves the standalone notification playback setting', () => {
@@ -81,6 +87,17 @@ describe('voiceSettings', () => {
           isCapacitorAndroid: true,
         },
       ).standaloneNotificationPlaybackEnabled,
+    ).toBe(false);
+  });
+
+  it('preserves the local response voice-only setting', () => {
+    expect(
+      normalizeVoiceSettings(
+        { localResponseVoiceOnlyEnabled: false },
+        {
+          isCapacitorAndroid: true,
+        },
+      ).localResponseVoiceOnlyEnabled,
     ).toBe(false);
   });
 

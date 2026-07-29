@@ -28,6 +28,7 @@ interface NotificationRecord {
   ttsText: string | null;
   sourceEventId: string | null;
   sessionActivitySeq: number | null;
+  turnOriginId: string | null;
 }
 
 type SessionSummary = SessionLabelSummary & {

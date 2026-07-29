@@ -48,6 +48,7 @@ describe('handleChatOutputCancel', () => {
       activeChatRun: {
         responseId,
         turnId: 'turn-1',
+        turnOriginId: 'android-process-1',
         abortController,
         accumulatedText: 'Partial answer',
         activeToolCalls: new Map([
@@ -96,6 +97,7 @@ describe('handleChatOutputCancel', () => {
     expect(assistantEvent?.payload).toMatchObject({
       text: 'Partial answer',
       interrupted: true,
+      turnOriginId: 'android-process-1',
     });
     const toolEvents = events.filter((event) => event.type === 'tool_result');
     const toolEventIds = toolEvents.map((event) => event.payload?.toolCallId).sort();

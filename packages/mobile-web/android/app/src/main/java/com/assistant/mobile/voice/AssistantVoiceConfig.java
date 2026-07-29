@@ -24,6 +24,7 @@ final class AssistantVoiceConfig {
     static final String RUNTIME_MODE_THREAD = "thread";
     static final String RUNTIME_MODE_REALTIME = "realtime";
     static final String DEFAULT_RUNTIME_MODE = RUNTIME_MODE_THREAD;
+    static final boolean DEFAULT_LOCAL_RESPONSE_VOICE_ONLY_ENABLED = true;
     static final int DEFAULT_RECOGNITION_START_TIMEOUT_MS = 30000;
     static final int DEFAULT_RECOGNITION_COMPLETION_TIMEOUT_MS = 60000;
     static final int DEFAULT_RECOGNITION_END_SILENCE_MS = 1200;
@@ -51,6 +52,8 @@ final class AssistantVoiceConfig {
     private static final String KEY_AUDIO_MODE = "audio_mode";
     private static final String KEY_RUNTIME_MODE = "voice_runtime_mode";
     private static final String KEY_AUTO_LISTEN_ENABLED = "auto_listen_enabled";
+    private static final String KEY_LOCAL_RESPONSE_VOICE_ONLY_ENABLED =
+        "local_response_voice_only_enabled";
     private static final String KEY_RECOGNITION_START_TIMEOUT_MS = "recognition_start_timeout_ms";
     private static final String KEY_RECOGNITION_COMPLETION_TIMEOUT_MS = "recognition_completion_timeout_ms";
     private static final String KEY_RECOGNITION_END_SILENCE_MS = "recognition_end_silence_ms";
@@ -88,6 +91,8 @@ final class AssistantVoiceConfig {
     static final String EXTRA_AUDIO_MODE = "audioMode";
     static final String EXTRA_RUNTIME_MODE = "voiceRuntimeMode";
     static final String EXTRA_AUTO_LISTEN_ENABLED = "autoListenEnabled";
+    static final String EXTRA_LOCAL_RESPONSE_VOICE_ONLY_ENABLED =
+        "localResponseVoiceOnlyEnabled";
     static final String EXTRA_SELECTED_MIC_DEVICE_ID = "selectedMicDeviceId";
     static final String EXTRA_RECOGNITION_START_TIMEOUT_MS = "recognitionStartTimeoutMs";
     static final String EXTRA_RECOGNITION_COMPLETION_TIMEOUT_MS = "recognitionCompletionTimeoutMs";
@@ -119,6 +124,7 @@ final class AssistantVoiceConfig {
     final String audioMode;
     final String voiceRuntimeMode;
     final boolean autoListenEnabled;
+    final boolean localResponseVoiceOnlyEnabled;
     final String selectedMicDeviceId;
     final int recognitionStartTimeoutMs;
     final int recognitionCompletionTimeoutMs;
@@ -150,6 +156,7 @@ final class AssistantVoiceConfig {
         String audioMode,
         String voiceRuntimeMode,
         boolean autoListenEnabled,
+        boolean localResponseVoiceOnlyEnabled,
         String selectedMicDeviceId,
         int recognitionStartTimeoutMs,
         int recognitionCompletionTimeoutMs,
@@ -180,6 +187,7 @@ final class AssistantVoiceConfig {
         this.audioMode = normalizeAudioMode(audioMode);
         this.voiceRuntimeMode = AssistantVoiceControllerPolicy.normalizeRuntimeMode(voiceRuntimeMode);
         this.autoListenEnabled = autoListenEnabled;
+        this.localResponseVoiceOnlyEnabled = localResponseVoiceOnlyEnabled;
         this.selectedMicDeviceId = normalizeOptional(selectedMicDeviceId);
         this.recognitionStartTimeoutMs = normalizePositiveInt(
             recognitionStartTimeoutMs,
@@ -238,6 +246,10 @@ final class AssistantVoiceConfig {
             prefs.getString(KEY_AUDIO_MODE, DEFAULT_AUDIO_MODE),
             prefs.getString(KEY_RUNTIME_MODE, DEFAULT_RUNTIME_MODE),
             prefs.getBoolean(KEY_AUTO_LISTEN_ENABLED, true),
+            prefs.getBoolean(
+                KEY_LOCAL_RESPONSE_VOICE_ONLY_ENABLED,
+                DEFAULT_LOCAL_RESPONSE_VOICE_ONLY_ENABLED
+            ),
             prefs.getString(KEY_SELECTED_MIC_DEVICE_ID, null),
             prefs.getInt(KEY_RECOGNITION_START_TIMEOUT_MS, DEFAULT_RECOGNITION_START_TIMEOUT_MS),
             prefs.getInt(
@@ -285,6 +297,10 @@ final class AssistantVoiceConfig {
             .putString(KEY_AUDIO_MODE, config.audioMode)
             .putString(KEY_RUNTIME_MODE, config.voiceRuntimeMode)
             .putBoolean(KEY_AUTO_LISTEN_ENABLED, config.autoListenEnabled)
+            .putBoolean(
+                KEY_LOCAL_RESPONSE_VOICE_ONLY_ENABLED,
+                config.localResponseVoiceOnlyEnabled
+            )
             .putString(KEY_SELECTED_MIC_DEVICE_ID, emptyToNull(config.selectedMicDeviceId))
             .putInt(KEY_RECOGNITION_START_TIMEOUT_MS, config.recognitionStartTimeoutMs)
             .putInt(KEY_RECOGNITION_COMPLETION_TIMEOUT_MS, config.recognitionCompletionTimeoutMs)
@@ -335,6 +351,10 @@ final class AssistantVoiceConfig {
                 ? intent.getStringExtra(EXTRA_RUNTIME_MODE)
                 : fallback.voiceRuntimeMode,
             intent.getBooleanExtra(EXTRA_AUTO_LISTEN_ENABLED, fallback.autoListenEnabled),
+            intent.getBooleanExtra(
+                EXTRA_LOCAL_RESPONSE_VOICE_ONLY_ENABLED,
+                fallback.localResponseVoiceOnlyEnabled
+            ),
             intent.hasExtra(EXTRA_SELECTED_MIC_DEVICE_ID)
                 ? intent.getStringExtra(EXTRA_SELECTED_MIC_DEVICE_ID)
                 : fallback.selectedMicDeviceId,
@@ -415,6 +435,10 @@ final class AssistantVoiceConfig {
         intent.putExtra(EXTRA_AUDIO_MODE, audioMode);
         intent.putExtra(EXTRA_RUNTIME_MODE, voiceRuntimeMode);
         intent.putExtra(EXTRA_AUTO_LISTEN_ENABLED, autoListenEnabled);
+        intent.putExtra(
+            EXTRA_LOCAL_RESPONSE_VOICE_ONLY_ENABLED,
+            localResponseVoiceOnlyEnabled
+        );
         intent.putExtra(EXTRA_SELECTED_MIC_DEVICE_ID, emptyToNull(selectedMicDeviceId));
         intent.putExtra(EXTRA_RECOGNITION_START_TIMEOUT_MS, recognitionStartTimeoutMs);
         intent.putExtra(EXTRA_RECOGNITION_COMPLETION_TIMEOUT_MS, recognitionCompletionTimeoutMs);
@@ -605,6 +629,7 @@ final class AssistantVoiceConfig {
             audioMode,
             voiceRuntimeMode,
             autoListenEnabled,
+            localResponseVoiceOnlyEnabled,
             selectedMicDeviceId,
             recognitionStartTimeoutMs,
             recognitionCompletionTimeoutMs,
@@ -643,6 +668,7 @@ final class AssistantVoiceConfig {
             audioMode,
             voiceRuntimeMode,
             autoListenEnabled,
+            localResponseVoiceOnlyEnabled,
             selectedMicDeviceId,
             recognitionStartTimeoutMs,
             recognitionCompletionTimeoutMs,
@@ -688,6 +714,7 @@ final class AssistantVoiceConfig {
         return Objects.equals(audioMode, config.audioMode)
             && Objects.equals(voiceRuntimeMode, config.voiceRuntimeMode)
             && autoListenEnabled == config.autoListenEnabled
+            && localResponseVoiceOnlyEnabled == config.localResponseVoiceOnlyEnabled
             && Objects.equals(selectedMicDeviceId, config.selectedMicDeviceId)
             && recognitionStartTimeoutMs == config.recognitionStartTimeoutMs
             && recognitionCompletionTimeoutMs == config.recognitionCompletionTimeoutMs
@@ -722,6 +749,7 @@ final class AssistantVoiceConfig {
             audioMode,
             voiceRuntimeMode,
             autoListenEnabled,
+            localResponseVoiceOnlyEnabled,
             selectedMicDeviceId,
             recognitionStartTimeoutMs,
             recognitionCompletionTimeoutMs,
@@ -763,6 +791,10 @@ final class AssistantVoiceConfig {
             settings.optString("audioMode", audioMode),
             settings.optString("voiceRuntimeMode", voiceRuntimeMode),
             settings.optBoolean("autoListenEnabled", autoListenEnabled),
+            settings.optBoolean(
+                "localResponseVoiceOnlyEnabled",
+                localResponseVoiceOnlyEnabled
+            ),
             settings.optString("selectedMicDeviceId", selectedMicDeviceId),
             settings.optInt("recognitionStartTimeoutMs", recognitionStartTimeoutMs),
             settings.optInt("recognitionCompletionTimeoutMs", recognitionCompletionTimeoutMs),
@@ -806,6 +838,7 @@ final class AssistantVoiceConfig {
             audioMode,
             voiceRuntimeMode,
             autoListenEnabled,
+            localResponseVoiceOnlyEnabled,
             selectedMicDeviceId,
             recognitionStartTimeoutMs,
             recognitionCompletionTimeoutMs,
@@ -844,6 +877,7 @@ final class AssistantVoiceConfig {
             audioMode,
             voiceRuntimeMode,
             autoListenEnabled,
+            localResponseVoiceOnlyEnabled,
             selectedMicDeviceId,
             recognitionStartTimeoutMs,
             recognitionCompletionTimeoutMs,
@@ -882,6 +916,7 @@ final class AssistantVoiceConfig {
             audioMode,
             voiceRuntimeMode,
             autoListenEnabled,
+            localResponseVoiceOnlyEnabled,
             selectedMicDeviceId,
             recognitionStartTimeoutMs,
             recognitionCompletionTimeoutMs,
@@ -920,6 +955,7 @@ final class AssistantVoiceConfig {
             audioMode,
             voiceRuntimeMode,
             autoListenEnabled,
+            localResponseVoiceOnlyEnabled,
             selectedMicDeviceId,
             recognitionStartTimeoutMs,
             recognitionCompletionTimeoutMs,
@@ -958,6 +994,7 @@ final class AssistantVoiceConfig {
             audioMode,
             voiceRuntimeMode,
             autoListenEnabled,
+            localResponseVoiceOnlyEnabled,
             selectedMicDeviceId,
             recognitionStartTimeoutMs,
             recognitionCompletionTimeoutMs,
@@ -996,6 +1033,7 @@ final class AssistantVoiceConfig {
             mode,
             voiceRuntimeMode,
             autoListenEnabled,
+            localResponseVoiceOnlyEnabled,
             selectedMicDeviceId,
             recognitionStartTimeoutMs,
             recognitionCompletionTimeoutMs,
@@ -1034,6 +1072,7 @@ final class AssistantVoiceConfig {
             audioMode,
             voiceRuntimeMode,
             autoListenEnabled,
+            localResponseVoiceOnlyEnabled,
             selectedMicDeviceId,
             recognitionStartTimeoutMs,
             recognitionCompletionTimeoutMs,

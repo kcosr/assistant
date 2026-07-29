@@ -65,6 +65,9 @@ Native should only auto-admit a notification-backed voice item when all of the f
   - append-only session-linked notifications for `Tool`
   - non-`session_attention` standalone notifications for `Manual` when standalone notification
     playback is enabled
+- for response-generated `session_attention` items, either
+  `localResponseVoiceOnlyEnabled` is disabled or the response `turnOriginId` exactly matches the
+  current Android process identifier
 - the runtime is already alive and connected
 
 If native is already speaking or listening:
@@ -132,6 +135,13 @@ For any item that could transition into recognition:
 
 - when `Audio Mode` is `Response`, create or update one durable `session_attention` notification
   per session and admit it through the same notification-backed queue path
+- when `localResponseVoiceOnlyEnabled` is enabled, admit automatic response TTS and Auto Listen only
+  for typed or spoken turns carrying the current Android process's ephemeral `turnOriginId`
+- this origin filter does not apply to `voice_speak`, `voice_ask`, external notifications, manual
+  notification playback, or explicit microphone starts
+- Android does not persist its locally generated process identifier; a process restart intentionally
+  leaves an in-flight old response silent even though responses retain their correlation value in
+  server-side events and durable notifications
 - after natural playback completion, start recognition only when `Auto-listen` is enabled and the
   queued item still passes pre-listen validation
 - if the user manually interrupts playback, start recognition immediately only when
@@ -151,7 +161,8 @@ When recognition succeeds for `voice_ask` or a manual native listen action:
   "content": "recognized speech",
   "mode": "async",
   "inputType": "audio",
-  "durationMs": 4200
+  "durationMs": 4200,
+  "turnOriginId": "ephemeral Android process identifier"
 }
 ```
 
@@ -165,6 +176,7 @@ Current fields:
 
 - `audioMode`
 - `autoListenEnabled`
+- `localResponseVoiceOnlyEnabled`
 - `voiceAdapterBaseUrl`
 - `selectedMicDeviceId`
 - `recognitionStartTimeoutMs`
@@ -215,6 +227,8 @@ v1 requirements:
   transition, while `Stop` stops TTS and suppresses that transition without disabling Auto Listen
   globally; `Stop` still cancels active recognition or ends the active Realtime call according to
   native ownership
+- the in-app floating speaker button and headset media button should use the same Skip transition
+  during Thread playback; their listening and Realtime states continue to use Stop
 - disabled, connecting, or otherwise unavailable Start states remain ordinary notifications
 - automatic reconnect while enabled
 - service may start immediately when voice mode is enabled

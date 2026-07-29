@@ -78,6 +78,11 @@ export interface LogicalSessionState {
          * tools, callbacks) in the unified event log.
          */
         turnId?: string;
+        /**
+         * Ephemeral identifier supplied by the client that initiated this turn.
+         * Used by that client to admit only its own automatic voice responses.
+         */
+        turnOriginId?: string;
         responseId: string;
         abortController: AbortController;
         ttsSession?: TtsStreamingSession;

@@ -532,6 +532,7 @@ async function main(): Promise<void> {
     voiceRuntimeModeSelect: voiceRuntimeModeSelectEl,
     audioModeSelect: audioModeSelectEl,
     autoListenCheckbox: autoListenCheckboxEl,
+    localResponseVoiceOnlyCheckbox: localResponseVoiceOnlyCheckboxEl,
     standaloneNotificationPlaybackCheckbox: standaloneNotificationPlaybackCheckboxEl,
     notificationTitlePlaybackCheckbox: notificationTitlePlaybackCheckboxEl,
     voiceAdapterBaseUrlInput: voiceAdapterBaseUrlInputEl,
@@ -882,6 +883,7 @@ async function main(): Promise<void> {
   let nativeVoiceActiveSessionId: string | null = null;
   let nativeVoiceActiveDisplayTitle: string | null = null;
   let nativeVoiceBridgeSelectedSessionId: string | null = null;
+  let nativeTurnOriginId: string | null = null;
   let isSettingInputSession = false;
   let pendingInputSessionId: string | null | undefined = undefined;
   let panelHostController: PanelHostController | null = null;
@@ -1290,7 +1292,11 @@ async function main(): Promise<void> {
             void nativeVoiceBridge.stopRealtime();
             return true;
           }
-          if (nativeVoiceRuntimeState === 'speaking' || nativeVoiceRuntimeState === 'listening') {
+          if (nativeVoiceRuntimeState === 'speaking') {
+            void nativeVoiceBridge.skipCurrentPlayback();
+            return true;
+          }
+          if (nativeVoiceRuntimeState === 'listening') {
             void nativeVoiceBridge.stopCurrentInteraction();
             return true;
           }
@@ -1339,9 +1345,7 @@ async function main(): Promise<void> {
     return label || normalizedSessionId.slice(0, 8);
   }
 
-  function getVoiceFabSessionChipState(
-    mode: 'idle' | 'speaking' | 'listening' | 'realtime',
-  ): {
+  function getVoiceFabSessionChipState(mode: 'idle' | 'speaking' | 'listening' | 'realtime'): {
     visible: boolean;
     interactive: boolean;
     title: string | null;
@@ -1573,9 +1577,7 @@ async function main(): Promise<void> {
     }
   }
 
-  function isNativeRealtimeRuntimeState(
-    state: AssistantNativeVoiceRuntimeState | null,
-  ): boolean {
+  function isNativeRealtimeRuntimeState(state: AssistantNativeVoiceRuntimeState | null): boolean {
     return state === 'realtime_active' || state === 'realtime_connecting';
   }
 
@@ -1597,12 +1599,15 @@ async function main(): Promise<void> {
     );
     const nextRealtimeMuted =
       typeof payload?.realtimeMuted === 'boolean' ? payload.realtimeMuted : nativeRealtimeMuted;
+    const nextTurnOriginId =
+      typeof payload?.turnOriginId === 'string' ? payload.turnOriginId.trim() || null : null;
     if (
       nativeVoiceRuntimeState === nextState &&
       nativeVoiceActiveSessionId === nextActiveSessionId &&
       nativeVoiceActiveDisplayTitle === nextActiveDisplayTitle &&
       nativeVoiceBridgeSelectedSessionId === nextBridgeSelectedSessionId &&
-      nativeRealtimeMuted === nextRealtimeMuted
+      nativeRealtimeMuted === nextRealtimeMuted &&
+      nativeTurnOriginId === nextTurnOriginId
     ) {
       return;
     }
@@ -1611,12 +1616,15 @@ async function main(): Promise<void> {
     nativeVoiceActiveDisplayTitle = nextActiveDisplayTitle;
     nativeVoiceBridgeSelectedSessionId = nextBridgeSelectedSessionId;
     nativeRealtimeMuted = nextRealtimeMuted;
+    nativeTurnOriginId = nextTurnOriginId;
     for (const entry of chatPanelsById.values()) {
       entry.inputRuntime.speechAudioController?.setNativeRuntimeState(nextState);
     }
     voiceFabHandle?.update();
   }
 
+  let nativeVoiceStateHydration: Promise<AssistantNativeVoiceStatePayload | null> =
+    Promise.resolve(null);
   if (useNativeVoiceRuntime) {
     nativeVoiceBridge.addStateChangedListener((payload) => {
       applyNativeVoiceRuntimePayload(payload);
@@ -1631,7 +1639,7 @@ async function main(): Promise<void> {
     nativeVoiceBridge.addOpenSessionListener((payload) => {
       openChatPanelForSession(payload.sessionId);
     });
-    void nativeVoiceBridge.getState().then((payload) => {
+    nativeVoiceStateHydration = nativeVoiceBridge.getState().then((payload) => {
       applyNativeVoiceRuntimePayload(payload);
       // Prefer native SharedPreferences for voiceRuntimeMode / modes after cold start so
       // empty WebView localStorage defaults do not stomp a saved Realtime preference.
@@ -1643,6 +1651,7 @@ async function main(): Promise<void> {
         // If the user edited settings before hydrate finished, push those to native now.
         syncNativeVoiceBridgeState();
       }
+      return payload;
     });
   }
 
@@ -1877,6 +1886,15 @@ async function main(): Promise<void> {
       elements: dom.inputElements,
       getChatRuntime: () => runtime,
       getSelectedSessionId: () => bindingSessionId,
+      ...(useNativeVoiceRuntime
+        ? {
+            getTurnOriginId: () => nativeTurnOriginId,
+            resolveTurnOriginId: async () => {
+              await nativeVoiceStateHydration;
+              return nativeTurnOriginId;
+            },
+          }
+        : {}),
       getChatRuntimeForSession: (sessionId: string) => getChatRuntimeForSession(sessionId),
       getSocket: () => socket,
       setStatus: (text: string) => {
@@ -1906,6 +1924,7 @@ async function main(): Promise<void> {
       cancelQueuedMessage,
       audioModeSelectEl,
       autoListenCheckboxEl,
+      localResponseVoiceOnlyCheckboxEl,
       standaloneNotificationPlaybackCheckboxEl,
       notificationTitlePlaybackCheckboxEl,
       voiceAdapterBaseUrlInputEl,
@@ -4145,11 +4164,13 @@ async function main(): Promise<void> {
     const nextSettings = normalizeVoiceSettings({
       ...currentSettings,
       voiceRuntimeMode: voiceRuntimeModeSelectEl.value,
-      realtimeMuteOnStart: realtimeMuteOnStartCheckbox?.checked ?? currentSettings.realtimeMuteOnStart,
+      realtimeMuteOnStart:
+        realtimeMuteOnStartCheckbox?.checked ?? currentSettings.realtimeMuteOnStart,
       realtimeSpeakerphone:
         realtimeSpeakerphoneCheckbox?.checked ?? currentSettings.realtimeSpeakerphone,
       audioMode: audioModeSelectEl.value,
       autoListenEnabled: autoListenCheckboxEl.checked,
+      localResponseVoiceOnlyEnabled: localResponseVoiceOnlyCheckboxEl.checked,
       standaloneNotificationPlaybackEnabled: standaloneNotificationPlaybackCheckboxEl.checked,
       notificationTitlePlaybackEnabled: notificationTitlePlaybackCheckboxEl.checked,
       voiceAdapterBaseUrl: voiceAdapterBaseUrlInputEl.value,
@@ -4219,6 +4240,7 @@ async function main(): Promise<void> {
     realtimeSpeakerphoneCheckboxEl,
     audioModeSelectEl,
     autoListenCheckboxEl,
+    localResponseVoiceOnlyCheckboxEl,
     standaloneNotificationPlaybackCheckboxEl,
     notificationTitlePlaybackCheckboxEl,
     voiceAdapterBaseUrlInputEl,
@@ -4273,6 +4295,7 @@ async function main(): Promise<void> {
     syncRealtimeControlsVisibility();
     audioModeSelectEl.value = settings.audioMode;
     autoListenCheckboxEl.checked = settings.autoListenEnabled;
+    localResponseVoiceOnlyCheckboxEl.checked = settings.localResponseVoiceOnlyEnabled;
     standaloneNotificationPlaybackCheckboxEl.checked =
       settings.standaloneNotificationPlaybackEnabled;
     notificationTitlePlaybackCheckboxEl.checked = settings.notificationTitlePlaybackEnabled;

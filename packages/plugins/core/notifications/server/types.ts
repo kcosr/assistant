@@ -17,6 +17,7 @@ export interface NotificationRecord {
   ttsText: string | null;
   sourceEventId: string | null;
   sessionActivitySeq: number | null;
+  turnOriginId: string | null;
 }
 
 export interface CreateNotificationInput {
@@ -30,6 +31,7 @@ export interface CreateNotificationInput {
   ttsText?: string | null;
   sourceEventId?: string | null;
   sessionActivitySeq?: number | null;
+  turnOriginId?: string | null;
 }
 
 export interface NotificationListOptions {

@@ -16,6 +16,7 @@ export async function publishFinalResponseNotification(options: {
   sessionHub?: SessionHub;
   sessionIndex?: ToolContext['sessionIndex'];
   summary?: Pick<SessionSummary, 'revision'> | null;
+  turnOriginId?: string;
 }): Promise<void> {
   if (!options.text.trim()) {
     return;
@@ -39,6 +40,7 @@ export async function publishFinalResponseNotification(options: {
         ...(getSessionActivitySeq(options.summary) !== null
           ? { sessionActivitySeq: getSessionActivitySeq(options.summary) }
           : {}),
+        ...(options.turnOriginId ? { turnOriginId: options.turnOriginId } : {}),
       },
       source: 'system',
       ...(options.sessionHub ? { sessionHub: options.sessionHub } : {}),

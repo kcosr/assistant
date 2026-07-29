@@ -146,6 +146,7 @@ export const ClientTextInputMessageSchema = z.object({
   sessionId: z.string(),
   inputMode: InputModeSchema.optional(),
   clientMessageId: z.string().optional(),
+  turnOriginId: z.string().trim().min(1).max(128).optional(),
 });
 
 export const ClientSetModesMessageSchema = z.object({
@@ -890,6 +891,7 @@ export const NotificationRecordSchema = z.object({
   ttsText: z.string().nullable(),
   sourceEventId: z.string().nullable(),
   sessionActivitySeq: z.number().int().nonnegative().nullable(),
+  turnOriginId: z.string().nullable(),
 });
 export type NotificationRecord = z.infer<typeof NotificationRecordSchema>;
 

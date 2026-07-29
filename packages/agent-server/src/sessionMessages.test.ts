@@ -176,6 +176,7 @@ describe('startSessionMessage', () => {
         content: 'hello',
         mode: 'sync',
         timeoutSeconds: 1,
+        turnOriginId: 'android-process-1',
       },
       sessionIndex,
       sessionHub,
@@ -209,5 +210,8 @@ describe('startSessionMessage', () => {
     });
 
     expect(resolveAgentToolExposureForHost).toHaveBeenCalledTimes(1);
+    expect(processUserMessage).toHaveBeenCalledWith(
+      expect.objectContaining({ turnOriginId: 'android-process-1' }),
+    );
   });
 });

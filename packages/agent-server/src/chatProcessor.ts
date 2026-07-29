@@ -53,8 +53,9 @@ function buildAssistantDoneEvents(options: {
   responseId: string;
   fullText: string;
   piSdkMessage: PiSdkMessage | undefined;
+  turnOriginId?: string;
 }): ChatEvent[] {
-  const { sessionId, turnId, responseId, fullText, piSdkMessage } = options;
+  const { sessionId, turnId, responseId, fullText, piSdkMessage, turnOriginId } = options;
   const base = createChatEventBase({
     sessionId,
     ...(turnId ? { turnId } : {}),
@@ -72,6 +73,7 @@ function buildAssistantDoneEvents(options: {
           text: block.text,
           ...(block.phase ? { phase: block.phase } : {}),
           ...(block.textSignature ? { textSignature: block.textSignature } : {}),
+          ...(turnOriginId ? { turnOriginId } : {}),
         },
       }));
   }
@@ -83,7 +85,7 @@ function buildAssistantDoneEvents(options: {
       ...base,
       id: randomUUID(),
       type: 'assistant_done',
-      payload: { text: fullText },
+      payload: { text: fullText, ...(turnOriginId ? { turnOriginId } : {}) },
     },
   ];
 }
@@ -161,6 +163,7 @@ export interface ChatProcessorOptions {
   text: string;
   requestId?: string;
   responseId?: string;
+  turnOriginId?: string;
   sessionHub: SessionHub;
   envConfig: EnvConfig;
   chatCompletionTools: unknown[];
@@ -290,6 +293,7 @@ export async function processUserMessage(
   const startTime = Date.now();
   const responseId = options.responseId ?? randomUUID();
   const requestId = requestIdOption ?? responseId;
+  const turnOriginId = options.turnOriginId?.trim() || undefined;
   const agentExchangeId = agentMessageContext?.exchangeId ?? agentMessageContext?.responseId;
 
   console.log('[chatProcessor] processUserMessage start', {
@@ -534,6 +538,7 @@ export async function processUserMessage(
     const callbackUrl = buildExternalCallbackUrl({
       callbackBaseUrl: external.callbackBaseUrl,
       sessionId,
+      ...(turnOriginId ? { turnOriginId } : {}),
     });
 
     await postExternalUserInput({
@@ -593,6 +598,7 @@ export async function processUserMessage(
     accumulatedText: '',
     activeToolCalls: new Map(),
     ...(turnId ? { turnId } : {}),
+    ...(turnOriginId ? { turnOriginId } : {}),
     ...(agentExchangeId ? { agentExchangeId } : {}),
     ...(ttsSession ? { ttsSession } : {}),
   };
@@ -619,6 +625,7 @@ export async function processUserMessage(
         payload: {
           text: partialText,
           interrupted: true,
+          ...(run.turnOriginId ? { turnOriginId: run.turnOriginId } : {}),
         },
       },
     ];
@@ -741,6 +748,7 @@ export async function processUserMessage(
           responseId,
           fullText,
           piSdkMessage: runResult.piSdkMessage,
+          ...(turnOriginId ? { turnOriginId } : {}),
         }) as Array<Extract<ChatEvent, { type: 'assistant_done' }>>;
         for (const event of assistantDoneEvents) {
           logDebugChatEventRecord({
@@ -763,7 +771,7 @@ export async function processUserMessage(
           });
         }
         const events: ChatEvent[] = [...assistantDoneEvents];
-        void appendAndBroadcastChatEvents(
+        await appendAndBroadcastChatEvents(
           {
             ...(eventStore ? { eventStore } : {}),
             sessionHub,
@@ -796,6 +804,7 @@ export async function processUserMessage(
         text: visibleAssistant.text,
         sessionHub,
         summary: notificationSummary,
+        ...(turnOriginId ? { turnOriginId } : {}),
       });
       const assistantTimestampMs =
         (runResult.piSdkMessage &&

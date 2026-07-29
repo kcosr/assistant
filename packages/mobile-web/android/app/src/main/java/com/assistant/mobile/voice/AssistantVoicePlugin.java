@@ -201,6 +201,16 @@ public final class AssistantVoicePlugin extends Plugin {
     }
 
     @PluginMethod
+    public void skipCurrentPlayback(PluginCall call) {
+        AssistantVoiceEventLog.record(getContext(), "plugin_skip_current_playback");
+        ContextCompat.startForegroundService(
+            getContext(),
+            AssistantVoiceRuntimeService.skipCurrentPlaybackIntent(getContext())
+        );
+        call.resolve(buildStatePayload());
+    }
+
+    @PluginMethod
     public void stopCurrentInteraction(PluginCall call) {
         AssistantVoiceEventLog.record(getContext(), "plugin_stop_current_interaction");
         ContextCompat.startForegroundService(
@@ -481,6 +491,10 @@ public final class AssistantVoicePlugin extends Plugin {
         voiceSettings.put("realtimeListsInstanceId", current.realtimeListsInstanceId);
         voiceSettings.put("audioMode", current.audioMode);
         voiceSettings.put("autoListenEnabled", current.autoListenEnabled);
+        voiceSettings.put(
+            "localResponseVoiceOnlyEnabled",
+            current.localResponseVoiceOnlyEnabled
+        );
         voiceSettings.put("voiceAdapterBaseUrl", current.voiceAdapterBaseUrl);
         voiceSettings.put("preferredVoiceSessionId", current.preferredVoiceSessionId);
         voiceSettings.put("selectedMicDeviceId", current.selectedMicDeviceId);
@@ -509,6 +523,7 @@ public final class AssistantVoicePlugin extends Plugin {
 
         JSObject payload = new JSObject();
         payload.put("state", AssistantVoiceConfig.loadRuntimeState(getContext()));
+        payload.put("turnOriginId", AssistantVoiceTurnOrigin.get());
         payload.put("realtimeMuted", AssistantVoiceConfig.loadRuntimeRealtimeMuted(getContext()));
         payload.put("activeSessionId", activeSessionId.isEmpty() ? null : activeSessionId);
         payload.put("activeDisplayTitle", activeDisplayTitle.isEmpty() ? null : activeDisplayTitle);
@@ -556,7 +571,8 @@ public final class AssistantVoicePlugin extends Plugin {
             optTrimmedString(notification, "voiceMode", null),
             optTrimmedString(notification, "ttsText", null),
             optTrimmedString(notification, "sourceEventId", null),
-            sessionActivitySeq
+            sessionActivitySeq,
+            optTrimmedString(notification, "turnOriginId", null)
         );
     }
 

@@ -33,6 +33,7 @@ describe('loadClientPreferences', () => {
 
     expect(preferences.voice.audioMode).toBe('off');
     expect(preferences.voice.autoListenEnabled).toBe(false);
+    expect(preferences.voice.localResponseVoiceOnlyEnabled).toBe(false);
     expect(preferences.voice.standaloneNotificationPlaybackEnabled).toBe(false);
     expect(preferences.voice.notificationTitlePlaybackEnabled).toBe(false);
     expect(preferences.voice.preferredVoiceSessionId).toBe('');
@@ -55,6 +56,7 @@ describe('loadClientPreferences', () => {
 
     expect(preferences.voice.audioMode).toBe('tool');
     expect(preferences.voice.autoListenEnabled).toBe(true);
+    expect(preferences.voice.localResponseVoiceOnlyEnabled).toBe(true);
     expect(preferences.voice.standaloneNotificationPlaybackEnabled).toBe(true);
     expect(preferences.voice.notificationTitlePlaybackEnabled).toBe(false);
     expect(preferences.voice.selectedMicDeviceId).toBe('');

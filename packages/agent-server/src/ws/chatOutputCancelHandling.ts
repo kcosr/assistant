@@ -135,6 +135,7 @@ export function handleChatOutputCancel(options: HandleChatOutputCancelOptions): 
       payload: {
         text: partialText,
         interrupted: true,
+        ...(run.turnOriginId ? { turnOriginId: run.turnOriginId } : {}),
       },
     });
   }

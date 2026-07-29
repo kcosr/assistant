@@ -24,6 +24,33 @@ final class AssistantVoiceInteractionRules {
         return false;
     }
 
+    static boolean shouldAdmitAutomaticResponse(
+        boolean localResponseVoiceOnlyEnabled,
+        String localTurnOriginId,
+        String responseTurnOriginId
+    ) {
+        if (!localResponseVoiceOnlyEnabled) {
+            return true;
+        }
+        String local = trim(localTurnOriginId);
+        String response = trim(responseTurnOriginId);
+        return !local.isEmpty() && local.equals(response);
+    }
+
+    static boolean shouldAdmitAutomaticNotification(
+        boolean localResponseVoiceOnlyEnabled,
+        String localTurnOriginId,
+        AssistantVoiceNotificationRecord notification
+    ) {
+        return notification == null
+            || !notification.isAssistantResponseNotification()
+            || shouldAdmitAutomaticResponse(
+                localResponseVoiceOnlyEnabled,
+                localTurnOriginId,
+                notification.turnOriginId
+            );
+    }
+
     static boolean shouldStartRecognitionAfterManualStop(String toolName, boolean manualListenRequested) {
         return shouldStartRecognitionAfterManualStop(toolName, manualListenRequested, false);
     }
@@ -150,5 +177,9 @@ final class AssistantVoiceInteractionRules {
         }
         String sessionId = preferredVoiceSessionId == null ? "" : preferredVoiceSessionId.trim();
         return !sessionId.isEmpty() && runtimeConnected;
+    }
+
+    private static String trim(String value) {
+        return value == null ? "" : value.trim();
     }
 }

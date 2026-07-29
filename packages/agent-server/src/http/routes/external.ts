@@ -3,12 +3,13 @@ import type { ChatEvent, ServerTextDoneMessage } from '@assistant/shared';
 import type { HttpRouteHandler } from '../types';
 import { createExternalResponseId } from '../../externalAgents';
 import { appendAndBroadcastChatEvents, createChatEventBase } from '../../events/chatEventUtils';
+import { publishFinalResponseNotification } from '../../notificationProducers';
 
 export const handleExternalRoutes: HttpRouteHandler = async (
   context,
   req,
   res,
-  _url,
+  url,
   segments,
   _helpers,
 ) => {
@@ -55,11 +56,20 @@ export const handleExternalRoutes: HttpRouteHandler = async (
     }
 
     const responseId = createExternalResponseId();
+    const turnOriginId = url.searchParams.get('turnOriginId')?.trim() || undefined;
 
-    void context.sessionHub.recordSessionActivity(
-      sessionId,
-      text.length > 120 ? `${text.slice(0, 117)}…` : text,
-    );
+    let notificationSummary = summary;
+    try {
+      const updatedSummary = await context.sessionHub.recordSessionActivity(
+        sessionId,
+        text.length > 120 ? `${text.slice(0, 117)}…` : text,
+      );
+      if (updatedSummary) {
+        notificationSummary = updatedSummary;
+      }
+    } catch {
+      // Session activity persistence is best-effort; retain the existing summary.
+    }
 
     const state = context.sessionHub.getSessionState(sessionId);
     if (state) {
@@ -81,10 +91,10 @@ export const handleExternalRoutes: HttpRouteHandler = async (
           responseId,
         }),
         type: 'assistant_done',
-        payload: { text },
+        payload: { text, ...(turnOriginId ? { turnOriginId } : {}) },
       },
     ];
-    void appendAndBroadcastChatEvents(
+    await appendAndBroadcastChatEvents(
       {
         eventStore: context.eventStore,
         sessionHub: context.sessionHub,
@@ -92,6 +102,14 @@ export const handleExternalRoutes: HttpRouteHandler = async (
       },
       events,
     );
+    await publishFinalResponseNotification({
+      sessionId,
+      responseId,
+      text,
+      sessionHub: context.sessionHub,
+      summary: notificationSummary,
+      ...(turnOriginId ? { turnOriginId } : {}),
+    });
 
     res.statusCode = 200;
     res.end();
