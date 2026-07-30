@@ -11,6 +11,7 @@ pnpm-lock.yaml
 *.tsbuildinfo
 packages/web-client/public/client.js
 packages/web-client/public/client.js.map
+packages/web-client/public/fonts/
 packages/web-client/public/plugins/**/bundle.js
 packages/web-client/public/plugins/**/bundle.js.map
 packages/web-client/public/plugins/**/styles.css

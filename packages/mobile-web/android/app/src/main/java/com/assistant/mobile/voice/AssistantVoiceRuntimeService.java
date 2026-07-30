@@ -2018,9 +2018,14 @@ public final class AssistantVoiceRuntimeService extends Service {
         if (prompt == null || !prompt.isAssistantResponse()) {
             return new AssistantResponseAdmission(true, false);
         }
-        boolean suppressAutoListen =
+        boolean interactionEnded =
             interactionEndTracker != null
                 && interactionEndTracker.consume(prompt.sessionId, prompt.requestId);
+        boolean suppressAutoListen =
+            interactionEnded
+                || AssistantVoiceInteractionRules.shouldSuppressAutoListenForAutomaticResponse(
+                    prompt.turnOriginId
+                );
         boolean admitted = AssistantVoiceInteractionRules.shouldAdmitAutomaticResponse(
             localResponseVoiceOnlyEnabled,
             localTurnOriginId,
@@ -2194,6 +2199,13 @@ public final class AssistantVoiceRuntimeService extends Service {
             );
             return;
         }
+        boolean suppressAutoListen =
+            notification != null
+                && notification.isAssistantResponseNotification()
+                && AssistantVoiceInteractionRules.shouldSuppressAutoListenForAutomaticResponse(
+                    notification.turnOriginId
+                );
+        boolean autoListenForNotification = config.autoListenEnabled && !suppressAutoListen;
         boolean shouldAutoplayNotification =
             AssistantVoiceInteractionRules.shouldAutoplayNotification(
                 config.audioMode,
@@ -2203,7 +2215,7 @@ public final class AssistantVoiceRuntimeService extends Service {
         boolean shouldAutoListenAfterManualAssistantNotification =
             AssistantVoiceInteractionRules.shouldAutoListenAfterManualAssistantNotification(
                 config.audioMode,
-                config.autoListenEnabled,
+                autoListenForNotification,
                 notification
             );
         if (!config.isEnabled()
@@ -2223,7 +2235,7 @@ public final class AssistantVoiceRuntimeService extends Service {
             : notification.toAutomaticQueueItem(
                 AssistantVoiceInteractionRules.shouldAutoListenAfterAutomaticNotification(
                     config.audioMode,
-                    config.autoListenEnabled
+                    autoListenForNotification
                 ),
                 config.notificationTitlePlaybackEnabled,
                 spokenTitle

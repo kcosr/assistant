@@ -34,7 +34,11 @@ final class AssistantVoiceInteractionRules {
         }
         String local = trim(localTurnOriginId);
         String response = trim(responseTurnOriginId);
-        return !local.isEmpty() && local.equals(response);
+        return response.isEmpty() || (!local.isEmpty() && local.equals(response));
+    }
+
+    static boolean shouldSuppressAutoListenForAutomaticResponse(String responseTurnOriginId) {
+        return trim(responseTurnOriginId).isEmpty();
     }
 
     static boolean shouldAdmitAutomaticNotification(

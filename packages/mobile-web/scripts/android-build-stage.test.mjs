@@ -24,16 +24,29 @@ function createFixtureRepo() {
   const mobileNodeModulesDir = path.join(mobileDir, 'node_modules');
 
   writeFile(path.join(webPublicDir, 'index.html'), '<html></html>');
-  writeFile(path.join(webPublicDir, 'config.js'), 'window.ASSISTANT_API_HOST = "https://assistant";');
+  writeFile(
+    path.join(webPublicDir, 'config.js'),
+    'window.ASSISTANT_API_HOST = "https://assistant";',
+  );
+  writeFile(path.join(webPublicDir, 'fonts', 'fonts.css'), '@font-face {}');
+  writeFile(path.join(webPublicDir, 'fonts', 'inter-latin-normal.woff2'), 'font-data');
   writeFile(path.join(mobileDir, 'package.json'), '{"name":"@assistant/mobile-web"}');
-  writeFile(path.join(mobileDir, 'capacitor.config.json'), '{"appId":"com.assistant.app","appName":"Assistant","webDir":"../web-client/public"}');
-  writeFile(path.join(mobileDir, 'flavors.json'), '{"default":{"appId":"com.assistant.app","appName":"Assistant","apiHost":"https://assistant"}}');
+  writeFile(
+    path.join(mobileDir, 'capacitor.config.json'),
+    '{"appId":"com.assistant.app","appName":"Assistant","webDir":"../web-client/public"}',
+  );
+  writeFile(
+    path.join(mobileDir, 'flavors.json'),
+    '{"default":{"appId":"com.assistant.app","appName":"Assistant","apiHost":"https://assistant"}}',
+  );
 
   for (const relativePath of REQUIRED_ANDROID_SOURCE_FILES) {
     writeFile(path.join(mobileDir, relativePath), `fixture:${relativePath}`);
   }
 
-  writeFile(path.join(mobileDir, 'android', 'app', 'build', 'outputs', 'apk', 'debug', 'app-debug.apk'));
+  writeFile(
+    path.join(mobileDir, 'android', 'app', 'build', 'outputs', 'apk', 'debug', 'app-debug.apk'),
+  );
   writeFile(path.join(mobileDir, 'android', '.gradle', 'cache.txt'));
   writeFile(path.join(mobileDir, '.build', 'stale.txt'));
   writeFile(path.join(rootNodeModulesDir, '.placeholder'));
@@ -70,14 +83,22 @@ describe('createAndroidBuildStage', () => {
     expect(fs.existsSync(path.join(result.stagedMobileDir, 'android', '.gradle'))).toBe(false);
     expect(fs.existsSync(path.join(result.stagedMobileDir, '.build'))).toBe(false);
     expect(fs.existsSync(path.join(result.stagedWebPublicDir, 'index.html'))).toBe(true);
+    expect(fs.existsSync(path.join(result.stagedWebPublicDir, 'fonts', 'fonts.css'))).toBe(true);
+    expect(
+      fs.existsSync(path.join(result.stagedWebPublicDir, 'fonts', 'inter-latin-normal.woff2')),
+    ).toBe(true);
     expect(fs.existsSync(path.join(result.stagedMobileDir, REQUIRED_ANDROID_SOURCE_FILES[1]))).toBe(
       true,
     );
-    expect(fs.lstatSync(path.join(result.stageRepoRoot, 'node_modules')).isSymbolicLink()).toBe(true);
+    expect(fs.lstatSync(path.join(result.stageRepoRoot, 'node_modules')).isSymbolicLink()).toBe(
+      true,
+    );
     expect(fs.lstatSync(path.join(result.stagedMobileDir, 'node_modules')).isSymbolicLink()).toBe(
       true,
     );
-    expect(fs.realpathSync(path.join(result.stageRepoRoot, 'node_modules'))).toBe(rootNodeModulesDir);
+    expect(fs.realpathSync(path.join(result.stageRepoRoot, 'node_modules'))).toBe(
+      rootNodeModulesDir,
+    );
     expect(fs.realpathSync(path.join(result.stagedMobileDir, 'node_modules'))).toBe(
       mobileNodeModulesDir,
     );

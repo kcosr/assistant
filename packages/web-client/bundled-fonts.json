@@ -1,0 +1,128 @@
+[
+  {
+    "id": "inter",
+    "label": "Inter",
+    "family": "Assistant Inter",
+    "category": "ui",
+    "package": "@fontsource-variable/inter",
+    "weight": "100 900",
+    "styles": ["normal", "italic"]
+  },
+  {
+    "id": "atkinson-hyperlegible-next",
+    "label": "Atkinson Hyperlegible",
+    "family": "Assistant Atkinson Hyperlegible",
+    "category": "ui",
+    "package": "@fontsource-variable/atkinson-hyperlegible-next",
+    "weight": "200 800",
+    "styles": ["normal", "italic"]
+  },
+  {
+    "id": "ibm-plex-sans",
+    "label": "IBM Plex Sans",
+    "family": "Assistant IBM Plex Sans",
+    "category": "ui",
+    "package": "@fontsource-variable/ibm-plex-sans",
+    "weight": "100 700",
+    "styles": ["normal", "italic"]
+  },
+  {
+    "id": "source-sans-3",
+    "label": "Source Sans 3",
+    "family": "Assistant Source Sans 3",
+    "category": "ui",
+    "package": "@fontsource-variable/source-sans-3",
+    "weight": "200 900",
+    "styles": ["normal", "italic"]
+  },
+  {
+    "id": "space-grotesk",
+    "label": "Space Grotesk",
+    "family": "Assistant Space Grotesk",
+    "category": "ui",
+    "package": "@fontsource-variable/space-grotesk",
+    "weight": "300 700",
+    "styles": ["normal"]
+  },
+  {
+    "id": "lexend",
+    "label": "Lexend",
+    "family": "Assistant Lexend",
+    "category": "ui",
+    "package": "@fontsource-variable/lexend",
+    "weight": "100 900",
+    "styles": ["normal"]
+  },
+  {
+    "id": "manrope",
+    "label": "Manrope",
+    "family": "Assistant Manrope",
+    "category": "ui",
+    "package": "@fontsource-variable/manrope",
+    "weight": "200 800",
+    "styles": ["normal"]
+  },
+  {
+    "id": "dm-sans",
+    "label": "DM Sans",
+    "family": "Assistant DM Sans",
+    "category": "ui",
+    "package": "@fontsource-variable/dm-sans",
+    "weight": "100 1000",
+    "styles": ["normal", "italic"]
+  },
+  {
+    "id": "jetbrains-mono",
+    "label": "JetBrains Mono",
+    "family": "Assistant JetBrains Mono",
+    "category": "code",
+    "package": "@fontsource-variable/jetbrains-mono",
+    "weight": "100 800",
+    "styles": ["normal", "italic"]
+  },
+  {
+    "id": "fira-code",
+    "label": "Fira Code",
+    "family": "Assistant Fira Code",
+    "category": "code",
+    "package": "@fontsource-variable/fira-code",
+    "weight": "300 700",
+    "styles": ["normal"]
+  },
+  {
+    "id": "source-code-pro",
+    "label": "Source Code Pro",
+    "family": "Assistant Source Code Pro",
+    "category": "code",
+    "package": "@fontsource-variable/source-code-pro",
+    "weight": "200 900",
+    "styles": ["normal", "italic"]
+  },
+  {
+    "id": "inconsolata",
+    "label": "Inconsolata",
+    "family": "Assistant Inconsolata",
+    "category": "code",
+    "package": "@fontsource-variable/inconsolata",
+    "weight": "200 900",
+    "styles": ["normal"]
+  },
+  {
+    "id": "roboto-mono",
+    "label": "Roboto Mono",
+    "family": "Assistant Roboto Mono",
+    "category": "code",
+    "package": "@fontsource-variable/roboto-mono",
+    "weight": "100 700",
+    "styles": ["normal", "italic"]
+  },
+  {
+    "id": "cascadia-code",
+    "label": "Cascadia Code",
+    "family": "Assistant Cascadia Code",
+    "category": "code",
+    "package": "@fontsource-variable/cascadia-code",
+    "weight": "200 700",
+    "styles": ["normal", "italic"]
+  }
+]

@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 /**
- * Generate macOS .icns file from PNG icons
+ * Generate a macOS .icns file from the canonical app icon.
+ *
+ * Usage: node scripts/generate-icns.mjs [output-directory]
  *
  * ICNS format: https://en.wikipedia.org/wiki/Apple_Icon_Image_format
  *
@@ -8,11 +10,15 @@
  */
 
 import { readFileSync, writeFileSync } from 'fs';
-import { dirname, join } from 'path';
+import { dirname, join, resolve } from 'path';
 import { fileURLToPath } from 'url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const iconsDir = join(__dirname, '..', 'src-tauri', 'icons');
+const projectRoot = join(__dirname, '..');
+const iconsDir = process.argv[2]
+  ? resolve(process.cwd(), process.argv[2])
+  : join(projectRoot, 'src-tauri', 'icons');
+const svgPath = join(projectRoot, '..', 'mobile-web', 'resources', 'icon.svg');
 
 // ICNS icon types with their PNG sizes
 // https://developer.apple.com/library/archive/documentation/GraphicsAnimation/Conceptual/HighResolutionOSX/Optimizing/Optimizing.html
@@ -36,7 +42,6 @@ async function generateIcns() {
     process.exit(1);
   }
 
-  const svgPath = join(__dirname, '..', 'icon.svg');
   const svgBuffer = readFileSync(svgPath);
 
   // Generate PNG buffers for each size needed

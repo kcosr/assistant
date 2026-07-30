@@ -1,19 +1,23 @@
 #!/usr/bin/env node
 /**
- * Generate Tauri app icons from icon.svg
+ * Generate desktop app icons from the canonical app icon.
  *
- * Usage: node scripts/generate-icons.mjs
+ * Usage: node scripts/generate-icons.mjs [output-directory] [--base-only]
  *
- * Requires: npm install sharp (run from packages/desktop)
+ * Requires: npm install sharp
  */
 
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'fs';
-import { dirname, join } from 'path';
+import { dirname, join, resolve } from 'path';
 import { fileURLToPath } from 'url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const projectRoot = join(__dirname, '..');
-const iconsDir = join(projectRoot, 'src-tauri', 'icons');
+const iconsDir = process.argv[2]
+  ? resolve(process.cwd(), process.argv[2])
+  : join(projectRoot, 'src-tauri', 'icons');
+const svgPath = join(projectRoot, '..', 'mobile-web', 'resources', 'icon.svg');
+const baseOnly = process.argv.includes('--base-only');
 
 // Ensure icons directory exists
 if (!existsSync(iconsDir)) {
@@ -30,7 +34,6 @@ async function generateIcons() {
     process.exit(1);
   }
 
-  const svgPath = join(projectRoot, 'icon.svg');
   const svgBuffer = readFileSync(svgPath);
 
   const sizes = [
@@ -54,7 +57,9 @@ async function generateIcons() {
     { name: 'StoreLogo.png', size: 50 },
   ];
 
-  const allSizes = [...sizes, ...windowsSizes];
+  const allSizes = baseOnly
+    ? sizes.filter(({ name }) => name === 'icon.png')
+    : [...sizes, ...windowsSizes];
 
   for (const { name, size } of allSizes) {
     const outputPath = join(iconsDir, name);
@@ -75,8 +80,7 @@ async function generateIcons() {
 
   // For macOS .icns, we need a different approach
   // Tauri can use the PNG files directly, but for a proper .icns:
-  console.log('\nNote: For macOS icon.icns, use iconutil or an online converter');
-  console.log('with the generated PNG files, or run: npm run tauri icon icon.svg');
+  console.log('\nRun generate-icns.mjs with the same output directory to refresh icon.icns.');
 }
 
 /**

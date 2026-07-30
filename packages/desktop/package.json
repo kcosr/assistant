@@ -6,12 +6,13 @@
   "description": "Electron desktop app for AI Assistant",
   "main": "dist/main.js",
   "scripts": {
+    "icons:generate": "node ../desktop-tauri/scripts/generate-icons.mjs icons --base-only && node ../desktop-tauri/scripts/generate-icns.mjs icons",
     "build": "npm run build:main",
     "build:main": "node scripts/build-main.mjs",
     "build:plugins": "node scripts/build-plugins.mjs",
-    "preelectron:dev": "npm run bundle -w @assistant/web-client && npm run build:plugins && node scripts/sync-plugin-assets.mjs",
+    "preelectron:dev": "npm run icons:generate && npm run bundle -w @assistant/web-client && npm run build:plugins && node scripts/sync-plugin-assets.mjs",
     "preelectron:dev:work": "npm run preelectron:dev",
-    "preelectron:build": "npm run build -w @assistant/web-client && npm run build:plugins && node scripts/sync-plugin-assets.mjs",
+    "preelectron:build": "npm run icons:generate && npm run build -w @assistant/web-client && npm run build:plugins && node scripts/sync-plugin-assets.mjs",
     "preelectron:build:work": "npm run preelectron:build",
     "electron:dev": "npm run build:main && electron .",
     "electron:dev:work": "ASSISTANT_DESKTOP_VARIANT=work ASSISTANT_DESKTOP_DEFAULT_BACKEND_URL=https://assistant/assistant-work npm run build:main && ASSISTANT_DESKTOP_VARIANT=work ASSISTANT_DESKTOP_DEFAULT_BACKEND_URL=https://assistant/assistant-work electron .",
@@ -24,6 +25,7 @@
   "devDependencies": {
     "@types/ws": "^8.18.1",
     "electron": "37.10.3",
-    "electron-builder": "^26.0.12"
+    "electron-builder": "^26.0.12",
+    "sharp": "^0.33.0"
   }
 }

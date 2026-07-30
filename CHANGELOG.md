@@ -8,6 +8,7 @@
 
 ### Added
 
+- Added locally bundled UI and code font catalogs with consistent form-control and terminal rendering, plus unified mobile, Electron, and Tauri app artwork generation. ([#124](https://github.com/kcosr/assistant/pull/124))
 - Added default-on Android response ownership so automatic assistant TTS and Auto Listen only run for turns started by the current app process, while tool prompts, external notifications, and manual voice actions remain available. ([#123](https://github.com/kcosr/assistant/pull/123))
 - Added promoted Android voice notifications with persistent Start/Stop controls and distinct Skip/Stop actions during TTS so users can either advance into Auto Listen or suppress that follow-up. ([#122](https://github.com/kcosr/assistant/pull/122))
 - Added native Pi steering for messages submitted during an active run, with silent context persistence and a transient client acknowledgement instead of Assistant-side queue rendering. ([#120](https://github.com/kcosr/assistant/pull/120))
@@ -37,6 +38,7 @@
 
 ### Changed
 
+- Changed Android response-origin handling so server-initiated turns without a client origin play on all devices while suppressing Auto Listen. ([#124](https://github.com/kcosr/assistant/pull/124))
 - Changed the chat composer to grow with wrapped or multiline text up to a compact height limit, with Enter to send and Shift+Enter to add a newline. ([#119](https://github.com/kcosr/assistant/pull/119))
 - Updated the Earendil Pi dependency suite to 0.82.1 and migrated the agent server to Pi's current provider-owned, ESM-only runtime APIs. ([#117](https://github.com/kcosr/assistant/pull/117))
 - Changed scheduled-sessions wake-up tools to support multiple current-session wake-ups with create/update/cancel-by-id operations, capped active wake-ups, and redacted admin-panel visibility for other sessions. ([#110](https://github.com/kcosr/assistant/pull/110))
@@ -56,6 +58,7 @@
 
 ### Fixed
 
+- Fixed Android packaging and layout drift by exactly pinning and verifying the native Capacitor dependency stack. ([#124](https://github.com/kcosr/assistant/pull/124))
 - Fixed the Android in-app floating speaking control to use the same Skip transition as the headset control, preserving a pending Auto Listen follow-up instead of suppressing it. ([#123](https://github.com/kcosr/assistant/pull/123))
 - Fixed Android Back navigation so closed pinned Sessions/Agents panels are never opened, while an otherwise unhandled Back press swaps between the two most recently active regular workspace panels. ([#121](https://github.com/kcosr/assistant/pull/121))
 - Added Realtime OpenAI sideband WebSocket ping + TCP keepalive (60s) to reduce idle NAT drops, and log ping/pong counts on close; Android logs WebRTC ice/connection state when a session fails so phone↔OpenAI can be correlated with server sideband closes. ([#116](https://github.com/kcosr/assistant/pull/116))

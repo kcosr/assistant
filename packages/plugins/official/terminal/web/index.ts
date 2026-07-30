@@ -4,6 +4,7 @@ import type {
   PanelInitOptions,
 } from '../../../../web-client/src/controllers/panelRegistry';
 import { PanelChromeController } from '../../../../web-client/src/controllers/panelChromeController';
+import { ensureTerminalFontLoaded, resolveTerminalFontFamilyChange } from './terminalFontLoader';
 
 type TerminalBufferLine = {
   translateToString: (trimRight?: boolean) => string;
@@ -196,12 +197,13 @@ if (!registry || typeof registry.registerPanel !== 'function') {
     let fitAddon: TerminalFitAddon | null = null;
     let disposables: Disposable[] = [];
     let pendingOutput: string[] = [];
-  let statusEl: HTMLElement | null = null;
-  let body: HTMLElement | null = null;
-  let chromeController: PanelChromeController | null = null;
+    let statusEl: HTMLElement | null = null;
+    let body: HTMLElement | null = null;
+    let chromeController: PanelChromeController | null = null;
     let host: PanelHost | null = null;
     let panelId: string | null = null;
-    let currentFontFamily: string | null = null;
+    let fontLoadGeneration = 0;
+    let currentFontFamily = '';
     let isMounted = false;
     let pendingFocus = false;
     let focusListener: ((event: Event) => void) | null = null;
@@ -285,21 +287,24 @@ if (!registry || typeof registry.registerPanel !== 'function') {
     };
 
     const applyFontFamily = (nextFontFamily: string): void => {
-      const trimmed = nextFontFamily.trim();
-      if (!term || !trimmed) {
+      const changedFontFamily = resolveTerminalFontFamilyChange(currentFontFamily, nextFontFamily);
+      if (!term || !changedFontFamily) {
         return;
       }
-      if (currentFontFamily === trimmed) {
-        return;
-      }
-      currentFontFamily = trimmed;
-      if (typeof term.setOption === 'function') {
-        term.setOption('fontFamily', trimmed);
-      }
-      fitAddon?.fit();
-      if (host) {
-        host.sendEvent({ type: 'terminal_resize', cols: term.cols, rows: term.rows });
-      }
+      currentFontFamily = changedFontFamily;
+      const requestedGeneration = ++fontLoadGeneration;
+      void ensureTerminalFontLoaded(changedFontFamily).then(() => {
+        if (!term || requestedGeneration !== fontLoadGeneration) {
+          return;
+        }
+        if (typeof term.setOption === 'function') {
+          term.setOption('fontFamily', changedFontFamily);
+        }
+        fitAddon?.fit();
+        if (host) {
+          host.sendEvent({ type: 'terminal_resize', cols: term.cols, rows: term.rows });
+        }
+      });
     };
 
     const attachTerminal = (mod: GhosttyModule): void => {
@@ -313,7 +318,6 @@ if (!registry || typeof registry.registerPanel !== 'function') {
       const fontFamily = resolveFontFamily();
       const fontSize = resolveFontSize();
       log('font', { panelId, fontFamily, fontSize });
-      currentFontFamily = fontFamily;
       term = new mod.Terminal({
         fontFamily,
         fontSize,
@@ -326,6 +330,7 @@ if (!registry || typeof registry.registerPanel !== 'function') {
       }
       fitAddon.fit();
       fitAddon.observeResize();
+      applyFontFamily(fontFamily);
       attachFocusListeners();
       if (host) {
         disposables.push(
@@ -616,7 +621,7 @@ if (!registry || typeof registry.registerPanel !== 'function') {
             statusEl = null;
             host = null;
             panelId = null;
-            currentFontFamily = null;
+            fontLoadGeneration += 1;
           },
         };
       },

@@ -65,6 +65,31 @@ public final class AssistantVoiceRuntimeServiceTest {
 
     @Test
     @Config(sdk = Build.VERSION_CODES.N)
+    public void unownedServerResponseIsAdmittedWithoutAutoListen() {
+        AssistantVoicePromptEvent serverResponse = new AssistantVoicePromptEvent(
+            "event-1",
+            "session-1",
+            "request-1",
+            "response-1",
+            "assistant_response",
+            "Scheduled reminder",
+            ""
+        );
+
+        AssistantVoiceRuntimeService.AssistantResponseAdmission admission =
+            AssistantVoiceRuntimeService.evaluateAssistantResponseAdmission(
+                serverResponse,
+                new AssistantVoiceInteractionEndTracker(4),
+                true,
+                "this-device"
+            );
+
+        assertTrue(admission.admitted);
+        assertTrue(admission.suppressAutoListen);
+    }
+
+    @Test
+    @Config(sdk = Build.VERSION_CODES.N)
     public void manualAutoListenQueueItemsDedupAcrossPromptAndNotificationSources() {
         AssistantVoiceQueueItem promptItem = AssistantVoiceQueueItem.fromManualAutoListenPrompt(
             new AssistantVoicePromptEvent(

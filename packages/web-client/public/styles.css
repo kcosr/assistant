@@ -768,6 +768,13 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
+button,
+input,
+select,
+textarea {
+  font-family: inherit;
+}
+
 /* Disable all transitions during initial page load */
 body.preload,
 body.preload * {

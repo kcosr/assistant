@@ -1,17 +1,35 @@
+import { createHash } from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 
 import type { HttpRouteHandler } from '../types';
 
+type StaticFileOptions = {
+  revalidate?: boolean;
+  ifNoneMatch?: string | undefined;
+};
+
 async function serveStaticFile(
   res: import('node:http').ServerResponse,
   filePath: string,
   contentType: string,
+  options: StaticFileOptions = {},
 ): Promise<void> {
   try {
     const data = await fs.readFile(filePath);
-    res.statusCode = 200;
     res.setHeader('Content-Type', contentType);
+    if (options.revalidate) {
+      const etag = `"${createHash('sha256').update(data).digest('base64url')}"`;
+      res.setHeader('Cache-Control', 'public, max-age=0, must-revalidate');
+      res.setHeader('ETag', etag);
+      const requestedEtags = options.ifNoneMatch?.split(',').map((value) => value.trim()) ?? [];
+      if (requestedEtags.includes(etag) || requestedEtags.includes('*')) {
+        res.statusCode = 304;
+        res.end();
+        return;
+      }
+    }
+    res.statusCode = 200;
     res.end(data);
   } catch {
     res.statusCode = 404;
@@ -33,6 +51,8 @@ function getContentType(filePath: string): string {
       return 'text/markdown; charset=utf-8';
     case '.svg':
       return 'image/svg+xml';
+    case '.woff2':
+      return 'font/woff2';
     default:
       return 'application/octet-stream';
   }
@@ -56,6 +76,23 @@ export const handleStaticRoutes: HttpRouteHandler = async (context, req, res, ur
   if (req.method === 'GET' && pathname === '/styles.css') {
     const stylesPath = path.join(context.webClientPublicDir, 'styles.css');
     await serveStaticFile(res, stylesPath, 'text/css; charset=utf-8');
+    return true;
+  }
+
+  if (req.method === 'GET' && pathname.startsWith('/fonts/')) {
+    const fontsDir = path.join(context.webClientPublicDir, 'fonts');
+    const assetPath = pathname.slice('/fonts/'.length);
+    const filePath = path.resolve(fontsDir, assetPath);
+    const safePath = path.relative(fontsDir, filePath);
+    if (!assetPath || safePath.startsWith('..') || path.isAbsolute(safePath)) {
+      res.statusCode = 403;
+      res.end('Forbidden');
+      return true;
+    }
+    await serveStaticFile(res, filePath, getContentType(filePath), {
+      revalidate: true,
+      ifNoneMatch: req.headers['if-none-match'],
+    });
     return true;
   }
 

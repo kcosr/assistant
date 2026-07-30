@@ -1,3 +1,5 @@
+import bundledFonts from '../../bundled-fonts.json';
+
 export type ThemeScheme = 'light' | 'dark';
 
 export type ThemeOption = {
@@ -62,66 +64,25 @@ export const UI_FONT_OPTIONS: FontOption[] = [
     value:
       "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif",
   },
-  {
-    label: 'SF Pro',
-    value:
-      "'SF Pro Text', 'SF Pro Display', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
-  },
-  {
-    label: 'Inter',
-    value: "'Inter', 'SF Pro Text', system-ui, -apple-system, 'Segoe UI', sans-serif",
-  },
-  {
-    label: 'IBM Plex Sans',
-    value: "'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif",
-  },
-  {
-    label: 'Source Sans 3',
-    value: "'Source Sans 3', 'Source Sans Pro', 'Helvetica Neue', Arial, sans-serif",
-  },
-  {
-    label: 'Space Grotesk',
-    value: "'Space Grotesk', 'SF Pro Text', system-ui, 'Segoe UI', sans-serif",
-  },
-  {
-    label: 'Atkinson Hyperlegible',
-    value: "'Atkinson Hyperlegible', 'Segoe UI', system-ui, sans-serif",
-  },
+  ...bundledFonts
+    .filter((font) => font.category === 'ui')
+    .map((font) => ({
+      label: font.label,
+      value: `'${font.family}', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif`,
+    })),
 ];
 
 export const CODE_FONT_OPTIONS: FontOption[] = [
   {
     label: 'System Mono',
-    value: "'SF Mono', Menlo, Monaco, Consolas, 'Liberation Mono', monospace",
+    value: "ui-monospace, 'SF Mono', Menlo, Monaco, Consolas, 'Liberation Mono', monospace",
   },
-  {
-    label: 'Menlo',
-    value: "Menlo, 'SF Mono', Monaco, Consolas, 'Liberation Mono', monospace",
-  },
-  {
-    label: 'JetBrains Mono',
-    value: "'JetBrains Mono', 'SF Mono', Menlo, Monaco, Consolas, monospace",
-  },
-  {
-    label: 'Fira Code',
-    value: "'Fira Code', 'SF Mono', Menlo, Monaco, Consolas, monospace",
-  },
-  {
-    label: 'Source Code Pro',
-    value: "'Source Code Pro', 'SF Mono', Menlo, Monaco, Consolas, monospace",
-  },
-  {
-    label: 'Cascadia Code',
-    value: "'Cascadia Code', 'SF Mono', Menlo, Monaco, Consolas, monospace",
-  },
-  {
-    label: 'Inconsolata',
-    value: "'Inconsolata', 'SF Mono', Menlo, Monaco, Consolas, monospace",
-  },
-  {
-    label: 'IBM Plex Mono',
-    value: "'IBM Plex Mono', 'SF Mono', Menlo, Monaco, Consolas, monospace",
-  },
+  ...bundledFonts
+    .filter((font) => font.category === 'code')
+    .map((font) => ({
+      label: font.label,
+      value: `'${font.family}', ui-monospace, 'SF Mono', Menlo, Monaco, Consolas, monospace`,
+    })),
 ];
 
 const DEFAULT_THEME_ID = 'auto';

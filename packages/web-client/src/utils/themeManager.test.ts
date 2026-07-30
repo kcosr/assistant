@@ -44,6 +44,35 @@ describe('themeManager', () => {
     expect(prefs.codeFont).toBe(defaultCodeFont.value);
   });
 
+  it('only offers system fonts and font families bundled by the web client', () => {
+    expect(UI_FONT_OPTIONS.map((option) => option.label)).toEqual([
+      'System UI',
+      'Inter',
+      'Atkinson Hyperlegible',
+      'IBM Plex Sans',
+      'Source Sans 3',
+      'Space Grotesk',
+      'Lexend',
+      'Manrope',
+      'DM Sans',
+    ]);
+    expect(CODE_FONT_OPTIONS.map((option) => option.label)).toEqual([
+      'System Mono',
+      'JetBrains Mono',
+      'Fira Code',
+      'Source Code Pro',
+      'Inconsolata',
+      'Roboto Mono',
+      'Cascadia Code',
+    ]);
+    expect(UI_FONT_OPTIONS.slice(1).every((option) => option.value.includes("'Assistant "))).toBe(
+      true,
+    );
+    expect(CODE_FONT_OPTIONS.slice(1).every((option) => option.value.includes("'Assistant "))).toBe(
+      true,
+    );
+  });
+
   it('persists and reloads theme preferences', () => {
     const defaultUIFont = getOption(UI_FONT_OPTIONS, 1, 'UI font');
     const defaultCodeFont = getOption(CODE_FONT_OPTIONS, 2, 'code font');

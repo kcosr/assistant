@@ -191,7 +191,9 @@ if (window.__TAURI__) {
 
 ## Icons
 
-App icons are generated from `icon.svg`. To regenerate after modifying the SVG:
+Tauri uses the canonical app artwork from
+`packages/mobile-web/resources/icon.svg`. Development and packaging commands
+regenerate the platform icon assets automatically. To refresh them directly:
 
 ```bash
 npm run icons:generate
@@ -203,10 +205,10 @@ This creates all required formats in `src-tauri/icons/`:
 - Windows: icon.ico + Square\*Logo.png variants
 - macOS: icon.icns
 
-Alternatively, generate from any source image using Tauri CLI:
+The compatibility alias below invokes the same canonical generator:
 
 ```bash
-npm run tauri:icon path/to/source-icon.png
+npm run tauri:icon
 ```
 
 ## Notes
