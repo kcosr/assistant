@@ -4,7 +4,7 @@ import type {
   PanelInitOptions,
 } from '../../../../web-client/src/controllers/panelRegistry';
 import { PanelChromeController } from '../../../../web-client/src/controllers/panelChromeController';
-import { ensureTerminalFontLoaded } from './terminalFontLoader';
+import { ensureTerminalFontLoaded, resolveTerminalFontFamilyChange } from './terminalFontLoader';
 
 type TerminalBufferLine = {
   translateToString: (trimRight?: boolean) => string;
@@ -203,6 +203,7 @@ if (!registry || typeof registry.registerPanel !== 'function') {
     let host: PanelHost | null = null;
     let panelId: string | null = null;
     let fontLoadGeneration = 0;
+    let currentFontFamily = '';
     let isMounted = false;
     let pendingFocus = false;
     let focusListener: ((event: Event) => void) | null = null;
@@ -286,17 +287,18 @@ if (!registry || typeof registry.registerPanel !== 'function') {
     };
 
     const applyFontFamily = (nextFontFamily: string): void => {
-      const trimmed = nextFontFamily.trim();
-      if (!term || !trimmed) {
+      const changedFontFamily = resolveTerminalFontFamilyChange(currentFontFamily, nextFontFamily);
+      if (!term || !changedFontFamily) {
         return;
       }
+      currentFontFamily = changedFontFamily;
       const requestedGeneration = ++fontLoadGeneration;
-      void ensureTerminalFontLoaded(trimmed).then(() => {
+      void ensureTerminalFontLoaded(changedFontFamily).then(() => {
         if (!term || requestedGeneration !== fontLoadGeneration) {
           return;
         }
         if (typeof term.setOption === 'function') {
-          term.setOption('fontFamily', trimmed);
+          term.setOption('fontFamily', changedFontFamily);
         }
         fitAddon?.fit();
         if (host) {

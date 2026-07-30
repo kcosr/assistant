@@ -2,7 +2,7 @@
 
 import { describe, expect, it, vi } from 'vitest';
 
-import { ensureTerminalFontLoaded } from './terminalFontLoader';
+import { ensureTerminalFontLoaded, resolveTerminalFontFamilyChange } from './terminalFontLoader';
 
 describe('ensureTerminalFontLoaded', () => {
   it('waits for the selected family before a canvas terminal remeasures it', async () => {
@@ -22,5 +22,17 @@ describe('ensureTerminalFontLoaded', () => {
     await expect(
       ensureTerminalFontLoaded("'Assistant Fira Code'", { load }),
     ).resolves.toBeUndefined();
+  });
+});
+
+describe('resolveTerminalFontFamilyChange', () => {
+  it('normalizes changed families and rejects empty or unchanged values', () => {
+    expect(resolveTerminalFontFamilyChange('', "  'Assistant Fira Code'  ")).toBe(
+      "'Assistant Fira Code'",
+    );
+    expect(
+      resolveTerminalFontFamilyChange("'Assistant Fira Code'", " 'Assistant Fira Code' "),
+    ).toBeNull();
+    expect(resolveTerminalFontFamilyChange("'Assistant Fira Code'", '   ')).toBeNull();
   });
 });

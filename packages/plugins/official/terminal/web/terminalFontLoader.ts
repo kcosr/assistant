@@ -17,3 +17,11 @@ export async function ensureTerminalFontLoaded(
     // The terminal can continue with the fallback family when a font cannot load.
   }
 }
+
+export function resolveTerminalFontFamilyChange(
+  currentFontFamily: string,
+  nextFontFamily: string,
+): string | null {
+  const normalized = nextFontFamily.trim();
+  return normalized && normalized !== currentFontFamily ? normalized : null;
+}

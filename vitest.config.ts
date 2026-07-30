@@ -19,6 +19,7 @@ export default defineConfig({
       'packages/desktop/electron/**/*.test.ts',
       'packages/desktop-tauri/scripts/**/*.test.mjs',
       'packages/web-client/src/**/*.test.ts',
+      'packages/web-client/scripts/**/*.test.mjs',
       'packages/mobile-web/scripts/**/*.test.mjs',
       'packages/assistant-cli/src/**/*.test.ts',
       'packages/coding-sidecar/src/**/*.test.ts',
