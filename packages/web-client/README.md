@@ -20,7 +20,7 @@ Browser-based chat client for the AI Assistant.
 - Audio output via server-generated TTS
 - Session management (create, switch, delete)
 - Auto-reconnect on connection loss
-- Theme + font preferences (local storage)
+- Theme + locally bundled font preferences (local storage)
 
 See [Common UI Specification](../../docs/UI_SPEC.md) for cross-platform UI behavior requirements.
 
@@ -31,6 +31,15 @@ npm run build
 ```
 
 This compiles TypeScript and bundles to `public/client.js`.
+
+The build also generates `public/fonts/` from the pinned Fontsource packages declared in
+`bundled-fonts.json`. The generated directory contains the WOFF2 files, `@font-face` stylesheet,
+and OFL license notices used by browser, desktop, and mobile builds. Font choices therefore render
+consistently without requiring the selected font to be installed on the device.
+
+The UI selector includes eight bundled families plus the system default. The code/terminal
+selector includes six bundled monospaced families plus the system default. Native form controls,
+including workspace tabs and selectors, inherit the selected UI family.
 
 ## Web-Specific Implementation
 
@@ -111,29 +120,29 @@ Browser ────── WebSocket ────── Server
 
 All session-specific messages include `sessionId` field.
 
-| Message             | Purpose                                |
-| ------------------- | -------------------------------------- |
-| `session_ready`     | Session ready for this connection      |
-| `subscribed`        | Subscription confirmed                 |
-| `unsubscribed`      | Unsubscription confirmed               |
-| `session_created`   | New session created (broadcast to all) |
-| `session_deleted`   | Session deleted (broadcast to all)     |
-| `session_updated`   | Session timestamp updated              |
+| Message                   | Purpose                                                       |
+| ------------------------- | ------------------------------------------------------------- |
+| `session_ready`           | Session ready for this connection                             |
+| `subscribed`              | Subscription confirmed                                        |
+| `unsubscribed`            | Unsubscription confirmed                                      |
+| `session_created`         | New session created (broadcast to all)                        |
+| `session_deleted`         | Session deleted (broadcast to all)                            |
+| `session_updated`         | Session timestamp updated                                     |
 | `session_history_changed` | Transcript history was rewritten and should be force-reloaded |
-| `thinking_start`    | Assistant thinking started             |
-| `thinking_delta`    | Streaming thinking chunk               |
-| `thinking_done`     | Complete thinking content              |
-| `text_delta`        | Streaming text chunk                   |
-| `text_done`         | Complete response text                 |
-| `transcript_event`  | Canonical projected transcript event   |
-| `tool_call_start`   | Tool call started                      |
-| `tool_output_delta` | Tool output streaming                  |
-| `tool_result`       | Tool call complete                     |
-| `message_steered`   | Pi accepted mid-run steering input     |
-| `modes_updated`     | Acknowledge mode change                |
-| `error`             | Error with code and message            |
-| `output_cancelled`  | Confirm output cancellation            |
-| `pong`              | Response to ping                       |
+| `thinking_start`          | Assistant thinking started                                    |
+| `thinking_delta`          | Streaming thinking chunk                                      |
+| `thinking_done`           | Complete thinking content                                     |
+| `text_delta`              | Streaming text chunk                                          |
+| `text_done`               | Complete response text                                        |
+| `transcript_event`        | Canonical projected transcript event                          |
+| `tool_call_start`         | Tool call started                                             |
+| `tool_output_delta`       | Tool output streaming                                         |
+| `tool_result`             | Tool call complete                                            |
+| `message_steered`         | Pi accepted mid-run steering input                            |
+| `modes_updated`           | Acknowledge mode change                                       |
+| `error`                   | Error with code and message                                   |
+| `output_cancelled`        | Confirm output cancellation                                   |
+| `pong`                    | Response to ping                                              |
 
 ### Sidebar Activity Indicators
 
@@ -164,48 +173,52 @@ When available, the client plays TTS audio through an AudioWorklet ring buffer t
 
 ## Files
 
-| File                 | Purpose                                     |
-| -------------------- | ------------------------------------------- |
-| `src/index.ts`       | Main client logic, UI handling              |
-| `src/audio.ts`       | TtsAudioPlayer for audio output             |
-| `src/speechInput.ts` | Web Speech API wrapper                      |
-| `src/markdown.ts`    | Markdown rendering with syntax highlighting |
-| `public/index.html`  | HTML + CSS                                  |
-| `public/client.js`   | Bundled output                              |
+| File                       | Purpose                                          |
+| -------------------------- | ------------------------------------------------ |
+| `src/index.ts`             | Main client logic, UI handling                   |
+| `src/audio.ts`             | TtsAudioPlayer for audio output                  |
+| `src/speechInput.ts`       | Web Speech API wrapper                           |
+| `src/markdown.ts`          | Markdown rendering with syntax highlighting      |
+| `public/index.html`        | HTML shell                                       |
+| `public/styles.css`        | Application styles                               |
+| `public/fonts/`            | Generated fonts, stylesheet, and license notices |
+| `bundled-fonts.json`       | Bundled font source and selector manifest        |
+| `scripts/bundle-fonts.mjs` | Generates the bundled font assets                |
+| `public/client.js`         | Bundled output                                   |
 
 ## Key Controllers
 
 The panel system is implemented through a set of controllers in `src/controllers/`:
 
-| Controller                   | Purpose                                                    |
-| ---------------------------- | ---------------------------------------------------------- |
-| `panelWorkspaceController`   | Manages the split/tab panel layout and panel lifecycle     |
-| `panelHostController`        | Provides host APIs to panel modules (context, events, etc) |
-| `panelRegistry`              | Registers panel types and creates panel instances          |
-| `panelLauncherController`    | Panel picker UI with search and keyboard navigation        |
-| `chatRenderer`               | Renders chat messages from event stream                    |
-| `messageRenderer`            | Legacy message rendering (being replaced by chatRenderer)  |
-| `keyboardNavigationController` | Global keyboard shortcuts and panel focus management     |
-| `dialogManager`              | Modal dialog lifecycle and stacking                        |
-| `connectionManager`          | WebSocket connection and reconnection logic                |
-| `sessionManager`             | Session state and subscription management                  |
+| Controller                     | Purpose                                                    |
+| ------------------------------ | ---------------------------------------------------------- |
+| `panelWorkspaceController`     | Manages the split/tab panel layout and panel lifecycle     |
+| `panelHostController`          | Provides host APIs to panel modules (context, events, etc) |
+| `panelRegistry`                | Registers panel types and creates panel instances          |
+| `panelLauncherController`      | Panel picker UI with search and keyboard navigation        |
+| `chatRenderer`                 | Renders chat messages from event stream                    |
+| `messageRenderer`              | Legacy message rendering (being replaced by chatRenderer)  |
+| `keyboardNavigationController` | Global keyboard shortcuts and panel focus management       |
+| `dialogManager`                | Modal dialog lifecycle and stacking                        |
+| `connectionManager`            | WebSocket connection and reconnection logic                |
+| `sessionManager`               | Session state and subscription management                  |
 
 ### Collection Controllers
 
 Shared controllers for list-style panels (lists, notes):
 
-| Controller                      | Purpose                                         |
-| ------------------------------- | ----------------------------------------------- |
-| `collectionBrowserController`   | Renders item list with tags and preview         |
-| `collectionDropdown`            | Collection selector dropdown                    |
-| `collectionPanelSearchController` | Search input and tag filter management        |
-| `collectionTagFilterController` | Tag filter pill rendering and state             |
+| Controller                        | Purpose                                 |
+| --------------------------------- | --------------------------------------- |
+| `collectionBrowserController`     | Renders item list with tags and preview |
+| `collectionDropdown`              | Collection selector dropdown            |
+| `collectionPanelSearchController` | Search input and tag filter management  |
+| `collectionTagFilterController`   | Tag filter pill rendering and state     |
 
 ### List Panel Controllers
 
-| Controller                | Purpose                                         |
-| ------------------------- | ----------------------------------------------- |
-| `listPanelController`     | Main list panel orchestration                   |
-| `listPanelTableController`| Table rendering with columns and selection      |
-| `listItemEditorDialog`    | Item create/edit dialog                         |
-| `listMetadataDialog`      | List settings and custom fields dialog          |
+| Controller                 | Purpose                                    |
+| -------------------------- | ------------------------------------------ |
+| `listPanelController`      | Main list panel orchestration              |
+| `listPanelTableController` | Table rendering with columns and selection |
+| `listItemEditorDialog`     | Item create/edit dialog                    |
+| `listMetadataDialog`       | List settings and custom fields dialog     |

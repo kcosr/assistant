@@ -81,6 +81,14 @@ npm run android:sync
 npm run ios:sync
 ```
 
+The web-client build generates its selectable WOFF2 fonts under
+`packages/web-client/public/fonts`. Capacitor sync copies that complete directory into the native
+application, so Android font choices do not depend on fonts installed on the device.
+
+Capacitor and Capgo package versions are pinned exactly. `android:sync` and `ios:sync` verify the
+installed native package versions before touching platform assets; run `npm ci` at the repository
+root if verification reports dependency drift.
+
 ## Build and Run
 
 ### Android
@@ -206,12 +214,15 @@ is still the fastest first pass.
   `voice_speak` and `voice_ask` remain append-only notifications with explicit `voiceMode`
   metadata. Auto-listen-capable items carry a server-generated session activity sequence so stale
   queued asks can be invalidated before recognition begins.
-- The Android-only `Only voice responses started on this device` setting is enabled by default.
-  Typed and spoken turns submitted from the current Android app process carry an ephemeral origin
-  identifier; automatic final-response TTS and Auto Listen run only when the reply carries the same
-  identifier. Restarting the app intentionally invalidates in-flight ownership. This filter does
-  not affect external notifications, `voice_speak`, `voice_ask`, or manual `Play` / microphone
-  actions, and it can be disabled to restore response behavior for turns started elsewhere.
+- The Android-only `Ignore voice responses started on other devices` setting is enabled by default.
+  Typed and spoken turns submitted from first-party Android and browser clients carry an ephemeral
+  origin identifier. Automatic final-response TTS and Auto Listen run for matching Android-origin
+  replies, while replies with another client origin are ignored. Server-initiated replies without
+  an origin, including scheduled wake responses, may play on every eligible Android device but
+  never start recognition afterward. Restarting the app intentionally invalidates in-flight
+  ownership. This filter does not affect external notifications, `voice_speak`, `voice_ask`, or
+  manual `Play` / microphone actions, and it can be disabled to restore response behavior for turns
+  started elsewhere.
 - Voice settings also include a `Read notification title before speech text` toggle. When enabled,
   notification playback prepends the notification title before the configured `ttsText` or body
   content using a spoken `Title: ...` join, which is especially useful for standalone CLI/HTTP/tool

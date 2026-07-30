@@ -33,6 +33,8 @@ function getContentType(filePath: string): string {
       return 'text/markdown; charset=utf-8';
     case '.svg':
       return 'image/svg+xml';
+    case '.woff2':
+      return 'font/woff2';
     default:
       return 'application/octet-stream';
   }
@@ -56,6 +58,20 @@ export const handleStaticRoutes: HttpRouteHandler = async (context, req, res, ur
   if (req.method === 'GET' && pathname === '/styles.css') {
     const stylesPath = path.join(context.webClientPublicDir, 'styles.css');
     await serveStaticFile(res, stylesPath, 'text/css; charset=utf-8');
+    return true;
+  }
+
+  if (req.method === 'GET' && pathname.startsWith('/fonts/')) {
+    const fontsDir = path.join(context.webClientPublicDir, 'fonts');
+    const assetPath = pathname.slice('/fonts/'.length);
+    const filePath = path.resolve(fontsDir, assetPath);
+    const safePath = path.relative(fontsDir, filePath);
+    if (!assetPath || safePath.startsWith('..') || path.isAbsolute(safePath)) {
+      res.statusCode = 403;
+      res.end('Forbidden');
+      return true;
+    }
+    await serveStaticFile(res, filePath, getContentType(filePath));
     return true;
   }
 

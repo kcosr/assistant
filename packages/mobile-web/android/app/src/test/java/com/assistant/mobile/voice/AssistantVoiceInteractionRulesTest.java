@@ -14,7 +14,7 @@ public final class AssistantVoiceInteractionRulesTest {
     }
 
     @Test
-    public void localResponseFilterRequiresMatchingNonEmptyOriginWhenEnabled() {
+    public void localResponseFilterAdmitsMatchingAndUnownedOriginsButRejectsForeignOrigins() {
         assertTrue(AssistantVoiceInteractionRules.shouldAdmitAutomaticResponse(
             true,
             "android-process-1",
@@ -25,7 +25,7 @@ public final class AssistantVoiceInteractionRulesTest {
             "android-process-1",
             "android-process-2"
         ));
-        assertFalse(AssistantVoiceInteractionRules.shouldAdmitAutomaticResponse(
+        assertTrue(AssistantVoiceInteractionRules.shouldAdmitAutomaticResponse(
             true,
             "android-process-1",
             ""
@@ -35,6 +35,21 @@ public final class AssistantVoiceInteractionRulesTest {
             "android-process-1",
             "android-process-2"
         ));
+    }
+
+    @Test
+    public void unownedResponsesAlwaysSuppressAutoListen() {
+        assertTrue(
+            AssistantVoiceInteractionRules.shouldSuppressAutoListenForAutomaticResponse("")
+        );
+        assertTrue(
+            AssistantVoiceInteractionRules.shouldSuppressAutoListenForAutomaticResponse("   ")
+        );
+        assertFalse(
+            AssistantVoiceInteractionRules.shouldSuppressAutoListenForAutomaticResponse(
+                "web-process-1"
+            )
+        );
     }
 
     @Test
@@ -87,6 +102,22 @@ public final class AssistantVoiceInteractionRulesTest {
                 2,
                 ""
             );
+        AssistantVoiceNotificationRecord serverResponseNotification =
+            new AssistantVoiceNotificationRecord(
+                "server-response",
+                "session_attention",
+                "system",
+                "Scheduled reminder",
+                "Reminder text",
+                "",
+                "session-1",
+                "Session",
+                "speak_then_listen",
+                "",
+                "event-3",
+                3,
+                ""
+            );
 
         assertTrue(responseNotification.isAssistantResponseNotification());
         assertFalse(externalNotification.isAssistantResponseNotification());
@@ -95,6 +126,11 @@ public final class AssistantVoiceInteractionRulesTest {
             true,
             "this-device",
             responseNotification
+        ));
+        assertTrue(AssistantVoiceInteractionRules.shouldAdmitAutomaticNotification(
+            true,
+            "this-device",
+            serverResponseNotification
         ));
         assertTrue(AssistantVoiceInteractionRules.shouldAdmitAutomaticNotification(
             true,

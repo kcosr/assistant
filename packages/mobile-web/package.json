@@ -5,11 +5,12 @@
   "description": "Capacitor mobile build for AI Assistant (Android/iOS)",
   "scripts": {
     "flavor": "node scripts/apply-flavor.mjs",
+    "native:verify": "node scripts/verify-native-dependencies.mjs",
     "android:deploy:flavors": "node scripts/deploy-android-flavors.mjs",
     "android:deploy:default": "node scripts/deploy-android-flavors.mjs default",
     "android:deploy:work": "node scripts/deploy-android-flavors.mjs work",
     "android:add": "npx @capacitor/cli telemetry off && npx @capacitor/cli add android && npm run icons:generate && node scripts/patch-android-security.mjs && node scripts/patch-android-fontscale.mjs && node scripts/patch-android-share.mjs && node scripts/patch-android-firebase.mjs && node scripts/patch-web-config.mjs",
-    "android:sync": "npx @capacitor/cli sync android && npm run icons:generate && node scripts/patch-android-security.mjs && node scripts/patch-android-fontscale.mjs && node scripts/patch-android-share.mjs && node scripts/patch-android-firebase.mjs && node scripts/patch-web-config.mjs",
+    "android:sync": "npm run native:verify && npx @capacitor/cli sync android && npm run icons:generate && node scripts/patch-android-security.mjs && node scripts/patch-android-fontscale.mjs && node scripts/patch-android-share.mjs && node scripts/patch-android-firebase.mjs && node scripts/patch-web-config.mjs",
     "android:open": "npx cap open android",
     "android:build": "npm run android:sync && cd android && ./gradlew assembleDebug",
     "android:build:release": "npm run android:sync && cd android && ./gradlew assembleRelease",
@@ -17,24 +18,24 @@
     "android:test": "npm run android:sync && cd android && ./gradlew testDebugUnitTest",
     "android:doctor": "npx cap doctor",
     "ios:add": "npx @capacitor/cli telemetry off && npx @capacitor/cli add ios && npm run icons:generate && node scripts/patch-web-config.mjs",
-    "ios:sync": "npx @capacitor/cli sync ios && npm run icons:generate && node scripts/patch-web-config.mjs",
+    "ios:sync": "npm run native:verify && npx @capacitor/cli sync ios && npm run icons:generate && node scripts/patch-web-config.mjs",
     "ios:open": "npx cap open ios",
-    "icons:generate": "npx @capacitor/assets generate"
+    "icons:generate": "npx @capacitor/assets generate --iconBackgroundColor '#101418' --iconBackgroundColorDark '#101418'"
   },
   "dependencies": {
-    "@capacitor/android": "^8.0.0",
-    "@capacitor/app": "^8.0.0",
-    "@capacitor/core": "^8.0.0",
-    "@capacitor/ios": "^8.0.0",
-    "@capacitor/browser": "^8.0.0",
-    "@capacitor/filesystem": "^8.0.0",
-    "@capacitor/share": "^8.0.0",
-    "@capacitor/push-notifications": "^8.0.0",
-    "@capacitor/status-bar": "^8.0.0",
-    "@capgo/capacitor-share-target": "^8.0.2"
+    "@capacitor/android": "8.0.0",
+    "@capacitor/app": "8.0.0",
+    "@capacitor/core": "8.0.0",
+    "@capacitor/ios": "8.0.0",
+    "@capacitor/browser": "8.0.0",
+    "@capacitor/filesystem": "8.0.0",
+    "@capacitor/share": "8.0.0",
+    "@capacitor/push-notifications": "8.0.0",
+    "@capacitor/status-bar": "8.0.0",
+    "@capgo/capacitor-share-target": "8.0.2"
   },
   "devDependencies": {
-    "@capacitor/cli": "^8.0.0",
-    "@capacitor/assets": "^3.0.0"
+    "@capacitor/cli": "8.0.0",
+    "@capacitor/assets": "3.0.5"
   }
 }

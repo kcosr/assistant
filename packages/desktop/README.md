@@ -32,6 +32,17 @@ The default Electron build uses the canonical desktop identity:
 
 Packaged output is written to `packages/desktop/release/default`.
 
+## Icons
+
+Electron uses the canonical app artwork from
+`packages/mobile-web/resources/icon.svg`. Development and packaging commands
+regenerate `icons/icon.png`, `icons/icon.ico`, and `icons/icon.icns`
+automatically. To refresh them directly:
+
+```bash
+npm run icons:generate
+```
+
 ## Work Variant
 
 ```bash

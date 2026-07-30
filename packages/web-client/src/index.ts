@@ -88,6 +88,7 @@ import {
 } from './panels/sessions';
 import { getWebClientElements } from './utils/webClientElements';
 import { KeyboardShortcutRegistry, createShortcutService } from './utils/keyboardShortcuts';
+import { createWebTurnOriginId } from './utils/turnOrigin';
 import { applyTagColorsToRoot } from './utils/tagColors';
 import { setupCommandPaletteFab } from './utils/commandPaletteFab';
 import { setupVoiceFab, type VoiceFabHandle } from './utils/voiceFab';
@@ -663,6 +664,7 @@ async function main(): Promise<void> {
   const LIST_ITEM_EDITOR_DEFAULT_MODE_STORAGE_KEY = 'aiAssistantListItemEditorDefaultMode';
   const nativeVoiceBridge = new AssistantNativeVoiceBridge();
   const useNativeVoiceRuntime = isCapacitorAndroid() && nativeVoiceBridge.isAvailable();
+  const webTurnOriginId = createWebTurnOriginId();
   voiceRecognizeStopCommandControlEl.hidden = !useNativeVoiceRuntime;
   voiceRecognitionCueControlEl.hidden = !useNativeVoiceRuntime;
   voiceRecognitionCueGainControlEl.hidden = !useNativeVoiceRuntime;
@@ -1886,9 +1888,9 @@ async function main(): Promise<void> {
       elements: dom.inputElements,
       getChatRuntime: () => runtime,
       getSelectedSessionId: () => bindingSessionId,
+      getTurnOriginId: () => (useNativeVoiceRuntime ? nativeTurnOriginId : webTurnOriginId),
       ...(useNativeVoiceRuntime
         ? {
-            getTurnOriginId: () => nativeTurnOriginId,
             resolveTurnOriginId: async () => {
               await nativeVoiceStateHydration;
               return nativeTurnOriginId;

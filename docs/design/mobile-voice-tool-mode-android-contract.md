@@ -65,8 +65,8 @@ Native should only auto-admit a notification-backed voice item when all of the f
   - append-only session-linked notifications for `Tool`
   - non-`session_attention` standalone notifications for `Manual` when standalone notification
     playback is enabled
-- for response-generated `session_attention` items, either
-  `localResponseVoiceOnlyEnabled` is disabled or the response `turnOriginId` exactly matches the
+- for response-generated `session_attention` items, either the response has no `turnOriginId`,
+  `localResponseVoiceOnlyEnabled` is disabled, or the response `turnOriginId` exactly matches the
   current Android process identifier
 - the runtime is already alive and connected
 
@@ -135,8 +135,12 @@ For any item that could transition into recognition:
 
 - when `Audio Mode` is `Response`, create or update one durable `session_attention` notification
   per session and admit it through the same notification-backed queue path
-- when `localResponseVoiceOnlyEnabled` is enabled, admit automatic response TTS and Auto Listen only
-  for typed or spoken turns carrying the current Android process's ephemeral `turnOriginId`
+- first-party browser and Android clients attach an ephemeral `turnOriginId` to typed or spoken
+  turns
+- when `localResponseVoiceOnlyEnabled` is enabled, reject automatic response behavior for replies
+  carrying another client's `turnOriginId`
+- admit replies without a `turnOriginId` as server-initiated broadcasts, but always suppress Auto
+  Listen so one scheduled or server-generated turn cannot arm recognition on multiple devices
 - this origin filter does not apply to `voice_speak`, `voice_ask`, external notifications, manual
   notification playback, or explicit microphone starts
 - Android does not persist its locally generated process identifier; a process restart intentionally
