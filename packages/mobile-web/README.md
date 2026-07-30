@@ -210,6 +210,12 @@ is still the fastest first pass.
 - Session-linked voice notifications now drive a one-at-a-time Android-local queue. If the runtime
   is already alive, automatic `voice_speak`, `voice_ask`, and response-mode final replies queue
   behind the active local interaction instead of being dropped solely because the runtime was busy.
+- Completed turns also publish an ephemeral `turn_settled` websocket message after the active run
+  is released and only when no queued continuation remains. In Response and Manual modes, Android
+  uses a successful local-origin settlement with no final speakable text to start Auto Listen
+  without manufacturing an empty assistant response. A same-request `voice_ask` or
+  `interaction_end`, a server-origin turn, an interrupted/error result, or a subsequent
+  `turn_start` suppresses that automatic listen.
 - Final assistant replies are persisted as one durable `session_attention` item per session, while
   `voice_speak` and `voice_ask` remain append-only notifications with explicit `voiceMode`
   metadata. Auto-listen-capable items carry a server-generated session activity sequence so stale

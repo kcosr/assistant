@@ -45,6 +45,11 @@ import { resolveSessionModelForRun, resolveSessionThinkingForRun } from '../sess
 import { buildMessagesForPiSync, resolveInterruptedPiSyncMessages } from '../history/piSessionSync';
 import type { AgentTool } from '../tools';
 import { publishFinalResponseNotification } from '../notificationProducers';
+import {
+  broadcastTurnSettledIfIdle,
+  hasSpeakableAssistantOutput,
+  type TurnSettlementCandidate,
+} from '../turnSettlement';
 
 const LATE_PROVIDER_TAIL_CUSTOM_TYPE = 'assistant.late_provider_tail';
 
@@ -541,6 +546,7 @@ export async function handleTextInputWithChatCompletions(options: {
 
   let fullText = '';
   let thinkingText = '';
+  let turnSettlement: TurnSettlementCandidate | null = null;
   const buildInterruptedAssistantEvents = (): ChatEvent[] => {
     const run = state.activeChatRun;
     const partialText = run?.accumulatedText?.trim() ?? '';
@@ -627,6 +633,13 @@ export async function handleTextInputWithChatCompletions(options: {
           : {}),
         ...(runResult.provider === 'pi' ? { piTurnEndStatus: 'interrupted' as const } : {}),
       });
+      turnSettlement = {
+        requestId: turnId ?? requestId,
+        responseId,
+        status: 'interrupted',
+        hasSpeakableOutput: false,
+        ...(turnOriginId ? { turnOriginId } : {}),
+      };
       if (timedOut) {
         sendError('upstream_timeout', 'Chat backend request timed out', undefined, {
           retryable: true,
@@ -670,6 +683,13 @@ export async function handleTextInputWithChatCompletions(options: {
           piSdkMessage: runResult.piSdkMessage,
           ...(turnOriginId ? { turnOriginId } : {}),
         }) as Array<Extract<ChatEvent, { type: 'assistant_done' }>>;
+        turnSettlement = {
+          requestId: turnId ?? requestId,
+          responseId,
+          status: 'completed',
+          hasSpeakableOutput: hasSpeakableAssistantOutput(events),
+          ...(turnOriginId ? { turnOriginId } : {}),
+        };
         for (const event of events) {
           logDebugChatEventRecord({
             enabled: envConfig.debugChatCompletions,
@@ -778,6 +798,13 @@ export async function handleTextInputWithChatCompletions(options: {
       eventStore,
       ...(chatProvider === 'pi' ? { piTurnEndStatus: 'completed' as const } : {}),
     });
+    turnSettlement ??= {
+      requestId: turnId ?? requestId,
+      responseId,
+      status: 'completed',
+      hasSpeakableOutput: false,
+      ...(turnOriginId ? { turnOriginId } : {}),
+    };
   } catch (err) {
     const timedOut = abortController.signal.reason === 'timeout';
     if (state.activeChatRun?.outputCancelled === true) {
@@ -802,6 +829,13 @@ export async function handleTextInputWithChatCompletions(options: {
       prependEvents: buildInterruptedAssistantEvents(),
       ...(chatProvider === 'pi' ? { piTurnEndStatus: 'interrupted' as const } : {}),
     });
+    turnSettlement ??= {
+      requestId: turnId ?? requestId,
+      responseId,
+      status: timedOut ? 'interrupted' : 'error',
+      hasSpeakableOutput: false,
+      ...(turnOriginId ? { turnOriginId } : {}),
+    };
     if (timedOut) {
       sendError('upstream_timeout', 'Chat backend request timed out', undefined, {
         retryable: true,
@@ -834,6 +868,13 @@ export async function handleTextInputWithChatCompletions(options: {
       currentState.activeChatRun = undefined;
     }
     clearActiveRunState(activeRunState);
+    broadcastTurnSettledIfIdle({
+      sessionId,
+      state,
+      sessionHub,
+      candidate: turnSettlement,
+      ...(currentState && currentState !== state ? { additionalState: currentState } : {}),
+    });
     void sessionHub.processNextQueuedMessage(sessionId);
   }
 }

@@ -398,6 +398,38 @@ describe('SessionConnectionRegistry', () => {
     });
   });
 
+  it('delivers turn settlement through a filtered voice subscription', () => {
+    const registry = new SessionConnectionRegistry();
+    const { connection, sendServerMessageFromHub } = createTestConnection();
+
+    registry.subscribe('session-a', connection, {
+      serverMessageTypes: ['transcript_event', 'turn_settled'],
+      chatEventTypes: ['turn_start', 'tool_call', 'assistant_done'],
+      toolNames: ['voice_ask', 'interaction_end'],
+      messagePhases: ['final_answer'],
+    });
+
+    registry.broadcastToSession('session-a', {
+      type: 'turn_settled',
+      sessionId: 'session-a',
+      requestId: 'turn-1',
+      responseId: 'response-1',
+      status: 'completed',
+      hasSpeakableOutput: false,
+      turnOriginId: 'android-process-1',
+    });
+
+    expect(sendServerMessageFromHub).toHaveBeenCalledWith({
+      type: 'turn_settled',
+      sessionId: 'session-a',
+      requestId: 'turn-1',
+      responseId: 'response-1',
+      status: 'completed',
+      hasSpeakableOutput: false,
+      turnOriginId: 'android-process-1',
+    });
+  });
+
   it('lets non-tool messages pass through when only toolNames filtering is present', () => {
     const registry = new SessionConnectionRegistry();
     const { connection, sendServerMessageFromHub } = createTestConnection();

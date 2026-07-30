@@ -53,6 +53,68 @@ public final class AssistantVoiceInteractionRulesTest {
     }
 
     @Test
+    public void settledLocalToolOnlyTurnAutoListens() {
+        AssistantVoiceTurnSettledEvent event = new AssistantVoiceTurnSettledEvent(
+            "session-1",
+            "request-1",
+            "response-1",
+            "completed",
+            false,
+            "android-process-1"
+        );
+
+        assertTrue(AssistantVoiceInteractionRules.shouldAutoListenForSettledTurn(
+            true,
+            true,
+            "android-process-1",
+            event,
+            false,
+            false
+        ));
+    }
+
+    @Test
+    public void settledTurnAutoListenRejectsOutputServerOriginAndVoiceControls() {
+        AssistantVoiceTurnSettledEvent speakable = new AssistantVoiceTurnSettledEvent(
+            "session-1",
+            "request-1",
+            "response-1",
+            "completed",
+            true,
+            "android-process-1"
+        );
+        AssistantVoiceTurnSettledEvent server = new AssistantVoiceTurnSettledEvent(
+            "session-1",
+            "request-2",
+            "response-2",
+            "completed",
+            false,
+            ""
+        );
+        AssistantVoiceTurnSettledEvent toolOnly = new AssistantVoiceTurnSettledEvent(
+            "session-1",
+            "request-3",
+            "response-3",
+            "completed",
+            false,
+            "android-process-1"
+        );
+
+        assertFalse(AssistantVoiceInteractionRules.shouldAutoListenForSettledTurn(
+            true, true, "android-process-1", speakable, false, false
+        ));
+        assertFalse(AssistantVoiceInteractionRules.shouldAutoListenForSettledTurn(
+            true, true, "android-process-1", server, false, false
+        ));
+        assertFalse(AssistantVoiceInteractionRules.shouldAutoListenForSettledTurn(
+            true, true, "android-process-1", toolOnly, true, false
+        ));
+        assertFalse(AssistantVoiceInteractionRules.shouldAutoListenForSettledTurn(
+            true, true, "android-process-1", toolOnly, false, true
+        ));
+    }
+
+    @Test
     public void identifiesOnlySystemSessionAttentionAsAssistantResponseNotification() {
         AssistantVoiceNotificationRecord responseNotification =
             new AssistantVoiceNotificationRecord(

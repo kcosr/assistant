@@ -3,11 +3,11 @@ package com.assistant.mobile.voice;
 import java.util.LinkedHashSet;
 import java.util.Set;
 
-final class AssistantVoiceInteractionEndTracker {
+final class AssistantVoiceRequestTracker {
     private final int capacity;
     private final Set<String> requestKeys = new LinkedHashSet<>();
 
-    AssistantVoiceInteractionEndTracker(int capacity) {
+    AssistantVoiceRequestTracker(int capacity) {
         this.capacity = Math.max(1, capacity);
     }
 

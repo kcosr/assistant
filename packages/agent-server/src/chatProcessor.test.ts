@@ -496,6 +496,17 @@ describe('processUserMessage stream event emission', () => {
     );
 
     expect(broadcast.some((message) => message.type === 'text_done')).toBe(true);
+    expect(broadcast).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: 'turn_settled',
+          sessionId: 's1',
+          status: 'completed',
+          hasSpeakableOutput: true,
+          turnOriginId: 'android-process-1',
+        }),
+      ]),
+    );
   });
 
   it('emits user_audio events for spoken submits while keeping user text in model state', async () => {

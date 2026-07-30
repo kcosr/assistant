@@ -50,6 +50,10 @@ final class AssistantVoicePromptEvent {
         return "interaction_end".equals(toolName);
     }
 
+    boolean isTurnStart() {
+        return "turn_start".equals(toolName);
+    }
+
     boolean startsListeningAfterPlayback() {
         return "voice_ask".equals(toolName);
     }

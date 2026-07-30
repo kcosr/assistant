@@ -182,8 +182,10 @@ public final class AssistantVoiceRuntimeService extends Service {
     private boolean assistantSocketConnected = false;
     private String adapterClientId = "";
     private final Set<String> assistantSubscribedSessionIds = new LinkedHashSet<>();
-    private final AssistantVoiceInteractionEndTracker interactionEndTracker =
-        new AssistantVoiceInteractionEndTracker(MAX_INTERACTION_END_REQUESTS);
+    private final AssistantVoiceRequestTracker interactionEndTracker =
+        new AssistantVoiceRequestTracker(MAX_INTERACTION_END_REQUESTS);
+    private final AssistantVoiceRequestTracker voiceAskTracker =
+        new AssistantVoiceRequestTracker(MAX_INTERACTION_END_REQUESTS);
     private String runtimeState = STATE_DISABLED;
 
     // The session currently owning native playback/listen/submit. This is set
@@ -1821,6 +1823,13 @@ public final class AssistantVoiceRuntimeService extends Service {
             return;
         }
 
+        AssistantVoiceTurnSettledEvent turnSettled =
+            AssistantVoiceTurnSettledEvent.parse(rawText);
+        if (turnSettled != null) {
+            handleTurnSettledEvent(turnSettled);
+            return;
+        }
+
         if (!messageType.isEmpty()) {
             Log.d(TAG, "assistant socket unhandled message type=" + messageType);
         }
@@ -1919,6 +1928,10 @@ public final class AssistantVoiceRuntimeService extends Service {
             Log.d(TAG, "handlePromptEvent skipped unwatched sessionId=" + safe(prompt.sessionId));
             return;
         }
+        if (prompt.isTurnStart()) {
+            cancelTurnSettledAutoListen(prompt.sessionId);
+            return;
+        }
         if (prompt.isInteractionEnd()) {
             interactionEndTracker.remember(prompt.sessionId, prompt.requestId);
             Log.d(
@@ -1930,9 +1943,13 @@ public final class AssistantVoiceRuntimeService extends Service {
             );
             return;
         }
+        if (prompt.startsListeningAfterPlayback()) {
+            voiceAskTracker.remember(prompt.sessionId, prompt.requestId);
+        }
         AssistantResponseAdmission responseAdmission = evaluateAssistantResponseAdmission(
             prompt,
             interactionEndTracker,
+            voiceAskTracker,
             config.localResponseVoiceOnlyEnabled,
             AssistantVoiceTurnOrigin.get()
         );
@@ -2011,7 +2028,8 @@ public final class AssistantVoiceRuntimeService extends Service {
 
     static AssistantResponseAdmission evaluateAssistantResponseAdmission(
         AssistantVoicePromptEvent prompt,
-        AssistantVoiceInteractionEndTracker interactionEndTracker,
+        AssistantVoiceRequestTracker interactionEndTracker,
+        AssistantVoiceRequestTracker voiceAskTracker,
         boolean localResponseVoiceOnlyEnabled,
         String localTurnOriginId
     ) {
@@ -2021,8 +2039,12 @@ public final class AssistantVoiceRuntimeService extends Service {
         boolean interactionEnded =
             interactionEndTracker != null
                 && interactionEndTracker.consume(prompt.sessionId, prompt.requestId);
+        boolean voiceAskStarted =
+            voiceAskTracker != null
+                && voiceAskTracker.consume(prompt.sessionId, prompt.requestId);
         boolean suppressAutoListen =
             interactionEnded
+                || voiceAskStarted
                 || AssistantVoiceInteractionRules.shouldSuppressAutoListenForAutomaticResponse(
                     prompt.turnOriginId
                 );
@@ -2032,6 +2054,60 @@ public final class AssistantVoiceRuntimeService extends Service {
             prompt.turnOriginId
         );
         return new AssistantResponseAdmission(admitted, suppressAutoListen);
+    }
+
+    private void handleTurnSettledEvent(AssistantVoiceTurnSettledEvent event) {
+        if (event == null || !isWatchedSessionId(event.sessionId)) {
+            return;
+        }
+        boolean interactionEnded = interactionEndTracker.consume(event.sessionId, event.requestId);
+        boolean voiceAskStarted = voiceAskTracker.consume(event.sessionId, event.requestId);
+        boolean shouldAutoListen =
+            AssistantVoiceInteractionRules.shouldAutoListenForSettledTurn(
+                config.autoListenEnabled,
+                config.localResponseVoiceOnlyEnabled,
+                AssistantVoiceTurnOrigin.get(),
+                event,
+                interactionEnded,
+                voiceAskStarted
+            );
+        if (
+            !shouldAutoListen
+                || (!AssistantVoiceConfig.AUDIO_MODE_RESPONSE.equals(config.audioMode)
+                    && !AssistantVoiceConfig.AUDIO_MODE_MANUAL.equals(config.audioMode))
+                || (config.ttsPreferredSessionOnly
+                    && !config.preferredVoiceSessionId.isEmpty()
+                    && !event.sessionId.equals(config.preferredVoiceSessionId))
+        ) {
+            return;
+        }
+        AssistantVoiceQueueItem item = AssistantVoiceQueueItem.fromTurnSettled(
+            event,
+            config.getSessionTitle(event.sessionId)
+        );
+        if (item != null) {
+            enqueueQueueItem(item, false);
+        }
+    }
+
+    private void cancelTurnSettledAutoListen(String sessionId) {
+        String normalizedSessionId = trim(sessionId);
+        for (int index = queuedVoiceItems.size() - 1; index >= 0; index -= 1) {
+            AssistantVoiceQueueItem item = queuedVoiceItems.get(index);
+            if (
+                item.isTurnSettledAutoListen()
+                    && normalizedSessionId.equals(item.sessionId)
+            ) {
+                queuedVoiceItems.remove(index);
+            }
+        }
+        if (
+            activeQueueItem != null
+                && activeQueueItem.isTurnSettledAutoListen()
+                && normalizedSessionId.equals(activeQueueItem.sessionId)
+        ) {
+            stopCurrentInteraction(false, "new_turn_started");
+        }
     }
 
     private void applyDurableNotificationSnapshot(List<AssistantVoiceNotificationRecord> notifications) {
@@ -3772,7 +3848,11 @@ public final class AssistantVoiceRuntimeService extends Service {
         return item != null
             && item.isListenOnly()
             && !item.manual
-            && ("manual_auto_listen".equals(item.notificationKind) || item.isSessionAttention());
+            && (
+                "manual_auto_listen".equals(item.notificationKind)
+                    || item.isSessionAttention()
+                    || item.isTurnSettledAutoListen()
+            );
     }
 
     static boolean shouldDedupManualAutoListenQueueItem(

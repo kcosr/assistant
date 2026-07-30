@@ -304,6 +304,20 @@ describe('server message validation', () => {
     expect(parsed).toEqual(message);
   });
 
+  it('accepts a turn_settled message', () => {
+    const message: ServerMessage = {
+      type: 'turn_settled',
+      sessionId: 'session-1',
+      requestId: 'turn-1',
+      responseId: 'response-1',
+      status: 'completed',
+      hasSpeakableOutput: false,
+      turnOriginId: 'android-process-1',
+    };
+
+    expect(validateServerMessage(message)).toEqual(message);
+  });
+
   it('accepts a session_updated message with attributes', () => {
     const message: ServerMessage = {
       type: 'session_updated',
