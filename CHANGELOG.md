@@ -8,6 +8,7 @@
 
 ### Added
 
+- Added settlement-driven Android Auto Listen for successful local-origin turns with no final speakable output, while suppressing queued, stale, interrupted, error, and voice-control-completed turns. ([#125](https://github.com/kcosr/assistant/pull/125))
 - Added locally bundled UI and code font catalogs with consistent form-control and terminal rendering, plus unified mobile, Electron, and Tauri app artwork generation. ([#124](https://github.com/kcosr/assistant/pull/124))
 - Added default-on Android response ownership so automatic assistant TTS and Auto Listen only run for turns started by the current app process, while tool prompts, external notifications, and manual voice actions remain available. ([#123](https://github.com/kcosr/assistant/pull/123))
 - Added promoted Android voice notifications with persistent Start/Stop controls and distinct Skip/Stop actions during TTS so users can either advance into Auto Listen or suppress that follow-up. ([#122](https://github.com/kcosr/assistant/pull/122))
