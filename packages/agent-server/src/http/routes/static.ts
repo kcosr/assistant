@@ -6,7 +6,7 @@ import type { HttpRouteHandler } from '../types';
 
 type StaticFileOptions = {
   revalidate?: boolean;
-  ifNoneMatch?: string;
+  ifNoneMatch?: string | undefined;
 };
 
 async function serveStaticFile(
