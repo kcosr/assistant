@@ -33,9 +33,9 @@ public final class AssistantVoiceSessionSocketProtocolTest {
 
         assertTrue(payload.contains("\"type\":\"subscribe\""));
         assertTrue(payload.contains("\"sessionId\":\"session-123\""));
-        assertTrue(payload.contains("\"serverMessageTypes\":[\"transcript_event\"]"));
-        assertTrue(payload.contains("\"chatEventTypes\":[\"tool_call\",\"assistant_done\"]"));
-        assertTrue(payload.contains("\"toolNames\":[\"interaction_end\"]"));
+        assertTrue(payload.contains("\"serverMessageTypes\":[\"transcript_event\",\"turn_settled\"]"));
+        assertTrue(payload.contains("\"chatEventTypes\":[\"turn_start\",\"tool_call\",\"assistant_done\"]"));
+        assertTrue(payload.contains("\"toolNames\":[\"voice_ask\",\"interaction_end\"]"));
         assertTrue(payload.contains("\"messagePhases\":[\"final_answer\"]"));
     }
 
@@ -48,8 +48,8 @@ public final class AssistantVoiceSessionSocketProtocolTest {
 
         assertTrue(payload.contains("\"type\":\"subscribe\""));
         assertTrue(payload.contains("\"sessionId\":\"session-123\""));
-        assertTrue(payload.contains("\"serverMessageTypes\":[\"transcript_event\"]"));
-        assertTrue(payload.contains("\"chatEventTypes\":[\"tool_call\",\"assistant_done\"]"));
+        assertTrue(payload.contains("\"serverMessageTypes\":[\"transcript_event\",\"turn_settled\"]"));
+        assertTrue(payload.contains("\"chatEventTypes\":[\"turn_start\",\"tool_call\",\"assistant_done\"]"));
         assertTrue(payload.contains(
             "\"toolNames\":[\"voice_speak\",\"voice_ask\",\"interaction_end\"]"
         ));
@@ -171,5 +171,27 @@ public final class AssistantVoiceSessionSocketProtocolTest {
         assertTrue(prompt.isInteractionEnd());
         assertTrue("request-end".equals(prompt.requestId));
         assertTrue("call-end".equals(prompt.toolCallId));
+    }
+
+    @Test
+    public void parsePlaybackMessageReturnsTurnStartControl() {
+        String message = "{"
+            + "\"type\":\"transcript_event\","
+            + "\"event\":{"
+            + "\"eventId\":\"event-start\","
+            + "\"sessionId\":\"session-123\","
+            + "\"requestId\":\"request-start\","
+            + "\"chatEventType\":\"turn_start\","
+            + "\"payload\":{\"trigger\":\"user\"}"
+            + "}"
+            + "}";
+
+        AssistantVoicePromptEvent prompt = AssistantVoiceSessionSocketProtocol.parsePlaybackMessage(
+            message
+        );
+
+        assertNotNull(prompt);
+        assertTrue(prompt.isTurnStart());
+        assertTrue("request-start".equals(prompt.requestId));
     }
 }

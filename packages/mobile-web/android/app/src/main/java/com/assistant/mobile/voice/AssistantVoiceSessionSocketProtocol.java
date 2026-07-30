@@ -91,16 +91,16 @@ final class AssistantVoiceSessionSocketProtocol {
         String normalizedAudioMode = trim(audioMode);
         if (AssistantVoiceConfig.AUDIO_MODE_RESPONSE.equals(normalizedAudioMode)) {
             return "{"
-                + "\"serverMessageTypes\":[\"transcript_event\"],"
-                + "\"chatEventTypes\":[\"tool_call\",\"assistant_done\"],"
-                + "\"toolNames\":[\"interaction_end\"],"
+                + "\"serverMessageTypes\":[\"transcript_event\",\"turn_settled\"],"
+                + "\"chatEventTypes\":[\"turn_start\",\"tool_call\",\"assistant_done\"],"
+                + "\"toolNames\":[\"voice_ask\",\"interaction_end\"],"
                 + "\"messagePhases\":[\"final_answer\"]"
                 + "}";
         }
         if (AssistantVoiceConfig.AUDIO_MODE_MANUAL.equals(normalizedAudioMode)) {
             return "{"
-                + "\"serverMessageTypes\":[\"transcript_event\"],"
-                + "\"chatEventTypes\":[\"tool_call\",\"assistant_done\"],"
+                + "\"serverMessageTypes\":[\"transcript_event\",\"turn_settled\"],"
+                + "\"chatEventTypes\":[\"turn_start\",\"tool_call\",\"assistant_done\"],"
                 + "\"toolNames\":[\"voice_speak\",\"voice_ask\",\"interaction_end\"],"
                 + "\"messagePhases\":[\"final_answer\"]"
                 + "}";

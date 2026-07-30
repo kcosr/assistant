@@ -41,6 +41,28 @@ final class AssistantVoiceInteractionRules {
         return trim(responseTurnOriginId).isEmpty();
     }
 
+    static boolean shouldAutoListenForSettledTurn(
+        boolean autoListenEnabled,
+        boolean localResponseVoiceOnlyEnabled,
+        String localTurnOriginId,
+        AssistantVoiceTurnSettledEvent event,
+        boolean interactionEnded,
+        boolean voiceAskStarted
+    ) {
+        return autoListenEnabled
+            && event != null
+            && "completed".equals(event.status)
+            && !event.hasSpeakableOutput
+            && !interactionEnded
+            && !voiceAskStarted
+            && !shouldSuppressAutoListenForAutomaticResponse(event.turnOriginId)
+            && shouldAdmitAutomaticResponse(
+                localResponseVoiceOnlyEnabled,
+                localTurnOriginId,
+                event.turnOriginId
+            );
+    }
+
     static boolean shouldAdmitAutomaticNotification(
         boolean localResponseVoiceOnlyEnabled,
         String localTurnOriginId,

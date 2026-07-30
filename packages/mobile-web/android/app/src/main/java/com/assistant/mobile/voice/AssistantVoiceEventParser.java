@@ -22,6 +22,18 @@ final class AssistantVoiceEventParser {
             return null;
         }
 
+        if ("turn_start".equals(eventType) && !requestId.isEmpty()) {
+            return new AssistantVoicePromptEvent(
+                eventId,
+                sessionId,
+                requestId,
+                "",
+                "turn_start",
+                "",
+                ""
+            );
+        }
+
         if ("tool_call".equals(eventType)) {
             String toolName = trim(findStringField(payloadJson, "toolName", 0));
             String toolCallId = trim(findStringField(payloadJson, "toolCallId", 0));

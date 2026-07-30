@@ -38,7 +38,7 @@ public final class AssistantVoiceRuntimeServiceTest {
     @Test
     @Config(sdk = Build.VERSION_CODES.N)
     public void foreignResponseConsumesInteractionEndBeforeOriginRejection() {
-        AssistantVoiceInteractionEndTracker tracker = new AssistantVoiceInteractionEndTracker(4);
+        AssistantVoiceRequestTracker tracker = new AssistantVoiceRequestTracker(4);
         tracker.remember("session-1", "request-1");
         AssistantVoicePromptEvent foreignResponse = new AssistantVoicePromptEvent(
             "event-1",
@@ -54,6 +54,7 @@ public final class AssistantVoiceRuntimeServiceTest {
             AssistantVoiceRuntimeService.evaluateAssistantResponseAdmission(
                 foreignResponse,
                 tracker,
+                new AssistantVoiceRequestTracker(4),
                 true,
                 "this-device"
             );
@@ -79,13 +80,43 @@ public final class AssistantVoiceRuntimeServiceTest {
         AssistantVoiceRuntimeService.AssistantResponseAdmission admission =
             AssistantVoiceRuntimeService.evaluateAssistantResponseAdmission(
                 serverResponse,
-                new AssistantVoiceInteractionEndTracker(4),
+                new AssistantVoiceRequestTracker(4),
+                new AssistantVoiceRequestTracker(4),
                 true,
                 "this-device"
             );
 
         assertTrue(admission.admitted);
         assertTrue(admission.suppressAutoListen);
+    }
+
+    @Test
+    @Config(sdk = Build.VERSION_CODES.N)
+    public void voiceAskSuppressesAssistantResponseAutoListenForSameRequest() {
+        AssistantVoiceRequestTracker voiceAskTracker = new AssistantVoiceRequestTracker(4);
+        voiceAskTracker.remember("session-1", "request-1");
+        AssistantVoicePromptEvent response = new AssistantVoicePromptEvent(
+            "event-1",
+            "session-1",
+            "request-1",
+            "response-1",
+            "assistant_response",
+            "Answer",
+            "this-device"
+        );
+
+        AssistantVoiceRuntimeService.AssistantResponseAdmission admission =
+            AssistantVoiceRuntimeService.evaluateAssistantResponseAdmission(
+                response,
+                new AssistantVoiceRequestTracker(4),
+                voiceAskTracker,
+                true,
+                "this-device"
+            );
+
+        assertTrue(admission.admitted);
+        assertTrue(admission.suppressAutoListen);
+        assertFalse(voiceAskTracker.consume("session-1", "request-1"));
     }
 
     @Test

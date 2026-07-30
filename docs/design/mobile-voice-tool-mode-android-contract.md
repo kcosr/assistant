@@ -129,6 +129,12 @@ For any item that could transition into recognition:
   queued item still passes pre-listen validation
 - if the user manually interrupts playback, start recognition immediately only when
   `Auto-listen` is enabled
+- when a successful local-origin turn produces no final speakable response, admit the server's
+  ephemeral `turn_settled` signal as a `listen_only` queue item after the run is released and only
+  if no queued continuation remains
+- suppress settlement-driven Auto Listen after a same-request `voice_ask` or `interaction_end`,
+  for server-origin/interrupted/error turns, and when a newer `turn_start` makes a pending
+  settlement stale
 - while listening, manual stop cancels recognition
 
 ### `assistant_response`

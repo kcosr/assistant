@@ -165,6 +165,42 @@ public final class AssistantVoiceQueueItemTest {
     }
 
     @Test
+    public void fromTurnSettledBuildsListenOnlyQueueItem() {
+        AssistantVoiceQueueItem item = AssistantVoiceQueueItem.fromTurnSettled(
+            new AssistantVoiceTurnSettledEvent(
+                "session-1",
+                "request-1",
+                "response-1",
+                "completed",
+                false,
+                "android-process-1"
+            ),
+            "Session 1"
+        );
+
+        assertNotNull(item);
+        assertTrue(item.isListenOnly());
+        assertTrue(item.isTurnSettledAutoListen());
+        assertTrue("response-1".equals(item.sourceEventId));
+        assertTrue("session-1".equals(item.sessionId));
+    }
+
+    @Test
+    public void fromTurnSettledIgnoresSpeakableResponse() {
+        assertNull(AssistantVoiceQueueItem.fromTurnSettled(
+            new AssistantVoiceTurnSettledEvent(
+                "session-1",
+                "request-1",
+                "response-1",
+                "completed",
+                true,
+                "android-process-1"
+            ),
+            "Session 1"
+        ));
+    }
+
+    @Test
     public void manualNotificationMicSkipsPlaybackAndStartsListeningImmediately() {
         AssistantVoiceNotificationRecord notification = new AssistantVoiceNotificationRecord(
             "notif-1",

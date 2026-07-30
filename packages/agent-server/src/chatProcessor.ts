@@ -46,6 +46,11 @@ import { buildMessagesForPiSync } from './history/piSessionSync';
 import { publishFinalResponseNotification } from './notificationProducers';
 import { DEFAULT_PI_COMPACTION_SETTINGS, shouldCompactPiContext } from './history/piCompaction';
 import { calculateContextTokens } from './contextUsage';
+import {
+  broadcastTurnSettledIfIdle,
+  hasSpeakableAssistantOutput,
+  type TurnSettlementCandidate,
+} from './turnSettlement';
 
 function buildAssistantDoneEvents(options: {
   sessionId: string;
@@ -605,6 +610,7 @@ export async function processUserMessage(
 
   let fullText = '';
   let thinkingText = '';
+  let turnSettlement: TurnSettlementCandidate | null = null;
 
   const toolCallMetrics: ChatToolCallMetric[] = [];
 
@@ -698,6 +704,13 @@ export async function processUserMessage(
           : {}),
         ...(runResult.provider === 'pi' ? { piTurnEndStatus: 'interrupted' as const } : {}),
       });
+      turnSettlement = {
+        requestId: turnId ?? requestId,
+        responseId,
+        status: 'interrupted',
+        hasSpeakableOutput: false,
+        ...(turnOriginId ? { turnOriginId } : {}),
+      };
       if (timedOut) {
         throw new ChatRunError('upstream_timeout', 'Chat backend request timed out', {
           retryable: true,
@@ -750,6 +763,13 @@ export async function processUserMessage(
           piSdkMessage: runResult.piSdkMessage,
           ...(turnOriginId ? { turnOriginId } : {}),
         }) as Array<Extract<ChatEvent, { type: 'assistant_done' }>>;
+        turnSettlement = {
+          requestId: turnId ?? requestId,
+          responseId,
+          status: 'completed',
+          hasSpeakableOutput: hasSpeakableAssistantOutput(assistantDoneEvents),
+          ...(turnOriginId ? { turnOriginId } : {}),
+        };
         for (const event of assistantDoneEvents) {
           logDebugChatEventRecord({
             enabled: envConfig.debugChatCompletions,
@@ -856,6 +876,13 @@ export async function processUserMessage(
       ...(eventStore ? { eventStore } : {}),
       ...(chatProvider === 'pi' ? { piTurnEndStatus: 'completed' as const } : {}),
     });
+    turnSettlement ??= {
+      requestId: turnId ?? requestId,
+      responseId,
+      status: 'completed',
+      hasSpeakableOutput: false,
+      ...(turnOriginId ? { turnOriginId } : {}),
+    };
 
     if (runResult.provider === 'pi' && runResult.piSdkMessage?.role === 'assistant') {
       const piConfig = agent?.chat?.config as PiSdkChatConfig | undefined;
@@ -950,6 +977,13 @@ export async function processUserMessage(
         prependEvents: buildInterruptedAssistantEvents(),
         ...(chatProvider === 'pi' ? { piTurnEndStatus: 'interrupted' as const } : {}),
       });
+      turnSettlement ??= {
+        requestId: turnId ?? requestId,
+        responseId,
+        status: timedOut ? 'interrupted' : 'error',
+        hasSpeakableOutput: false,
+        ...(turnOriginId ? { turnOriginId } : {}),
+      };
     }
 
     if (timedOut) {
@@ -971,6 +1005,12 @@ export async function processUserMessage(
     if (state.activeChatRun && state.activeChatRun.responseId === responseId) {
       state.activeChatRun = undefined;
     }
+    broadcastTurnSettledIfIdle({
+      sessionId,
+      state,
+      sessionHub,
+      candidate: turnSettlement,
+    });
     void sessionHub.processNextQueuedMessage(sessionId);
   }
 }

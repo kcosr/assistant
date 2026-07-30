@@ -68,6 +68,10 @@ final class AssistantVoiceQueueItem {
         return "session_attention".equals(notificationKind);
     }
 
+    boolean isTurnSettledAutoListen() {
+        return "turn_settled_auto_listen".equals(notificationKind);
+    }
+
     String dedupKey() {
         if (!sourceEventId.isEmpty()) {
             return sourceEventId;
@@ -169,6 +173,35 @@ final class AssistantVoiceQueueItem {
             "system",
             dedupId,
             sessionId,
+            normalizedSessionTitle,
+            normalizedSessionTitle,
+            "",
+            "listen_only",
+            null,
+            false,
+            true
+        );
+    }
+
+    static AssistantVoiceQueueItem fromTurnSettled(
+        AssistantVoiceTurnSettledEvent event,
+        String sessionTitle
+    ) {
+        if (
+            event == null
+                || !"completed".equals(event.status)
+                || event.hasSpeakableOutput
+                || event.sessionId.isEmpty()
+        ) {
+            return null;
+        }
+        String normalizedSessionTitle = trim(sessionTitle);
+        return new AssistantVoiceQueueItem(
+            "",
+            "turn_settled_auto_listen",
+            "system",
+            event.responseId,
+            event.sessionId,
             normalizedSessionTitle,
             normalizedSessionTitle,
             "",

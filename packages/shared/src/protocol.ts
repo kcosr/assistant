@@ -32,6 +32,7 @@ const SERVER_MESSAGE_TYPE_VALUES = [
   'tool_call_start',
   'tool_output_delta',
   'tool_result',
+  'turn_settled',
   'transcript_event',
   'agent_callback_result',
   'modes_updated',
@@ -734,6 +735,19 @@ export const ServerTranscriptEventMessageSchema = z.object({
   event: ProjectedTranscriptEventSchema,
 });
 
+export const TurnSettlementStatusSchema = z.enum(['completed', 'interrupted', 'error']);
+export type TurnSettlementStatus = z.infer<typeof TurnSettlementStatusSchema>;
+
+export const ServerTurnSettledMessageSchema = z.object({
+  type: z.literal('turn_settled'),
+  sessionId: z.string().trim().min(1),
+  requestId: z.string().trim().min(1),
+  responseId: z.string().trim().min(1),
+  status: TurnSettlementStatusSchema,
+  hasSpeakableOutput: z.boolean(),
+  turnOriginId: z.string().trim().min(1).max(128).optional(),
+});
+
 export const ServerAgentCallbackResultMessageSchema = z.object({
   type: z.literal('agent_callback_result'),
   /**
@@ -918,6 +932,7 @@ export const ServerMessageSchema = z.discriminatedUnion('type', [
   ServerToolCallStartMessageSchema,
   ServerToolOutputDeltaMessageSchema,
   ServerToolResultMessageSchema,
+  ServerTurnSettledMessageSchema,
   ServerTranscriptEventMessageSchema,
   ServerAgentCallbackResultMessageSchema,
   ServerModesUpdatedMessageSchema,
@@ -951,6 +966,7 @@ export type ServerToolCallMessage = z.infer<typeof ServerToolCallMessageSchema>;
 export type ServerToolCallStartMessage = z.infer<typeof ServerToolCallStartMessageSchema>;
 export type ServerToolOutputDeltaMessage = z.infer<typeof ServerToolOutputDeltaMessageSchema>;
 export type ServerToolResultMessage = z.infer<typeof ServerToolResultMessageSchema>;
+export type ServerTurnSettledMessage = z.infer<typeof ServerTurnSettledMessageSchema>;
 export type ServerTranscriptEventMessage = z.infer<typeof ServerTranscriptEventMessageSchema>;
 export type ServerAgentCallbackResultMessage = z.infer<
   typeof ServerAgentCallbackResultMessageSchema
