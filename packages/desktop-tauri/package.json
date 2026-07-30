@@ -15,7 +15,7 @@
     "tauri:dev:work": "ASSISTANT_DESKTOP_DEFAULT_BACKEND_URL=https://assistant/assistant-work tauri dev -c src-tauri/tauri.work.conf.json",
     "tauri:build": "tauri build",
     "tauri:build:work": "ASSISTANT_DESKTOP_DEFAULT_BACKEND_URL=https://assistant/assistant-work tauri build -c src-tauri/tauri.work.conf.json",
-    "tauri:icon": "tauri icon ../mobile-web/resources/icon.svg"
+    "tauri:icon": "npm run icons:generate"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2",

@@ -11,6 +11,7 @@ const require = createRequire(import.meta.url);
 const packageDir = path.dirname(fileURLToPath(new URL('../package.json', import.meta.url)));
 const defaultOutputDir = path.join(packageDir, 'public', 'fonts');
 export const bundledFontSubsets = ['latin-ext', 'latin'];
+export const bundledFontLicense = 'OFL-1.1';
 
 const unicodeRanges = {
   latin:
@@ -29,6 +30,14 @@ function sourceName(font, subset, style) {
 
 function outputName(font, subset, style) {
   return `${font.id}-${subset}-${style}.woff2`;
+}
+
+export function assertSupportedFontLicense(font, packageMetadata) {
+  if (packageMetadata.license !== bundledFontLicense) {
+    throw new Error(
+      `Unsupported license "${packageMetadata.license}" for ${font.package}; expected ${bundledFontLicense}`,
+    );
+  }
 }
 
 function renderFontFace(font, subset, style) {
@@ -82,6 +91,7 @@ export async function bundleFonts({ outputDir = defaultOutputDir } = {}) {
     const packageMetadata = JSON.parse(
       await fs.readFile(path.join(packageRoot, 'package.json'), 'utf8'),
     );
+    assertSupportedFontLicense(font, packageMetadata);
     packageDetails.push({ font, packageMetadata });
 
     for (const style of font.styles) {
@@ -96,7 +106,7 @@ export async function bundleFonts({ outputDir = defaultOutputDir } = {}) {
 
     await fs.copyFile(
       path.join(packageRoot, 'LICENSE'),
-      path.join(outputDir, 'licenses', `${font.id}-OFL-1.1.txt`),
+      path.join(outputDir, 'licenses', `${font.id}-${bundledFontLicense}.txt`),
     );
   }
 

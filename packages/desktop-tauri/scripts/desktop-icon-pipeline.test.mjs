@@ -1,10 +1,9 @@
-import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
-import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 
 import sharp from 'sharp';
+import { expect, test } from 'vitest';
 
 const scriptsDir = dirname(fileURLToPath(import.meta.url));
 const repoRoot = join(scriptsDir, '..', '..', '..');
@@ -18,14 +17,12 @@ test('Electron and Tauri desktop icons match the canonical app artwork', async (
   const electronPng = await readFile(join(electronIconsDir, 'icon.png'));
   const tauriPng = await readFile(join(tauriIconsDir, 'icon.png'));
 
-  assert.deepEqual(electronPng, expectedPng);
-  assert.deepEqual(tauriPng, expectedPng);
-  assert.deepEqual(
-    await readFile(join(electronIconsDir, 'icon.ico')),
+  expect(electronPng).toEqual(expectedPng);
+  expect(tauriPng).toEqual(expectedPng);
+  expect(await readFile(join(electronIconsDir, 'icon.ico'))).toEqual(
     await readFile(join(tauriIconsDir, 'icon.ico')),
   );
-  assert.deepEqual(
-    await readFile(join(electronIconsDir, 'icon.icns')),
+  expect(await readFile(join(electronIconsDir, 'icon.icns'))).toEqual(
     await readFile(join(tauriIconsDir, 'icon.icns')),
   );
 });
@@ -38,8 +35,9 @@ test('desktop development and packaging hooks regenerate icons', async () => {
     await readFile(join(repoRoot, 'packages', 'desktop-tauri', 'package.json'), 'utf8'),
   );
 
-  assert.match(electronPackage.scripts['preelectron:dev'], /npm run icons:generate/);
-  assert.match(electronPackage.scripts['preelectron:build'], /npm run icons:generate/);
-  assert.match(tauriPackage.scripts['pretauri:dev'], /npm run icons:generate/);
-  assert.match(tauriPackage.scripts['pretauri:build'], /npm run icons:generate/);
+  expect(electronPackage.scripts['preelectron:dev']).toMatch(/npm run icons:generate/);
+  expect(electronPackage.scripts['preelectron:build']).toMatch(/npm run icons:generate/);
+  expect(tauriPackage.scripts['pretauri:dev']).toMatch(/npm run icons:generate/);
+  expect(tauriPackage.scripts['pretauri:build']).toMatch(/npm run icons:generate/);
+  expect(tauriPackage.scripts['tauri:icon']).toBe('npm run icons:generate');
 });

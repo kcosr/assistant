@@ -25,6 +25,7 @@
   "devDependencies": {
     "@types/ws": "^8.18.1",
     "electron": "37.10.3",
-    "electron-builder": "^26.0.12"
+    "electron-builder": "^26.0.12",
+    "sharp": "^0.33.0"
   }
 }

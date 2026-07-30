@@ -205,7 +205,7 @@ This creates all required formats in `src-tauri/icons/`:
 - Windows: icon.ico + Square\*Logo.png variants
 - macOS: icon.icns
 
-To invoke Tauri's own icon generator against the same canonical source:
+The compatibility alias below invokes the same canonical generator:
 
 ```bash
 npm run tauri:icon

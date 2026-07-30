@@ -62,10 +62,21 @@ describe('font static routes', () => {
     const cssResponse = await fetch(`${baseUrl}/fonts/fonts.css`);
     expect(cssResponse.status).toBe(200);
     expect(cssResponse.headers.get('content-type')).toBe('text/css; charset=utf-8');
+    expect(cssResponse.headers.get('cache-control')).toBe('public, max-age=0, must-revalidate');
+    expect(cssResponse.headers.get('etag')).toMatch(/^"[A-Za-z0-9_-]+"$/);
 
     const fontResponse = await fetch(`${baseUrl}/fonts/inter.woff2`);
     expect(fontResponse.status).toBe(200);
     expect(fontResponse.headers.get('content-type')).toBe('font/woff2');
+    expect(fontResponse.headers.get('cache-control')).toBe('public, max-age=0, must-revalidate');
     expect(new Uint8Array(await fontResponse.arrayBuffer())).toEqual(new Uint8Array([1, 2, 3]));
+
+    const etag = fontResponse.headers.get('etag');
+    expect(etag).toBeTruthy();
+    const cachedResponse = await fetch(`${baseUrl}/fonts/inter.woff2`, {
+      headers: { 'If-None-Match': etag ?? '' },
+    });
+    expect(cachedResponse.status).toBe(304);
+    expect(await cachedResponse.text()).toBe('');
   });
 });

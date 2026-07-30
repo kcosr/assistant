@@ -269,9 +269,9 @@ Valid values are 50-300, where 100 is normal size.
 
 ## Icons
 
-Capacitor app icons are generated from `resources/icon.svg` (copied from the desktop icon).
-Run `npm run icons:generate` after updating the source. Icon generation runs automatically
-as part of `android:add`, `android:sync`, `ios:add`, and `ios:sync`.
+`resources/icon.svg` is the canonical app artwork shared by Capacitor, Electron,
+and Tauri. Run `npm run icons:generate` after updating the source. Icon generation
+runs automatically as part of `android:add`, `android:sync`, `ios:add`, and `ios:sync`.
 
 ## Build Flavors
 
