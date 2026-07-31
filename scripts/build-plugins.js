@@ -9,6 +9,11 @@ const distRoot = path.join(repoRoot, 'dist', 'plugins');
 const defaultSkillsRoot = path.join(repoRoot, 'dist', 'skills');
 const rootPackagePath = path.join(repoRoot, 'package.json');
 const SKILL_NAME_PREFIX = 'assistant-';
+const SERVER_NATIVE_ESM_RUNTIME_DEPENDENCIES = [
+  '@earendil-works/pi-agent-core',
+  '@earendil-works/pi-ai',
+  '@earendil-works/pi-coding-agent',
+];
 
 function parseSkillsDirs(argv) {
   const dirs = [];
@@ -102,6 +107,68 @@ async function readRootPackage() {
     console.warn('[plugins] Failed to read root package.json', error);
     cachedRootPackage = null;
     return null;
+  }
+}
+
+async function assertServerRuntimeDependencies() {
+  const rootPackage = await readRootPackage();
+  if (!rootPackage) {
+    throw new Error('Cannot validate plugin server runtime dependencies without package.json');
+  }
+
+  const declaredDependencies = rootPackage.dependencies ?? {};
+  const agentServerPackagePath = path.join(repoRoot, 'packages', 'agent-server', 'package.json');
+  const agentServerPackage = JSON.parse(await fs.readFile(agentServerPackagePath, 'utf8'));
+  const agentServerDependencies = agentServerPackage.dependencies ?? {};
+  const missingDeclarations = SERVER_NATIVE_ESM_RUNTIME_DEPENDENCIES.filter(
+    (dependency) => typeof declaredDependencies[dependency] !== 'string',
+  );
+  if (missingDeclarations.length > 0) {
+    throw new Error(
+      `Plugin server native ESM dependencies must be declared at the repository root: ${missingDeclarations.join(', ')}`,
+    );
+  }
+
+  const mismatchedDeclarations = SERVER_NATIVE_ESM_RUNTIME_DEPENDENCIES.filter(
+    (dependency) => declaredDependencies[dependency] !== agentServerDependencies[dependency],
+  );
+  if (mismatchedDeclarations.length > 0) {
+    throw new Error(
+      `Plugin server native ESM dependency versions must match packages/agent-server: ${mismatchedDeclarations.join(', ')}`,
+    );
+  }
+
+  const missingInstalls = [];
+  for (const dependency of SERVER_NATIVE_ESM_RUNTIME_DEPENDENCIES) {
+    const packagePath = path.join(repoRoot, 'node_modules', ...dependency.split('/'), 'package.json');
+    if (!(await pathExists(packagePath))) {
+      missingInstalls.push(dependency);
+    }
+  }
+  if (missingInstalls.length > 0) {
+    throw new Error(
+      `Plugin server native ESM dependencies are not installed at the repository root: ${missingInstalls.join(', ')}. Run npm install before building plugins.`,
+    );
+  }
+
+  const nestedInstalls = [];
+  for (const dependency of SERVER_NATIVE_ESM_RUNTIME_DEPENDENCIES) {
+    const packagePath = path.join(
+      repoRoot,
+      'packages',
+      'agent-server',
+      'node_modules',
+      ...dependency.split('/'),
+      'package.json',
+    );
+    if (await pathExists(packagePath)) {
+      nestedInstalls.push(dependency);
+    }
+  }
+  if (nestedInstalls.length > 0) {
+    throw new Error(
+      `Plugin server native ESM dependencies must resolve to one root installation; remove nested agent-server copies: ${nestedInstalls.join(', ')}. Run npm install before building plugins.`,
+    );
   }
 }
 
@@ -580,6 +647,8 @@ async function main() {
     return;
   }
 
+  await assertServerRuntimeDependencies();
+
   const skillsFilter = parseSkillsFilter(process.argv.slice(2));
   let pluginDirs = await findPluginDirectories(pluginsRoot);
   if (pluginDirs.length === 0) {
@@ -612,6 +681,7 @@ if (require.main === module) {
 }
 
 module.exports = {
+  assertServerRuntimeDependencies,
   formatSkillsDocument,
   normalizePackageAuthor,
   readSystemMetadata,

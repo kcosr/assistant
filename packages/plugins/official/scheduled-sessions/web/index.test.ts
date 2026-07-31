@@ -52,6 +52,17 @@ type SessionWakeupInfo = {
   status: 'pending' | 'queued' | 'delivering';
 };
 
+type ScheduledReminderInfo = {
+  kind: 'one_time_reminder';
+  scope: 'global';
+  manageable: true;
+  reminderId: string;
+  text: string;
+  runAt: string;
+  createdAt: string;
+  status: 'pending';
+};
+
 const SCHEDULES: ScheduleInfo[] = [
   {
     agentId: 'agent-a',
@@ -95,10 +106,12 @@ describe('scheduled sessions panel', () => {
     .ASSISTANT_PANEL_REGISTRY;
   let panelFactory: PanelFactory | null = null;
   let wakeups: SessionWakeupInfo[] = [];
+  let reminders: ScheduledReminderInfo[] = [];
 
   beforeEach(() => {
     panelFactory = null;
     wakeups = [];
+    reminders = [];
     apiFetch.mockReset();
     apiFetch.mockImplementation(async (url: RequestInfo | URL) => {
       const path = String(url);
@@ -113,6 +126,26 @@ describe('scheduled sessions panel', () => {
         };
       }
       if (path.includes('/operations/wakeup-cancel')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            ok: true,
+            result: { cancelled: true },
+          }),
+        };
+      }
+      if (path.includes('/operations/reminder-list')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            ok: true,
+            result: { reminders },
+          }),
+        };
+      }
+      if (path.includes('/operations/reminder-cancel')) {
         return {
           ok: true,
           status: 200,
@@ -140,14 +173,10 @@ describe('scheduled sessions panel', () => {
       },
     };
 
-    vi.stubGlobal(
-      'requestAnimationFrame',
-      ((callback: FrameRequestCallback) => window.setTimeout(() => callback(0), 0)) as typeof requestAnimationFrame,
-    );
-    vi.stubGlobal(
-      'cancelAnimationFrame',
-      ((id: number) => window.clearTimeout(id)) as typeof cancelAnimationFrame,
-    );
+    vi.stubGlobal('requestAnimationFrame', ((callback: FrameRequestCallback) =>
+      window.setTimeout(() => callback(0), 0)) as typeof requestAnimationFrame);
+    vi.stubGlobal('cancelAnimationFrame', ((id: number) =>
+      window.clearTimeout(id)) as typeof cancelAnimationFrame);
     vi.stubGlobal(
       'ResizeObserver',
       class ResizeObserver {
@@ -231,7 +260,9 @@ describe('scheduled sessions panel', () => {
     try {
       expect(container.querySelectorAll('.scheduled-sessions-group')).toHaveLength(0);
       expect(container.querySelectorAll('.scheduled-sessions-item')).toHaveLength(2);
-      expect(container.querySelectorAll('.scheduled-sessions-details.is-collapsed')).toHaveLength(2);
+      expect(container.querySelectorAll('.scheduled-sessions-details.is-collapsed')).toHaveLength(
+        2,
+      );
 
       const titles = Array.from(
         container.querySelectorAll<HTMLElement>('.scheduled-sessions-row-title'),
@@ -266,6 +297,7 @@ describe('scheduled sessions panel', () => {
       expect(details?.classList.contains('is-collapsed')).toBe(false);
       expect(persistPanelState).toHaveBeenLastCalledWith({
         expandedSchedules: ['agent-a:schedule-1'],
+        expandedOneShots: [],
       });
 
       const rerenderedRow = container.querySelector<HTMLElement>(
@@ -276,12 +308,14 @@ describe('scheduled sessions panel', () => {
       const rerenderedItem = container.querySelector<HTMLElement>(
         '.scheduled-sessions-item[data-agent-id="agent-a"][data-schedule-id="schedule-1"]',
       );
-      const rerenderedDetails =
-        rerenderedItem?.querySelector<HTMLElement>('.scheduled-sessions-details');
+      const rerenderedDetails = rerenderedItem?.querySelector<HTMLElement>(
+        '.scheduled-sessions-details',
+      );
       expect(rerenderedItem?.classList.contains('is-expanded')).toBe(false);
       expect(rerenderedDetails?.classList.contains('is-collapsed')).toBe(true);
       expect(persistPanelState).toHaveBeenLastCalledWith({
         expandedSchedules: [],
+        expandedOneShots: [],
       });
     } finally {
       handle.unmount();
@@ -323,7 +357,7 @@ describe('scheduled sessions panel', () => {
       ).toBe('schedule-2');
       expect(
         container.querySelector<HTMLElement>('[data-role="summary"]')?.textContent?.trim(),
-      ).toBe('1 of 2 schedules | 0 of 0 wake-ups | 0 running | 1 disabled');
+      ).toBe('1 of 2 schedules | 0 of 0 wake-ups | 0 of 0 reminders | 0 running | 1 disabled');
 
       search!.value = 'morning';
       search!.dispatchEvent(new Event('input', { bubbles: true }));
@@ -336,7 +370,7 @@ describe('scheduled sessions panel', () => {
       search!.dispatchEvent(new Event('input', { bubbles: true }));
       expect(container.querySelectorAll('.scheduled-sessions-item')).toHaveLength(0);
       expect(container.querySelector('.scheduled-sessions-empty')?.textContent).toContain(
-        'No schedules or wake-ups match',
+        'No schedules, wake-ups, or reminders match',
       );
     } finally {
       handle.unmount();
@@ -362,11 +396,25 @@ describe('scheduled sessions panel', () => {
     try {
       expect(container.querySelectorAll('.scheduled-sessions-wakeup-item')).toHaveLength(1);
       expect(container.querySelector('.scheduled-sessions-section-title')?.textContent).toBe(
-        'Wake-ups',
+        'One-shots',
       );
       expect(container.querySelector('.scheduled-sessions-wakeup-item')?.textContent).toContain(
         'Check the issue status',
       );
+      expect(
+        container
+          .querySelector('.scheduled-sessions-wakeup-item .scheduled-sessions-details')
+          ?.classList.contains('is-collapsed'),
+      ).toBe(true);
+
+      container
+        .querySelector<HTMLElement>('[data-action="toggle-one-shot"]')
+        ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      expect(
+        container
+          .querySelector('.scheduled-sessions-wakeup-item .scheduled-sessions-details')
+          ?.classList.contains('is-collapsed'),
+      ).toBe(false);
 
       const cancel = container.querySelector<HTMLButtonElement>(
         '[data-action="cancel-wakeup"][data-wakeup-id="wakeup-1"]',
@@ -384,6 +432,185 @@ describe('scheduled sessions panel', () => {
           body: JSON.stringify({ wakeupId: 'wakeup-1' }),
         }),
       );
+      expect(container.querySelectorAll('.scheduled-sessions-wakeup-item')).toHaveLength(0);
+    } finally {
+      handle.unmount();
+    }
+  });
+
+  it('renders reminders with wake-ups in run order and cancels globally', async () => {
+    wakeups = [
+      {
+        wakeupId: 'wakeup-later',
+        sessionId: 'session-1',
+        sessionName: 'Issue Watch',
+        agentId: 'agent-a',
+        message: 'Check the issue status',
+        runAt: '2026-04-01T12:30:00.000Z',
+        createdAt: '2026-04-01T11:00:00.000Z',
+        status: 'pending',
+      },
+    ];
+    reminders = [
+      {
+        kind: 'one_time_reminder',
+        scope: 'global',
+        manageable: true,
+        reminderId: 'reminder-sooner',
+        text: 'Take out the trash',
+        runAt: '2026-04-01T12:00:00.000Z',
+        createdAt: '2026-04-01T11:05:00.000Z',
+        status: 'pending',
+      },
+    ];
+
+    const { container, handle } = await mountPanel();
+
+    try {
+      const oneShotTitles = Array.from(
+        container.querySelectorAll<HTMLElement>(
+          '.scheduled-sessions-wakeup-list .scheduled-sessions-row-title',
+        ),
+      ).map((element) => element.textContent?.trim());
+      expect(oneShotTitles).toEqual(['Take out the trash', 'Issue Watch']);
+      expect(container.querySelectorAll('.scheduled-sessions-reminder-item')).toHaveLength(1);
+
+      const search = container.querySelector<HTMLInputElement>('[data-role="search"]')!;
+      search.value = 'trash';
+      search.dispatchEvent(new Event('input', { bubbles: true }));
+      expect(container.querySelectorAll('.scheduled-sessions-reminder-item')).toHaveLength(1);
+      expect(container.querySelectorAll('.scheduled-sessions-wakeup-item')).toHaveLength(0);
+
+      const cancel = container.querySelector<HTMLButtonElement>(
+        '[data-action="cancel-reminder"][data-reminder-id="reminder-sooner"]',
+      );
+      cancel?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await flushPromises();
+
+      expect(apiFetch).toHaveBeenCalledWith(
+        '/api/plugins/scheduled-sessions/operations/reminder-cancel',
+        expect.objectContaining({
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ reminderId: 'reminder-sooner' }),
+        }),
+      );
+      expect(container.querySelectorAll('.scheduled-sessions-reminder-item')).toHaveLength(0);
+    } finally {
+      handle.unmount();
+    }
+  });
+
+  it('applies live reminder set and deleted events', async () => {
+    const { container, handle } = await mountPanel();
+    const reminder: ScheduledReminderInfo = {
+      kind: 'one_time_reminder',
+      scope: 'global',
+      manageable: true,
+      reminderId: 'reminder-live',
+      text: 'Move the car',
+      runAt: '2026-04-01T12:00:00.000Z',
+      createdAt: '2026-04-01T11:00:00.000Z',
+      status: 'pending',
+    };
+
+    try {
+      handle.onEvent?.({
+        panelId: '*',
+        panelType: 'scheduled-sessions',
+        sessionId: '*',
+        payload: { type: 'session_reminder:set', payload: reminder },
+      });
+      expect(container.querySelector('.scheduled-sessions-reminder-item')?.textContent).toContain(
+        'Move the car',
+      );
+
+      handle.onEvent?.({
+        panelId: '*',
+        panelType: 'scheduled-sessions',
+        sessionId: '*',
+        payload: {
+          type: 'session_reminder:deleted',
+          payload: { reminderId: 'reminder-live' },
+        },
+      });
+      expect(container.querySelectorAll('.scheduled-sessions-reminder-item')).toHaveLength(0);
+    } finally {
+      handle.unmount();
+    }
+  });
+
+  it('retries refreshes that overlap newer live reminder events', async () => {
+    const reminder: ScheduledReminderInfo = {
+      kind: 'one_time_reminder',
+      scope: 'global',
+      manageable: true,
+      reminderId: 'reminder-race',
+      text: 'Move the car',
+      runAt: '2026-04-01T12:00:00.000Z',
+      createdAt: '2026-04-01T11:00:00.000Z',
+      status: 'pending',
+    };
+    reminders = [reminder];
+    const { container, handle } = await mountPanel();
+    const staleReminders = [...reminders];
+    let resolveStaleResponse: ((response: Response) => void) | null = null;
+    let reminderRequestCount = 0;
+    apiFetch.mockImplementation(async (url: RequestInfo | URL) => {
+      const path = String(url);
+      if (path.includes('/operations/reminder-list')) {
+        reminderRequestCount += 1;
+        if (reminderRequestCount === 1) {
+          return new Promise<Response>((resolve) => {
+            resolveStaleResponse = resolve;
+          });
+        }
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ ok: true, result: { reminders } }),
+        } as Response;
+      }
+      if (path.includes('/operations/wakeup-list')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ ok: true, result: { wakeups } }),
+        } as Response;
+      }
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ ok: true, result: { schedules: SCHEDULES } }),
+      } as Response;
+    });
+
+    try {
+      container
+        .querySelector<HTMLButtonElement>('[data-role="refresh"]')
+        ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await vi.waitFor(() => expect(resolveStaleResponse).not.toBeNull());
+
+      reminders = [];
+      handle.onEvent?.({
+        panelId: '*',
+        panelType: 'scheduled-sessions',
+        sessionId: '*',
+        payload: {
+          type: 'session_reminder:deleted',
+          payload: { reminderId: reminder.reminderId },
+        },
+      });
+      resolveStaleResponse?.({
+        ok: true,
+        status: 200,
+        json: async () => ({ ok: true, result: { reminders: staleReminders } }),
+      } as Response);
+
+      await vi.waitFor(() => {
+        expect(reminderRequestCount).toBe(2);
+        expect(container.querySelectorAll('.scheduled-sessions-reminder-item')).toHaveLength(0);
+        expect(container.querySelector('[data-role="status"]')?.textContent).toBe('');
+      });
     } finally {
       handle.unmount();
     }

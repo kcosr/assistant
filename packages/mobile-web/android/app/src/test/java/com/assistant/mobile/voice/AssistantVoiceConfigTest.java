@@ -191,6 +191,17 @@ public final class AssistantVoiceConfigTest {
     }
 
     @Test
+    public void withAutoListenEnabledChangesOnlyAutoListen() {
+        AssistantVoiceConfig original = createConfig(true);
+
+        AssistantVoiceConfig updated = original.withAutoListenEnabled(false);
+
+        assertFalse(updated.autoListenEnabled);
+        assertTrue(updated.mediaButtonsEnabled);
+        assertEquals(original.audioMode, updated.audioMode);
+    }
+
+    @Test
     public void manualModeHelpers() {
         AssistantVoiceConfig manual = createConfigWithAudioMode(AssistantVoiceConfig.AUDIO_MODE_MANUAL);
         assertTrue(manual.isManualMode());

@@ -37,6 +37,10 @@ describe('scheduled-sessions plugin operations', () => {
     expect(typeof plugin.operations?.['wakeup-create']).toBe('function');
     expect(typeof plugin.operations?.['wakeup-update']).toBe('function');
     expect(typeof plugin.operations?.['wakeup-cancel']).toBe('function');
+    expect(typeof plugin.operations?.['reminder-list']).toBe('function');
+    expect(typeof plugin.operations?.['reminder-create']).toBe('function');
+    expect(typeof plugin.operations?.['reminder-update']).toBe('function');
+    expect(typeof plugin.operations?.['reminder-cancel']).toBe('function');
   });
 
   it('returns schedules from the list operation', async () => {
@@ -240,7 +244,7 @@ describe('scheduled-sessions plugin operations', () => {
     });
   });
 
-  it('lists all wake-ups for the panel when no session context is present', async () => {
+  it('lists all wake-ups for the HTTP panel context', async () => {
     const plugin = createPlugin({
       manifest: manifestJson as CombinedPluginManifest,
     });
@@ -254,7 +258,7 @@ describe('scheduled-sessions plugin operations', () => {
     const result = await list(
       {},
       createCtx({
-        sessionId: undefined,
+        sessionId: 'http',
         scheduledSessionService: {
           listWakeups,
           listWakeupsVisibleToSession,
@@ -507,5 +511,120 @@ describe('scheduled-sessions plugin operations', () => {
       sessionId: 'session-1',
       wakeupId: 'wakeup-1',
     });
+  });
+
+  it('lists global reminders without requiring a session', async () => {
+    const plugin = createPlugin({ manifest: manifestJson as CombinedPluginManifest });
+    const list = plugin.operations?.['reminder-list'];
+    if (!list) {
+      throw new Error('Expected reminder-list operation');
+    }
+    const listReminders = vi.fn().mockReturnValue([{ reminderId: 'reminder-1' }]);
+
+    const result = await list(
+      {},
+      createCtx({
+        sessionId: undefined,
+        scheduledSessionService: { listReminders },
+      }),
+    );
+
+    expect(listReminders).toHaveBeenCalledWith();
+    expect(result).toEqual({ reminders: [{ reminderId: 'reminder-1' }] });
+  });
+
+  it('creates a global reminder from task text and delay', async () => {
+    const plugin = createPlugin({ manifest: manifestJson as CombinedPluginManifest });
+    const create = plugin.operations?.['reminder-create'];
+    if (!create) {
+      throw new Error('Expected reminder-create operation');
+    }
+    const createReminder = vi.fn().mockResolvedValue({ reminderId: 'reminder-1' });
+    const before = Date.now();
+
+    const result = await create(
+      { text: '  Take out the trash  ', delaySeconds: 1200 },
+      createCtx({ scheduledSessionService: { createReminder } }),
+    );
+
+    expect(createReminder).toHaveBeenCalledWith({
+      text: 'Take out the trash',
+      runAt: expect.any(Date),
+    });
+    const runAt = createReminder.mock.calls[0]?.[0]?.runAt as Date;
+    expect(runAt.getTime()).toBeGreaterThanOrEqual(before + 1_200_000);
+    expect(result).toEqual({ reminderId: 'reminder-1' });
+  });
+
+  it('updates and cancels a global reminder without a session id', async () => {
+    const plugin = createPlugin({ manifest: manifestJson as CombinedPluginManifest });
+    const update = plugin.operations?.['reminder-update'];
+    const cancel = plugin.operations?.['reminder-cancel'];
+    if (!update || !cancel) {
+      throw new Error('Expected reminder update and cancel operations');
+    }
+    const updateReminder = vi.fn().mockResolvedValue({ reminderId: 'reminder-1' });
+    const cancelReminder = vi.fn().mockResolvedValue({
+      cancelled: true,
+      reminderId: 'reminder-1',
+    });
+    const ctx = createCtx({
+      sessionId: undefined,
+      scheduledSessionService: { updateReminder, cancelReminder },
+    });
+
+    await update({ reminderId: 'reminder-1', text: 'Start the laundry', delaySeconds: 30 }, ctx);
+    await cancel({ reminderId: 'reminder-1' }, ctx);
+
+    expect(updateReminder).toHaveBeenCalledWith({
+      reminderId: 'reminder-1',
+      text: 'Start the laundry',
+      runAt: expect.any(Date),
+    });
+    expect(cancelReminder).toHaveBeenCalledWith('reminder-1');
+  });
+
+  it('rejects invalid reminder content and time arguments', async () => {
+    const plugin = createPlugin({ manifest: manifestJson as CombinedPluginManifest });
+    const create = plugin.operations?.['reminder-create'];
+    const update = plugin.operations?.['reminder-update'];
+    if (!create || !update) {
+      throw new Error('Expected reminder create and update operations');
+    }
+    const ctx = createCtx({
+      scheduledSessionService: {
+        createReminder: vi.fn().mockResolvedValue({ reminderId: 'reminder-1' }),
+        updateReminder: vi.fn(),
+      },
+    });
+
+    await expect(create({ text: 'x'.repeat(2_001), delaySeconds: 10 }, ctx)).rejects.toMatchObject({
+      code: 'invalid_arguments',
+    } satisfies Partial<ToolError>);
+    await expect(create({ text: '😀'.repeat(2_000), delaySeconds: 10 }, ctx)).resolves.toEqual({
+      reminderId: 'reminder-1',
+    });
+    await expect(create({ text: '😀'.repeat(2_001), delaySeconds: 10 }, ctx)).rejects.toMatchObject(
+      {
+        code: 'invalid_arguments',
+      } satisfies Partial<ToolError>,
+    );
+    await expect(create({ text: 'Take out the trash' }, ctx)).rejects.toMatchObject({
+      code: 'invalid_arguments',
+      message: 'Provide exactly one of runAt or delaySeconds',
+    } satisfies Partial<ToolError>);
+    await expect(
+      update(
+        {
+          reminderId: 'reminder-1',
+          runAt: '2026-08-01T12:00:00Z',
+          delaySeconds: 10,
+        },
+        ctx,
+      ),
+    ).rejects.toMatchObject({
+      code: 'invalid_arguments',
+      message: 'Provide exactly one of runAt or delaySeconds',
+    } satisfies Partial<ToolError>);
   });
 });

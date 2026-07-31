@@ -989,7 +989,7 @@ final class AssistantVoiceConfig {
         );
     }
 
-    AssistantVoiceConfig withMediaButtonsEnabled(boolean enabled) {
+    AssistantVoiceConfig withAutoListenEnabled(boolean autoListenEnabled) {
         return new AssistantVoiceConfig(
             audioMode,
             voiceRuntimeMode,
@@ -1013,7 +1013,7 @@ final class AssistantVoiceConfig {
             recognitionCueGain,
             recognizeStopCommandEnabled,
             startupPreRollMs,
-            enabled,
+            mediaButtonsEnabled,
             ttsPreferredSessionOnly,
             standaloneNotificationPlaybackEnabled,
             notificationTitlePlaybackEnabled,

@@ -51,6 +51,14 @@ public final class AssistantVoicePlugin extends Plugin {
                     notifyListeners("stateChanged", buildStatePayload(), true);
                     return;
                 }
+                if (
+                    AssistantVoiceRuntimeService.BROADCAST_VOICE_SETTINGS_CHANGED.equals(
+                        intent.getAction()
+                    )
+                ) {
+                    notifyListeners("voiceSettingsChanged", buildStatePayload(), true);
+                    return;
+                }
                 if (AssistantVoiceRuntimeService.BROADCAST_RUNTIME_ERROR.equals(intent.getAction())) {
                     String message = intent.getStringExtra(AssistantVoiceRuntimeService.EXTRA_MESSAGE);
                     if (message == null || message.trim().isEmpty()) {
@@ -65,6 +73,7 @@ public final class AssistantVoicePlugin extends Plugin {
 
         IntentFilter filter = new IntentFilter();
         filter.addAction(AssistantVoiceRuntimeService.BROADCAST_STATE_CHANGED);
+        filter.addAction(AssistantVoiceRuntimeService.BROADCAST_VOICE_SETTINGS_CHANGED);
         filter.addAction(AssistantVoiceRuntimeService.BROADCAST_RUNTIME_ERROR);
         ContextCompat.registerReceiver(
             getContext(),

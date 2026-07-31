@@ -227,12 +227,17 @@ v1 requirements:
 - notification body should show the resolved preferred or active session title when available
 - while voice controls are enabled and a Thread session or Realtime start action is available,
   keep a promoted-ongoing standard notification visible with state-dependent actions:
-  `Start` while idle, `Stop` during Thread recognition or a Realtime call, and `Skip` plus `Stop`
-  during Thread playback that has a pending recognition follow-up
+  `Start`, the selected `Manual` / `Response` mode, and `Rearm On` / `Rearm Off` while Thread mode
+  is idle; `Stop` during Thread recognition or a Realtime call; and `Skip` plus `Stop` during
+  Thread playback that has a pending recognition follow-up
+- the mode and Rearm actions appear only in idle Thread mode; the mode action toggles only between
+  `Manual` and `Response`, while Rearm directly reflects and toggles Auto Listen; native action
+  changes must be pushed into an already-running WebView without echoing the settings back to native
 - promoted voice notifications should provide short `Voice` critical text so Android renders a
   visibly expanded status chip rather than an icon-only compact representation
-- promoted notifications should use only the current state as their title and omit session/body
-  text, leaving Android's app header, the state, and the state-dependent action
+- promoted Thread notifications should combine the current state and clean thread title on one
+  line, for example `Listening · Project Thread`, without appending a session id; when no thread
+  title is available they should fall back to the state alone
 - during Thread playback, `Skip` stops TTS and preserves the current item's pending recognition
   transition, while `Stop` stops TTS and suppresses that transition without disabling Auto Listen
   globally; `Stop` still cancels active recognition or ends the active Realtime call according to
@@ -250,6 +255,12 @@ v1 requirements:
   `Speak` while the device remains fully locked may still vary by Android version and OEM policy
 - durable session-linked notifications may expose `Play` and `Speak` actions that reconstruct a
   fresh local queue item from the stored notification context
+- durable `session_attention` notifications should omit their content title when neither the
+  Android session-title map nor the stored record contains a friendly title; a stored title equal
+  to the session id is not friendly display text
+- durable notification bodies should strip paired `**bold**` markers in both collapsed and
+  expanded Android templates, leaving stored and spoken text untouched and preserving unmatched
+  markers literally
 
 ## Bridge Contract
 

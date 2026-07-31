@@ -220,6 +220,10 @@
   background-color: var(--color-accent-primary);
 }
 
+.status-dot--reminder {
+  background-color: var(--color-warning);
+}
+
 .scheduled-sessions-details {
   padding: 0 var(--spacing-sm) var(--spacing-sm);
   background-color: var(--color-bg-secondary);
@@ -228,6 +232,25 @@
 
 .scheduled-sessions-details.is-collapsed {
   display: none;
+}
+
+@media (max-width: 600px) {
+  .scheduled-sessions-wakeup-item .scheduled-sessions-row,
+  .scheduled-sessions-reminder-item .scheduled-sessions-row {
+    flex-wrap: wrap;
+  }
+
+  .scheduled-sessions-wakeup-item .scheduled-sessions-row-main,
+  .scheduled-sessions-reminder-item .scheduled-sessions-row-main {
+    flex: 1 1 calc(100% - 28px);
+  }
+
+  .scheduled-sessions-wakeup-item .scheduled-sessions-row-meta,
+  .scheduled-sessions-reminder-item .scheduled-sessions-row-meta {
+    min-width: 0;
+    margin-left: calc(10px + var(--spacing-sm));
+    text-align: left;
+  }
 }
 
 .scheduled-sessions-detail-grid {

@@ -1,8 +1,16 @@
 import { describe, expect, it } from 'vitest';
 
-const { formatSkillsDocument, shouldExportSkills } = require('../../../scripts/build-plugins.js');
+const {
+  assertServerRuntimeDependencies,
+  formatSkillsDocument,
+  shouldExportSkills,
+} = require('../../../scripts/build-plugins.js');
 
 describe('build-plugins skill helpers', () => {
+  it('keeps native ESM dependencies single-root resolvable from bundled plugin servers', async () => {
+    await expect(assertServerRuntimeDependencies()).resolves.toBeUndefined();
+  });
+
   it('injects skill metadata into frontmatter', () => {
     const manifest = {
       id: 'demo',
