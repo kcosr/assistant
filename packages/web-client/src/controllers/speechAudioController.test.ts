@@ -346,6 +346,7 @@ describe('AssistantNativeVoiceBridge', () => {
     const state = await bridge.getState();
     const inputDevices = await bridge.listInputDevices();
     const offState = bridge.addStateChangedListener(() => {});
+    const offVoiceSettings = bridge.addVoiceSettingsChangedListener(() => {});
     const offError = bridge.addRuntimeErrorListener(() => {});
 
     expect(state).toEqual({ state: 'listening' });
@@ -356,11 +357,13 @@ describe('AssistantNativeVoiceBridge', () => {
     expect(target.skipCurrentPlayback).toHaveBeenCalledTimes(1);
     expect(target.stopCurrentInteraction).toHaveBeenCalledTimes(1);
     expect(target.startManualListen).toHaveBeenCalledWith({ sessionId: 'session-a' });
-    expect(target.addListener).toHaveBeenCalledTimes(2);
+    expect(target.addListener).toHaveBeenCalledTimes(3);
+    expect(target.addListener).toHaveBeenCalledWith('voiceSettingsChanged', expect.any(Function));
 
     offState?.();
+    offVoiceSettings?.();
     offError?.();
-    expect(remove).toHaveBeenCalledTimes(2);
+    expect(remove).toHaveBeenCalledTimes(3);
   });
 
   it('populates native mic input options and persists selection changes', async () => {

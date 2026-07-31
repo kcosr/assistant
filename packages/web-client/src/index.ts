@@ -1631,6 +1631,12 @@ async function main(): Promise<void> {
     nativeVoiceBridge.addStateChangedListener((payload) => {
       applyNativeVoiceRuntimePayload(payload);
     });
+    nativeVoiceBridge.addVoiceSettingsChangedListener((payload) => {
+      applyNativeVoiceRuntimePayload(payload);
+      if (payload.voiceSettings) {
+        hydrateVoiceSettingsFromNative(payload.voiceSettings);
+      }
+    });
     nativeVoiceBridge.addRuntimeErrorListener((payload) => {
       const message = typeof payload.message === 'string' ? payload.message.trim() : '';
       if (!message) {

@@ -39,8 +39,8 @@
     <string name="assistant_voice_notification_realtime_body_muted">Microphone muted</string>
     <string name="assistant_voice_durable_notification_channel_name">Assistant session notifications</string>
     <string name="assistant_voice_notification_action_play">Play</string>
-    <string name="assistant_voice_notification_audio_mode_off">Off</string>
     <string name="assistant_voice_notification_audio_mode_manual">Manual</string>
-    <string name="assistant_voice_notification_audio_mode_tool">Tool</string>
     <string name="assistant_voice_notification_audio_mode_response">Response</string>
+    <string name="assistant_voice_notification_rearm_on">Rearm On</string>
+    <string name="assistant_voice_notification_rearm_off">Rearm Off</string>
 </resources>

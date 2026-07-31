@@ -73,8 +73,8 @@ public final class AssistantVoiceRuntimeService extends Service {
     static final String ACTION_START_MANUAL_LISTEN = "com.assistant.mobile.voice.START_MANUAL_LISTEN";
     static final String ACTION_RETARGET_ACTIVE_RECOGNITION =
         "com.assistant.mobile.voice.RETARGET_ACTIVE_RECOGNITION";
-    static final String ACTION_TOGGLE_MEDIA_BUTTONS = "com.assistant.mobile.voice.TOGGLE_MEDIA_BUTTONS";
-    static final String ACTION_CYCLE_AUDIO_MODE = "com.assistant.mobile.voice.CYCLE_AUDIO_MODE";
+    static final String ACTION_TOGGLE_AUTO_LISTEN = "com.assistant.mobile.voice.TOGGLE_AUTO_LISTEN";
+    static final String ACTION_TOGGLE_AUDIO_MODE = "com.assistant.mobile.voice.TOGGLE_AUDIO_MODE";
     static final String ACTION_PLAY_TEXT = "com.assistant.mobile.voice.PLAY_TEXT";
     static final String ACTION_NOTIFICATION_SPEAKER = "com.assistant.mobile.voice.NOTIFICATION_SPEAKER";
     static final String ACTION_NOTIFICATION_MIC = "com.assistant.mobile.voice.NOTIFICATION_MIC";
@@ -104,6 +104,8 @@ public final class AssistantVoiceRuntimeService extends Service {
     static final String EXTRA_NOTIFICATION_TURN_ORIGIN_ID = "notificationTurnOriginId";
 
     static final String BROADCAST_STATE_CHANGED = "com.assistant.mobile.voice.STATE_CHANGED";
+    static final String BROADCAST_VOICE_SETTINGS_CHANGED =
+        "com.assistant.mobile.voice.VOICE_SETTINGS_CHANGED";
     static final String BROADCAST_RUNTIME_ERROR = "com.assistant.mobile.voice.RUNTIME_ERROR";
     static final String BROADCAST_OPEN_SESSION = "com.assistant.mobile.voice.OPEN_SESSION";
     static final String EXTRA_STATE = "state";
@@ -267,18 +269,18 @@ public final class AssistantVoiceRuntimeService extends Service {
             .putExtra(EXTRA_MANUAL_LISTEN_SESSION_ID, trim(sessionId));
     }
 
-    public static Intent toggleMediaButtonsIntent(Context context) {
+    public static Intent toggleAutoListenIntent(Context context) {
         return new Intent(context, AssistantVoiceRuntimeService.class)
-            .setAction(ACTION_TOGGLE_MEDIA_BUTTONS);
+            .setAction(ACTION_TOGGLE_AUTO_LISTEN);
     }
 
-    public static Intent cycleAudioModeIntent(Context context) {
+    public static Intent toggleAudioModeIntent(Context context) {
         return new Intent(context, AssistantVoiceRuntimeService.class)
-            .setAction(ACTION_CYCLE_AUDIO_MODE);
+            .setAction(ACTION_TOGGLE_AUDIO_MODE);
     }
 
-    static Intent cycleAudioModeIntent(Context context, String audioMode) {
-        return cycleAudioModeIntent(context)
+    static Intent toggleAudioModeIntent(Context context, String audioMode) {
+        return toggleAudioModeIntent(context)
             .putExtra(AssistantVoiceConfig.EXTRA_AUDIO_MODE, trim(audioMode));
     }
 
@@ -515,15 +517,17 @@ public final class AssistantVoiceRuntimeService extends Service {
             retargetActiveRecognition(sessionId);
             return START_STICKY;
         }
-        if (ACTION_TOGGLE_MEDIA_BUTTONS.equals(action)) {
-            applyConfig(config.withMediaButtonsEnabled(!config.mediaButtonsEnabled));
+        if (ACTION_TOGGLE_AUTO_LISTEN.equals(action)) {
+            applyConfig(config.withAutoListenEnabled(!config.autoListenEnabled));
+            broadcastVoiceSettingsChanged();
             return START_STICKY;
         }
-        if (ACTION_CYCLE_AUDIO_MODE.equals(action)) {
+        if (ACTION_TOGGLE_AUDIO_MODE.equals(action)) {
             String currentMode = intent != null && intent.hasExtra(AssistantVoiceConfig.EXTRA_AUDIO_MODE)
                 ? intent.getStringExtra(AssistantVoiceConfig.EXTRA_AUDIO_MODE)
                 : config.audioMode;
             applyConfig(config.withAudioMode(nextNotificationAudioMode(currentMode)));
+            broadcastVoiceSettingsChanged();
             return START_STICKY;
         }
         if (ACTION_PLAY_TEXT.equals(action)) {
@@ -1119,23 +1123,23 @@ public final class AssistantVoiceRuntimeService extends Service {
             );
         }
 
-        String displayedAudioMode = resolveDisplayedNotificationAudioMode(state, config.audioMode);
+        String displayedAudioMode = resolveDisplayedNotificationAudioMode(config.audioMode);
         PendingIntent startListenPendingIntent = PendingIntent.getService(
             this,
             1,
             startManualListenIntent(this, null),
             PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT
         );
-        PendingIntent cycleAudioModePendingIntent = PendingIntent.getService(
+        PendingIntent toggleAudioModePendingIntent = PendingIntent.getService(
             this,
             3,
-            cycleAudioModeIntent(this, displayedAudioMode),
+            toggleAudioModeIntent(this, displayedAudioMode),
             PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT
         );
-        PendingIntent toggleMediaButtonsPendingIntent = PendingIntent.getService(
+        PendingIntent toggleAutoListenPendingIntent = PendingIntent.getService(
             this,
             4,
-            toggleMediaButtonsIntent(this),
+            toggleAutoListenIntent(this),
             PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT
         );
 
@@ -1173,13 +1177,13 @@ public final class AssistantVoiceRuntimeService extends Service {
             startListenPendingIntent,
             stopInteractionPendingIntent,
             skipPlaybackPendingIntent,
-            cycleAudioModePendingIntent,
-            toggleMediaButtonsPendingIntent,
+            toggleAudioModePendingIntent,
+            toggleAutoListenPendingIntent,
             showSpeakAction,
             showStopAction,
             showSkipAction,
             displayedAudioMode,
-            config.mediaButtonsEnabled
+            config.autoListenEnabled
         );
     }
 
@@ -1270,21 +1274,25 @@ public final class AssistantVoiceRuntimeService extends Service {
         PendingIntent startListenPendingIntent,
         PendingIntent stopInteractionPendingIntent,
         PendingIntent skipPlaybackPendingIntent,
-        PendingIntent cycleAudioModePendingIntent,
-        PendingIntent toggleMediaButtonsPendingIntent,
+        PendingIntent toggleAudioModePendingIntent,
+        PendingIntent toggleAutoListenPendingIntent,
         boolean showSpeakAction,
         boolean showStopAction,
         boolean showSkipAction,
         String audioMode,
-        boolean mediaButtonsEnabled
+        boolean autoListenEnabled
     ) {
         String stateLabel = formatNotificationStateLabel(context, state);
         boolean showPromotedControl = showStopAction || showSpeakAction;
+        String normalizedSessionTitle = trim(sessionTitle);
+        String promotedTitle = normalizedSessionTitle.isEmpty()
+            ? stateLabel
+            : stateLabel + " · " + normalizedSessionTitle;
         NotificationCompat.Builder builder = new NotificationCompat.Builder(context, NOTIFICATION_CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_btn_speak_now)
             .setContentTitle(
                 showPromotedControl
-                    ? stateLabel
+                    ? promotedTitle
                     : context.getString(R.string.assistant_voice_notification_title, stateLabel)
             )
             .setContentIntent(launchPendingIntent)
@@ -1293,12 +1301,10 @@ public final class AssistantVoiceRuntimeService extends Service {
             .setCategory(NOTIFICATION_CATEGORY)
             .setOnlyAlertOnce(true)
             .setOngoing(true);
-        String normalizedSessionTitle = trim(sessionTitle);
         if (!showPromotedControl && !normalizedSessionTitle.isEmpty()) {
             builder.setContentText(normalizedSessionTitle);
         }
-        String displayedAudioMode = resolveDisplayedNotificationAudioMode(state, audioMode);
-        int compactActionCount = 0;
+        String displayedAudioMode = trim(audioMode);
         if (showStopAction) {
             if (showSkipAction) {
                 builder.addAction(
@@ -1324,52 +1330,36 @@ public final class AssistantVoiceRuntimeService extends Service {
                 context.getString(R.string.assistant_voice_notification_action_start),
                 startListenPendingIntent
             );
+            builder.addAction(
+                resolveNotificationAudioModeActionIcon(displayedAudioMode),
+                resolveNotificationAudioModeActionLabel(context, displayedAudioMode),
+                toggleAudioModePendingIntent
+            );
+            builder.addAction(
+                autoListenEnabled ? R.drawable.ic_notification_mic : R.drawable.ic_notification_mic_off,
+                context.getString(
+                    autoListenEnabled
+                        ? R.string.assistant_voice_notification_rearm_on
+                        : R.string.assistant_voice_notification_rearm_off
+                ),
+                toggleAutoListenPendingIntent
+            );
             builder.setShortCriticalText(
                 context.getString(R.string.assistant_voice_notification_chip_text)
             );
             builder.setRequestPromotedOngoing(true);
             return builder.build();
         }
-        builder.addAction(
-            resolveNotificationMediaButtonsActionIcon(mediaButtonsEnabled),
-            "",
-            toggleMediaButtonsPendingIntent
-        );
-        compactActionCount += 1;
-        builder.addAction(
-            resolveNotificationAudioModeActionIcon(displayedAudioMode),
-            resolveNotificationAudioModeActionLabel(
-                context,
-                displayedAudioMode
-            ),
-            cycleAudioModePendingIntent
-        );
-        compactActionCount += 1;
-        builder.setStyle(
-            compactActionCount >= 3
-                ? new MediaStyle().setShowActionsInCompactView(0, 1, 2)
-                : new MediaStyle().setShowActionsInCompactView(0, 1)
-        );
         return builder.build();
-    }
-
-    static int resolveNotificationMediaButtonsActionIcon(boolean mediaButtonsEnabled) {
-        return mediaButtonsEnabled
-            ? R.drawable.ic_notification_media_buttons_enabled
-            : R.drawable.ic_notification_media_buttons_disabled;
     }
 
     static int resolveNotificationAudioModeActionIcon(String audioMode) {
         switch (trim(audioMode)) {
             case AssistantVoiceConfig.AUDIO_MODE_RESPONSE:
                 return R.drawable.ic_notification_mode_response;
-            case AssistantVoiceConfig.AUDIO_MODE_OFF:
-                return R.drawable.ic_notification_mode_off;
             case AssistantVoiceConfig.AUDIO_MODE_MANUAL:
-                return R.drawable.ic_notification_mode_manual;
-            case AssistantVoiceConfig.AUDIO_MODE_TOOL:
             default:
-                return R.drawable.ic_notification_mode_tool;
+                return R.drawable.ic_notification_mode_manual;
         }
     }
 
@@ -1377,34 +1367,26 @@ public final class AssistantVoiceRuntimeService extends Service {
         switch (trim(audioMode)) {
             case AssistantVoiceConfig.AUDIO_MODE_RESPONSE:
                 return context.getString(R.string.assistant_voice_notification_audio_mode_response);
-            case AssistantVoiceConfig.AUDIO_MODE_OFF:
-                return context.getString(R.string.assistant_voice_notification_audio_mode_off);
             case AssistantVoiceConfig.AUDIO_MODE_MANUAL:
-                return context.getString(R.string.assistant_voice_notification_audio_mode_manual);
-            case AssistantVoiceConfig.AUDIO_MODE_TOOL:
             default:
-                return context.getString(R.string.assistant_voice_notification_audio_mode_tool);
+                return context.getString(R.string.assistant_voice_notification_audio_mode_manual);
         }
-    }
-
-    static String resolveDisplayedNotificationAudioMode(String state, String audioMode) {
-        return STATE_DISABLED.equals(trim(state))
-            ? AssistantVoiceConfig.AUDIO_MODE_OFF
-            : trim(audioMode);
     }
 
     static String nextNotificationAudioMode(String audioMode) {
         switch (trim(audioMode)) {
-            case AssistantVoiceConfig.AUDIO_MODE_OFF:
-                return AssistantVoiceConfig.AUDIO_MODE_MANUAL;
             case AssistantVoiceConfig.AUDIO_MODE_MANUAL:
-                return AssistantVoiceConfig.AUDIO_MODE_TOOL;
-            case AssistantVoiceConfig.AUDIO_MODE_TOOL:
                 return AssistantVoiceConfig.AUDIO_MODE_RESPONSE;
             case AssistantVoiceConfig.AUDIO_MODE_RESPONSE:
             default:
-                return AssistantVoiceConfig.AUDIO_MODE_OFF;
+                return AssistantVoiceConfig.AUDIO_MODE_MANUAL;
         }
+    }
+
+    static String resolveDisplayedNotificationAudioMode(String audioMode) {
+        return AssistantVoiceConfig.AUDIO_MODE_RESPONSE.equals(trim(audioMode))
+            ? AssistantVoiceConfig.AUDIO_MODE_RESPONSE
+            : AssistantVoiceConfig.AUDIO_MODE_MANUAL;
     }
 
     private void createNotificationChannel() {
@@ -2169,12 +2151,13 @@ public final class AssistantVoiceRuntimeService extends Service {
             PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT
         );
         String displayTitle = resolveDurableNotificationTitle(notification);
+        String displaySessionTitle = resolveFriendlySessionTitle(notification);
+        CharSequence displayBody = AssistantNotificationTextFormatter.format(notification.body);
         NotificationCompat.Builder builder =
             new NotificationCompat.Builder(this, DURABLE_NOTIFICATION_CHANNEL_ID)
                 .setSmallIcon(android.R.drawable.ic_dialog_info)
-                .setContentTitle(displayTitle)
-                .setContentText(notification.body)
-                .setStyle(new NotificationCompat.BigTextStyle().bigText(notification.body))
+                .setContentText(displayBody)
+                .setStyle(new NotificationCompat.BigTextStyle().bigText(displayBody))
                 .setPriority(NotificationCompat.PRIORITY_DEFAULT)
                 .setAutoCancel(true)
                 .setContentIntent(contentIntent)
@@ -2186,8 +2169,11 @@ public final class AssistantVoiceRuntimeService extends Service {
                         PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT
                     )
                 );
-        if (!notification.sessionTitle.isEmpty() && !displayTitle.equals(notification.sessionTitle)) {
-            builder.setSubText(notification.sessionTitle);
+        if (!displayTitle.isEmpty()) {
+            builder.setContentTitle(displayTitle);
+        }
+        if (!displaySessionTitle.isEmpty() && !displayTitle.equals(displaySessionTitle)) {
+            builder.setSubText(displaySessionTitle);
         }
         if (!resolveNotificationSpokenText(notification).isEmpty()) {
             builder.addAction(
@@ -2218,15 +2204,26 @@ public final class AssistantVoiceRuntimeService extends Service {
 
     private String resolveDurableNotificationTitle(AssistantVoiceNotificationRecord notification) {
         if (notification.isSessionAttention()) {
-            String configTitle = config.getSessionTitle(notification.sessionId);
-            if (!configTitle.isEmpty()) {
-                return configTitle;
-            }
-            if (!notification.sessionTitle.isEmpty()) {
-                return notification.sessionTitle;
-            }
+            return resolveFriendlySessionTitle(notification);
         }
         return notification.title;
+    }
+
+    private String resolveFriendlySessionTitle(AssistantVoiceNotificationRecord notification) {
+        if (notification == null || !notification.isSessionLinked()) {
+            return "";
+        }
+        String configTitle = config.getSessionTitle(notification.sessionId);
+        if (!configTitle.isEmpty()) {
+            return configTitle;
+        }
+        if (
+            !notification.sessionTitle.isEmpty()
+                && !notification.sessionTitle.equals(notification.sessionId)
+        ) {
+            return notification.sessionTitle;
+        }
+        return "";
     }
 
     private String resolveNotificationSpokenTitle(AssistantVoiceNotificationRecord notification) {
@@ -2234,12 +2231,9 @@ public final class AssistantVoiceRuntimeService extends Service {
             return "";
         }
         if (notification.isSessionLinked()) {
-            String configTitle = config.getSessionTitle(notification.sessionId);
-            if (!configTitle.isEmpty()) {
-                return configTitle;
-            }
-            if (!notification.sessionTitle.isEmpty()) {
-                return notification.sessionTitle;
+            String sessionTitle = resolveFriendlySessionTitle(notification);
+            if (!sessionTitle.isEmpty()) {
+                return sessionTitle;
             }
         }
         return notification.title;
@@ -4220,6 +4214,12 @@ public final class AssistantVoiceRuntimeService extends Service {
         stateIntent.setPackage(getPackageName());
         stateIntent.putExtra(EXTRA_STATE, runtimeState);
         sendBroadcast(stateIntent);
+    }
+
+    private void broadcastVoiceSettingsChanged() {
+        Intent settingsIntent = new Intent(BROADCAST_VOICE_SETTINGS_CHANGED);
+        settingsIntent.setPackage(getPackageName());
+        sendBroadcast(settingsIntent);
     }
 
     private void syncRuntimeSnapshot(boolean broadcastState) {

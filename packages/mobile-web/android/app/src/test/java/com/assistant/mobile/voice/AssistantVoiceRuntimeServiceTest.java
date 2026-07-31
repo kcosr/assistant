@@ -345,7 +345,7 @@ public final class AssistantVoiceRuntimeServiceTest {
         assertEquals(AssistantVoiceRuntimeService.NOTIFICATION_VISIBILITY, notification.visibility);
         assertEquals(AssistantVoiceRuntimeService.NOTIFICATION_CATEGORY, notification.category);
         assertEquals(
-            "Listening",
+            "Listening · Daily Assistant",
             String.valueOf(extras.getCharSequence(Notification.EXTRA_TITLE))
         );
         assertNull(extras.getCharSequence(Notification.EXTRA_TEXT));
@@ -436,13 +436,13 @@ public final class AssistantVoiceRuntimeServiceTest {
 
     @Test
     @Config(sdk = Build.VERSION_CODES.N)
-    public void buildIdleThreadNotificationIsPromotedWithOnlyStart() {
+    public void buildIdleThreadNotificationShowsStartModeAndRearmState() {
         Context context = RuntimeEnvironment.getApplication();
 
         Notification notification = AssistantVoiceRuntimeService.buildNotification(
             context,
             AssistantVoiceRuntimeService.STATE_IDLE,
-            "",
+            "Project Thread",
             createActivityPendingIntent(context, "launch"),
             createServicePendingIntent(context, "listen"),
             createServicePendingIntent(context, "stop"),
@@ -457,7 +457,7 @@ public final class AssistantVoiceRuntimeServiceTest {
         );
 
         assertEquals(
-            "Idle",
+            "Idle · Project Thread",
             String.valueOf(notification.extras.getCharSequence(Notification.EXTRA_TITLE))
         );
         assertNull(notification.extras.getCharSequence(Notification.EXTRA_TEXT));
@@ -467,10 +467,51 @@ public final class AssistantVoiceRuntimeServiceTest {
             NotificationCompat.getShortCriticalText(notification)
         );
         assertNull(notification.extras.getString(Notification.EXTRA_TEMPLATE));
-        assertEquals(1, notification.actions.length);
+        assertEquals(3, notification.actions.length);
         assertEquals(
             context.getString(R.string.assistant_voice_notification_action_start),
             notification.actions[0].title
+        );
+        assertEquals(
+            context.getString(R.string.assistant_voice_notification_audio_mode_response),
+            notification.actions[1].title
+        );
+        assertEquals(
+            context.getString(R.string.assistant_voice_notification_rearm_on),
+            notification.actions[2].title
+        );
+    }
+
+    @Test
+    @Config(sdk = Build.VERSION_CODES.N)
+    public void buildIdleThreadNotificationShowsManualModeAndDisabledRearm() {
+        Context context = RuntimeEnvironment.getApplication();
+
+        Notification notification = AssistantVoiceRuntimeService.buildNotification(
+            context,
+            AssistantVoiceRuntimeService.STATE_IDLE,
+            "",
+            createActivityPendingIntent(context, "launch"),
+            createServicePendingIntent(context, "listen"),
+            createServicePendingIntent(context, "stop"),
+            createServicePendingIntent(context, "skip"),
+            createServicePendingIntent(context, "toggle-mode"),
+            createServicePendingIntent(context, "toggle-rearm"),
+            true,
+            false,
+            false,
+            AssistantVoiceConfig.AUDIO_MODE_MANUAL,
+            false
+        );
+
+        assertEquals(3, notification.actions.length);
+        assertEquals(
+            context.getString(R.string.assistant_voice_notification_audio_mode_manual),
+            notification.actions[1].title
+        );
+        assertEquals(
+            context.getString(R.string.assistant_voice_notification_rearm_off),
+            notification.actions[2].title
         );
     }
 
@@ -555,6 +596,64 @@ public final class AssistantVoiceRuntimeServiceTest {
                 "resolveNotificationSpokenTitle",
                 notification
             ))
+        );
+    }
+
+    @Test
+    @Config(sdk = Build.VERSION_CODES.N)
+    public void sessionAttentionNotificationSuppressesSessionIdTitleWhenUnnamed() throws Exception {
+        AssistantVoiceRuntimeService service = new AssistantVoiceRuntimeService();
+        setRuntimeConfig(service, createConfig(Collections.emptyMap()));
+        AssistantVoiceNotificationRecord notification = new AssistantVoiceNotificationRecord(
+            "notif-1",
+            "session_attention",
+            "system",
+            "Latest assistant reply",
+            "Reply body",
+            "",
+            "session-1",
+            "session-1",
+            "speak",
+            "Reply body",
+            "event-1",
+            Integer.valueOf(4),
+            ""
+        );
+
+        assertEquals(
+            "",
+            invokePrivateStringMethod(service, "resolveDurableNotificationTitle", notification)
+        );
+        assertEquals(
+            "Latest assistant reply",
+            invokePrivateStringMethod(service, "resolveNotificationSpokenTitle", notification)
+        );
+    }
+
+    @Test
+    @Config(sdk = Build.VERSION_CODES.N)
+    public void sessionAttentionNotificationUsesDistinctStoredSessionTitle() throws Exception {
+        AssistantVoiceRuntimeService service = new AssistantVoiceRuntimeService();
+        setRuntimeConfig(service, createConfig(Collections.emptyMap()));
+        AssistantVoiceNotificationRecord notification = new AssistantVoiceNotificationRecord(
+            "notif-1",
+            "session_attention",
+            "system",
+            "Latest assistant reply",
+            "Reply body",
+            "",
+            "session-1",
+            "Project Thread",
+            "speak",
+            "Reply body",
+            "event-1",
+            Integer.valueOf(4),
+            ""
+        );
+
+        assertEquals(
+            "Project Thread",
+            invokePrivateStringMethod(service, "resolveDurableNotificationTitle", notification)
         );
     }
 
@@ -686,7 +785,7 @@ public final class AssistantVoiceRuntimeServiceTest {
 
     @Test
     @Config(sdk = Build.VERSION_CODES.N)
-    public void buildNotificationShowsModeToggleWhenVoiceIsDisabled() {
+    public void buildNotificationShowsNoActionsWhenVoiceIsDisabled() {
         Context context = RuntimeEnvironment.getApplication();
 
         Notification notification = AssistantVoiceRuntimeService.buildNotification(
@@ -707,22 +806,14 @@ public final class AssistantVoiceRuntimeServiceTest {
         );
 
         assertFalse(NotificationCompat.isRequestPromotedOngoing(notification));
-        assertEquals(2, notification.actions.length);
-        assertEquals(
-            R.drawable.ic_notification_media_buttons_disabled,
-            notification.actions[0].icon
-        );
-        assertEquals(
-            R.drawable.ic_notification_mode_off,
-            notification.actions[1].icon
-        );
+        assertNull(notification.actions);
     }
 
     @Test
     @Config(sdk = Build.VERSION_CODES.N)
     public void resolveNotificationAudioModeActionIconMatchesMode() {
         assertEquals(
-            R.drawable.ic_notification_mode_tool,
+            R.drawable.ic_notification_mode_manual,
             AssistantVoiceRuntimeService.resolveNotificationAudioModeActionIcon(
                 AssistantVoiceConfig.AUDIO_MODE_TOOL
             )
@@ -734,7 +825,7 @@ public final class AssistantVoiceRuntimeServiceTest {
             )
         );
         assertEquals(
-            R.drawable.ic_notification_mode_off,
+            R.drawable.ic_notification_mode_manual,
             AssistantVoiceRuntimeService.resolveNotificationAudioModeActionIcon(
                 AssistantVoiceConfig.AUDIO_MODE_OFF
             )
@@ -749,42 +840,33 @@ public final class AssistantVoiceRuntimeServiceTest {
 
     @Test
     @Config(sdk = Build.VERSION_CODES.N)
-    public void resolveDisplayedNotificationAudioModeForcesOffWhenDisabled() {
-        assertEquals(
-            AssistantVoiceConfig.AUDIO_MODE_OFF,
-            AssistantVoiceRuntimeService.resolveDisplayedNotificationAudioMode(
-                AssistantVoiceRuntimeService.STATE_DISABLED,
-                AssistantVoiceConfig.AUDIO_MODE_RESPONSE
-            )
+    public void toggleAudioModeIntentCarriesDisplayedMode() {
+        Context context = RuntimeEnvironment.getApplication();
+
+        Intent intent = AssistantVoiceRuntimeService.toggleAudioModeIntent(
+            context,
+            AssistantVoiceConfig.AUDIO_MODE_RESPONSE
         );
+
         assertEquals(
-            AssistantVoiceConfig.AUDIO_MODE_TOOL,
-            AssistantVoiceRuntimeService.resolveDisplayedNotificationAudioMode(
-                AssistantVoiceRuntimeService.STATE_IDLE,
-                AssistantVoiceConfig.AUDIO_MODE_TOOL
-            )
+            AssistantVoiceRuntimeService.ACTION_TOGGLE_AUDIO_MODE,
+            intent.getAction()
+        );
+        assertTrue(intent.hasExtra(AssistantVoiceConfig.EXTRA_AUDIO_MODE));
+        assertEquals(
+            AssistantVoiceConfig.AUDIO_MODE_RESPONSE,
+            intent.getStringExtra(AssistantVoiceConfig.EXTRA_AUDIO_MODE)
         );
     }
 
     @Test
     @Config(sdk = Build.VERSION_CODES.N)
-    public void cycleAudioModeIntentCarriesDisplayedMode() {
+    public void toggleAutoListenIntentUsesDedicatedAction() {
         Context context = RuntimeEnvironment.getApplication();
 
-        Intent intent = AssistantVoiceRuntimeService.cycleAudioModeIntent(
-            context,
-            AssistantVoiceConfig.AUDIO_MODE_OFF
-        );
+        Intent intent = AssistantVoiceRuntimeService.toggleAutoListenIntent(context);
 
-        assertEquals(
-            AssistantVoiceRuntimeService.ACTION_CYCLE_AUDIO_MODE,
-            intent.getAction()
-        );
-        assertTrue(intent.hasExtra(AssistantVoiceConfig.EXTRA_AUDIO_MODE));
-        assertEquals(
-            AssistantVoiceConfig.AUDIO_MODE_OFF,
-            intent.getStringExtra(AssistantVoiceConfig.EXTRA_AUDIO_MODE)
-        );
+        assertEquals(AssistantVoiceRuntimeService.ACTION_TOGGLE_AUTO_LISTEN, intent.getAction());
     }
 
     @Test
@@ -1277,22 +1359,45 @@ public final class AssistantVoiceRuntimeServiceTest {
 
     @Test
     @Config(sdk = Build.VERSION_CODES.N)
-    public void nextNotificationAudioModeCyclesThroughAllModes() {
+    public void nextNotificationAudioModeTogglesManualAndResponse() {
         assertEquals(
             AssistantVoiceConfig.AUDIO_MODE_MANUAL,
             AssistantVoiceRuntimeService.nextNotificationAudioMode(AssistantVoiceConfig.AUDIO_MODE_OFF)
         );
         assertEquals(
-            AssistantVoiceConfig.AUDIO_MODE_TOOL,
+            AssistantVoiceConfig.AUDIO_MODE_RESPONSE,
             AssistantVoiceRuntimeService.nextNotificationAudioMode(AssistantVoiceConfig.AUDIO_MODE_MANUAL)
         );
         assertEquals(
-            AssistantVoiceConfig.AUDIO_MODE_RESPONSE,
+            AssistantVoiceConfig.AUDIO_MODE_MANUAL,
             AssistantVoiceRuntimeService.nextNotificationAudioMode(AssistantVoiceConfig.AUDIO_MODE_TOOL)
         );
         assertEquals(
-            AssistantVoiceConfig.AUDIO_MODE_OFF,
+            AssistantVoiceConfig.AUDIO_MODE_MANUAL,
             AssistantVoiceRuntimeService.nextNotificationAudioMode(AssistantVoiceConfig.AUDIO_MODE_RESPONSE)
+        );
+    }
+
+    @Test
+    @Config(sdk = Build.VERSION_CODES.N)
+    public void resolveDisplayedNotificationAudioModeCanonicalizesUnsupportedModes() {
+        assertEquals(
+            AssistantVoiceConfig.AUDIO_MODE_MANUAL,
+            AssistantVoiceRuntimeService.resolveDisplayedNotificationAudioMode(
+                AssistantVoiceConfig.AUDIO_MODE_OFF
+            )
+        );
+        assertEquals(
+            AssistantVoiceConfig.AUDIO_MODE_MANUAL,
+            AssistantVoiceRuntimeService.resolveDisplayedNotificationAudioMode(
+                AssistantVoiceConfig.AUDIO_MODE_TOOL
+            )
+        );
+        assertEquals(
+            AssistantVoiceConfig.AUDIO_MODE_RESPONSE,
+            AssistantVoiceRuntimeService.resolveDisplayedNotificationAudioMode(
+                AssistantVoiceConfig.AUDIO_MODE_RESPONSE
+            )
         );
     }
 

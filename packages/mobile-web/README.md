@@ -180,11 +180,14 @@ The following patches are applied automatically on `android:sync`:
   supported Bluetooth/headset media button presses toggle the existing native start/stop voice flow
   based on runtime state. The toggle is persisted in native config and may compete with other media
   apps for headset button ownership while enabled.
-- The same persistent Android notification also exposes compact icon actions for `Speak` or `Stop`
-  depending on runtime state, the Bluetooth/headset media-button capture toggle, and a voice-mode
-  cycle action for `Off`, `Manual`, `Tool`, or `Response`. `Off` leaves the foreground notification
-  alive so the mode can be cycled back on without reopening the web UI, while the direct
-  Speak/Stop action stays hidden when voice mode is disabled.
+- The same persistent Android notification exposes state-specific controls. In idle Thread mode,
+  its promoted dropdown shows `Start`, the currently selected `Manual` or `Response` mode, and
+  `Rearm On` / `Rearm Off` for Auto Listen. The latter two actions appear only while idle. Active
+  recognition shows `Stop`, while playback with a pending Auto Listen follow-up shows `Skip` and
+  `Stop`. Promoted Thread notification titles combine state and thread title, such as
+  `Listening · Project Thread`, while the compact status chip remains `Voice`. Realtime mode keeps
+  its separate call controls. Notification mode and Rearm changes are synchronized into an open
+  WebView so its settings cannot overwrite the native selection later.
 - The native voice runtime also keeps a rolling app-private event log at `files/voice-runtime.log`
   so random TTS/STT state issues can be inspected later over `adb`, even after the live logcat
   window has moved on. Retrieve it with:
@@ -251,6 +254,10 @@ is still the fastest first pass.
   system notification shade and from the in-app Notifications panel cards. Manual actions
   reconstruct fresh local queue items from the stored notification, jump ahead of automatic work,
   and discard interrupted automatic playback instead of requeueing it.
+- Android system notifications omit an unnamed session-attention title when the server supplied
+  only the session id, rather than displaying the UUID. Their displayed body strips paired
+  `**bold**` markers because Android system templates do not reliably preserve that styling;
+  persisted notification and TTS text remain unchanged.
 - When Android native voice mode is enabled, Pi request divider menus expose `Play` for the
   assistant text in that request, and text/markdown attachment actions expose `Play` for rendered
   text content, loading the full attachment text when the preview is truncated. These
