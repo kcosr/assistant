@@ -8,6 +8,7 @@
 
 ### Added
 
+- Added bounded Codex Threads tools for thread discovery, status, transcripts, messaging, steering, creation, and renaming, with server/capability scoping and exact-turn response retrieval for asynchronous relay workflows. ([#126](https://github.com/kcosr/assistant/pull/126))
 - Added settlement-driven Android Auto Listen for successful local-origin turns with no final speakable output, while suppressing queued, stale, interrupted, error, and voice-control-completed turns. ([#125](https://github.com/kcosr/assistant/pull/125))
 - Added locally bundled UI and code font catalogs with consistent form-control and terminal rendering, plus unified mobile, Electron, and Tauri app artwork generation. ([#124](https://github.com/kcosr/assistant/pull/124))
 - Added default-on Android response ownership so automatic assistant TTS and Auto Listen only run for turns started by the current app process, while tool prompts, external notifications, and manual voice actions remain available. ([#123](https://github.com/kcosr/assistant/pull/123))
