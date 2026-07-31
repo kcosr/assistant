@@ -112,6 +112,7 @@ export async function startServer(
       ...(typeof appConfig?.attachments.previewSnippetChars === 'number'
         ? { attachmentPreviewChars: appConfig.attachments.previewSnippetChars }
         : {}),
+      ...(appConfig?.codexThreads ? { codexThreadsConfig: appConfig.codexThreads } : {}),
     },
   );
 

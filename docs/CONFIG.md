@@ -18,6 +18,7 @@ This document describes the application configuration file used by the agent ser
   - [Location and Loading](#location-and-loading)
   - [Environment Variable Substitution](#environment-variable-substitution)
   - [Top-Level Keys](#top-level-keys)
+  - [Codex Threads](#codex-threads)
   - [Agents](#agents)
 - [Security Notes](#security-notes)
 - [Full Example](#full-example)
@@ -94,7 +95,15 @@ Realtime tool exposure is **explicit opt-in**. Configure under `voice.realtime`:
 {
   "voice": {
     "realtime": {
-      "toolAllowlist": ["interaction_end", "lists_*", "web_search"],
+      "toolAllowlist": [
+        "interaction_end",
+        "lists_*",
+        "web_search",
+        "codex_threads_list",
+        "codex_threads_find",
+        "codex_threads_status",
+        "codex_threads_messages"
+      ],
       "toolDenylist": []
     }
   }
@@ -136,6 +145,27 @@ Text agents use per-agent `toolAllowlist` / `toolDenylist` independently of this
 | Not the same as        | Plugin `search_*` tools (in-app notes/lists search)                                                                                                                                                               |
 
 Design: `docs/design/web-search-tool.md`.
+
+#### Built-in Codex Threads tools
+
+The `codex_threads_*` built-in tools use the local `codex-threads` CLI to inspect
+and interact with a configured Codex app-server. They are individually
+allowlisted for text agents and Realtime voice.
+
+| Tool                     | Purpose                                                                                                    |
+| ------------------------ | ---------------------------------------------------------------------------------------------------------- |
+| `codex_threads_list`     | List bounded recently updated threads, including cwd/project and status.                                   |
+| `codex_threads_find`     | Match a bounded recent candidate set by name, preview, and cwd metadata. It is not full transcript search. |
+| `codex_threads_status`   | Load and inspect one thread and its active-turn state.                                                     |
+| `codex_threads_messages` | Read a bounded recent user/assistant transcript.                                                           |
+| `codex_threads_send`     | Start or queue a turn; optionally wait up to 120 seconds for bounded final text.                           |
+| `codex_threads_steer`    | Add guidance to the exact currently active turn.                                                           |
+| `codex_threads_create`   | Create, optionally name, and start a thread in an allowed cwd.                                             |
+| `codex_threads_rename`   | Set a non-empty thread name.                                                                               |
+
+The Realtime example exposes only read operations. Add write operation names
+explicitly when voice-driven mutations are desired; Realtime does not apply
+per-agent capability rules.
 
 ### ElevenLabs TTS
 
@@ -241,13 +271,14 @@ Examples:
 
 ### Top-Level Keys
 
-| Key          | Type   | Description                                                     |
-| ------------ | ------ | --------------------------------------------------------------- |
-| `sessions`   | object | Session cache settings.                                         |
-| `agents`     | array  | Agent persona definitions and chat provider config.             |
-| `profiles`   | array  | Shared profile (instance) definitions for cross-plugin scoping. |
-| `plugins`    | object | Plugin enablement and per-plugin config.                        |
-| `mcpServers` | array  | External MCP servers launched over stdio.                       |
+| Key            | Type   | Description                                                     |
+| -------------- | ------ | --------------------------------------------------------------- |
+| `sessions`     | object | Session cache settings.                                         |
+| `agents`       | array  | Agent persona definitions and chat provider config.             |
+| `profiles`     | array  | Shared profile (instance) definitions for cross-plugin scoping. |
+| `plugins`      | object | Plugin enablement and per-plugin config.                        |
+| `mcpServers`   | array  | External MCP servers launched over stdio.                       |
+| `codexThreads` | object | Host configuration for built-in `codex_threads_*` tools.        |
 
 #### `sessions`
 
@@ -258,6 +289,44 @@ Controls session cache behavior.
 ```
 
 - `maxCached`: maximum number of sessions cached in memory
+
+#### Codex Threads
+
+```json
+{
+  "codexThreads": {
+    "allowedServers": ["main", "work"],
+    "binary": "codex-threads",
+    "permissionMode": "app-server-default",
+    "allowedCwdRoots": ["/home/kevin/worktrees"]
+  }
+}
+```
+
+| Field             | Default              | Description                                                                                                                                                    |
+| ----------------- | -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `allowedServers`  | required             | Nonempty list of aliases from the host user's `codex-threads` config. Every tool call must select one of these aliases through its required `server` argument. |
+| `binary`          | `codex-threads`      | Executable name or trusted host-configured path.                                                                                                               |
+| `permissionMode`  | `app-server-default` | `app-server-default` passes `--no-yolo`; `full-access` deliberately uses the CLI's approval-policy-never/full-access behavior. Agents cannot override it.      |
+| `allowedCwdRoots` | `[]`                 | Absolute roots permitted for `codex_threads_create`. With no roots, create is unavailable while other operations still work.                                   |
+
+The host service user must have a working `codex-threads` configuration and a
+reachable app-server for each allowed alias. Every operation requires a
+model-visible `server` argument constrained to `allowedServers`. Calls use JSON output,
+argument-array subprocess execution, hard time/output limits, and compact
+result projections. Full-text CLI search is intentionally not exposed because
+its time filtering can scan unbounded history; `codex_threads_find` searches a
+fixed recent metadata candidate set instead.
+
+`codex_threads_messages` accepts an optional exact `turnId` returned by
+`codex_threads_send`. When present, the server scans the bounded recent-turn
+window, filters to that turn, and only then applies the final message limit.
+This lets asynchronous relay agents retrieve the response for the turn they
+submitted without confusing it with newer thread activity.
+
+Text agents opt in through `toolAllowlist` and may additionally scope
+`codex_threads.read` versus `codex_threads.write` capabilities. Realtime opts in
+independently through exact names or globs under `voice.realtime.toolAllowlist`.
 
 #### `agents`
 

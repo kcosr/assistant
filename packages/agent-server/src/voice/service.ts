@@ -6,6 +6,7 @@ import {
   buildRealtimeInstructions,
   buildRealtimeToolsFromHost,
   isToolAllowedForVoiceRealtime,
+  withListsInstanceIdDefault,
 } from './listsTools';
 import { isInteractionEndTool } from '../interactionEndTool';
 import {
@@ -448,15 +449,13 @@ export class VoiceService {
       return;
     }
 
-    let args: Record<string, unknown> = {};
+    let parsedArgs: unknown = {};
     try {
-      args = JSON.parse(argsJson) as Record<string, unknown>;
+      parsedArgs = JSON.parse(argsJson) as unknown;
     } catch {
-      args = {};
+      parsedArgs = {};
     }
-    if (!args['instance_id'] && live.listsInstanceId) {
-      args['instance_id'] = live.listsInstanceId;
-    }
+    const args = withListsInstanceIdDefault(name, parsedArgs, live.listsInstanceId);
 
     await this.store.appendJournal(live.conversationId, {
       kind: 'tool_request',

@@ -224,8 +224,16 @@ export interface ToolHostConfig {
   toolsEnabled: boolean;
 }
 
+export interface CodexThreadsToolConfig {
+  allowedServers: string[];
+  binary: string;
+  permissionMode: 'app-server-default' | 'full-access';
+  allowedCwdRoots: string[];
+}
+
 export interface CreateToolHostDeps {
   sessionHub?: SessionHub;
   sessionIndex?: SessionIndex;
   attachmentPreviewChars?: number;
+  codexThreadsConfig?: CodexThreadsToolConfig;
 }

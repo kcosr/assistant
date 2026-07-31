@@ -5,6 +5,16 @@
   "sessions": {
     "maxCached": 100
   },
+  "codexThreads": {
+    "allowedServers": [
+      "main"
+    ],
+    "binary": "codex-threads",
+    "permissionMode": "app-server-default",
+    "allowedCwdRoots": [
+      "/path/to/workspaces"
+    ]
+  },
   "agents": [
     {
       "agentId": "lists",
@@ -295,7 +305,11 @@
     "realtime": {
       "toolAllowlist": [
         "lists_*",
-        "web_search"
+        "web_search",
+        "codex_threads_list",
+        "codex_threads_find",
+        "codex_threads_status",
+        "codex_threads_messages"
       ]
     }
   }

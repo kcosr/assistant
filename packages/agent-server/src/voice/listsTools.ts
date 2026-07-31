@@ -66,6 +66,23 @@ export function isToolAllowedForVoiceRealtime(
   return true;
 }
 
+/** Apply the voice conversation's Lists profile only to Lists plugin tools. */
+export function withListsInstanceIdDefault(
+  name: string,
+  args: unknown,
+  listsInstanceId: string,
+): Record<string, unknown> {
+  const normalizedArgs =
+    args && typeof args === 'object' && !Array.isArray(args)
+      ? (args as Record<string, unknown>)
+      : {};
+  const instanceId = listsInstanceId.trim();
+  if (!name.startsWith('lists_') || !instanceId || normalizedArgs['instance_id']) {
+    return normalizedArgs;
+  }
+  return { ...normalizedArgs, instance_id: instanceId };
+}
+
 function normalizeParameters(parameters: unknown): Record<string, unknown> {
   if (parameters && typeof parameters === 'object' && !Array.isArray(parameters)) {
     return parameters as Record<string, unknown>;
@@ -121,6 +138,5 @@ export function buildRealtimeInstructions(
     contextBlock.trim().length > 0
       ? `Recent conversation context:\n${contextBlock.trim()}`
       : 'No prior conversation context.';
-
   return `${base}\n${context}`;
 }

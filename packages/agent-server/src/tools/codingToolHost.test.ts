@@ -245,6 +245,41 @@ describe('CodingToolHost', () => {
     expect(outsideContent).toBe('outside file');
   });
 
+  it('uses the fallback workspace for realtime voice tool contexts', async () => {
+    const dataDir = createTempDir('coding-tool-host-realtime');
+    const fallbackWorkspace = path.join(dataDir, 'coding-workspaces');
+    const host = new CodingToolHost({
+      dataDir,
+      pluginConfig: {
+        enabled: true,
+        mode: 'local',
+        local: {
+          workspaceRoot: '${session.workingDir}',
+        },
+      },
+      loadCodingAgentModule,
+    });
+
+    const ctx: ToolContext = {
+      sessionId: 'voice:conversation-id',
+      signal: new AbortController().signal,
+      sessionHub: {
+        getSessionState: () => undefined,
+        ensureSessionState: async () => {
+          throw new Error('Session not found: voice:conversation-id');
+        },
+      } as never,
+    };
+
+    await host.callTool('write', JSON.stringify({ path: 'voice.txt', content: 'voice file' }), ctx);
+    const result = await host.callTool('read', JSON.stringify({ path: 'voice.txt' }), ctx);
+
+    expect(await fs.readFile(path.join(fallbackWorkspace, 'voice.txt'), 'utf8')).toBe('voice file');
+    expect((result as { content: Array<{ text?: string }> }).content[0]?.text).toContain(
+      'voice file',
+    );
+  });
+
   it('rejects unknown tool names through callTool', async () => {
     const dataDir = createTempDir('coding-tool-host-unknown');
     const host = new CodingToolHost({

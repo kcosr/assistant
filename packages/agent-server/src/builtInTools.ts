@@ -6,7 +6,13 @@ import path from 'node:path';
 import type { SessionHub, SessionIndex } from './index';
 import type { EnvConfig } from './envConfig';
 import type { AgentDefinition, AgentRegistry } from './agents';
-import type { AgentTool, BuiltInToolDefinition, ToolContext, ToolHost } from './tools';
+import type {
+  AgentTool,
+  BuiltInToolDefinition,
+  CodexThreadsToolConfig,
+  ToolContext,
+  ToolHost,
+} from './tools';
 import { processUserMessage, isSessionBusy } from './chatProcessor';
 import { createScopedToolHost } from './tools';
 import { resolveSessionWorkingDir } from './tools/sessionWorkingDir';
@@ -33,6 +39,7 @@ import {
 } from './attachments/constants';
 import { createNotificationRecord } from '../../plugins/core/notifications/server/service';
 import { createWebSearchToolDefinition } from './tools/webSearch';
+import { createCodexThreadsToolDefinitions } from './tools/codexThreads';
 import { INTERACTION_END_TOOL_NAME, INTERACTION_END_TOOL_PARAMETERS } from './interactionEndTool';
 
 interface AgentMessageArgs {
@@ -1187,6 +1194,7 @@ export function registerBuiltInSessionTools(options: {
   host: { registerTool(definition: BuiltInToolDefinition): void };
   sessionHub: SessionHub;
   attachmentPreviewChars?: number;
+  codexThreadsConfig?: CodexThreadsToolConfig;
 }): void {
   const attachmentPreviewChars =
     typeof options.attachmentPreviewChars === 'number'
@@ -1284,4 +1292,7 @@ export function registerBuiltInSessionTools(options: {
   });
 
   options.host.registerTool(createWebSearchToolDefinition());
+  for (const definition of createCodexThreadsToolDefinitions(options.codexThreadsConfig)) {
+    options.host.registerTool(definition);
+  }
 }
