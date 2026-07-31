@@ -259,6 +259,63 @@ describe('Codex Threads read tools', () => {
     ).toBe(true);
   });
 
+  it('filters an exact turn before applying the final message limit', async () => {
+    const runner = queuedRunner([
+      {
+        messages: [
+          {
+            role: 'assistant',
+            text: 'Unrelated newer response',
+            turnId: 'turn-other',
+            turnCompletedAt: 400,
+          },
+          {
+            role: 'assistant',
+            text: 'Target response part one',
+            turnId: 'turn-target',
+            turnCompletedAt: 300,
+          },
+          {
+            role: 'assistant',
+            text: 'Target response part two',
+            turnId: 'turn-target',
+            turnCompletedAt: 301,
+          },
+        ],
+        truncated: false,
+      },
+    ]);
+    const tool = definitions(makeConfig(), runner).get(CODEX_THREADS_TOOL_NAMES.messages)!;
+    const result = await tool.handler(
+      {
+        server: 'main',
+        threadId: 'thread-1',
+        turnId: 'turn-target',
+        last: 1,
+        role: 'assistant',
+      },
+      makeContext(),
+    );
+
+    const args = runner.mock.calls[0]![0].args;
+    expect(args).not.toContain('--last');
+    expect(args).toContain('--max-turns');
+    expect(result).toMatchObject({
+      server: 'main',
+      threadId: 'thread-1',
+      turnId: 'turn-target',
+      turnFound: true,
+      historyTruncated: true,
+      messages: [
+        {
+          role: 'assistant',
+          text: 'Target response part two',
+          turnId: 'turn-target',
+        },
+      ],
+    });
+  });
+
   it('rejects missing or disallowed server selection before invoking the CLI', async () => {
     const runner = queuedRunner([]);
     const tool = definitions(makeConfig(), runner).get(CODEX_THREADS_TOOL_NAMES.status)!;

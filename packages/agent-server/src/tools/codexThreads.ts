@@ -685,16 +685,19 @@ function parseMessagesArgs(
   server: string;
   threadId: string;
   last: number;
+  turnId?: string;
   role?: 'user' | 'assistant';
 } {
-  const args = asObject(raw, ['server', 'threadId', 'last', 'role']);
+  const args = asObject(raw, ['server', 'threadId', 'turnId', 'last', 'role']);
   const roleRaw = args['role'];
   if (roleRaw !== undefined && roleRaw !== 'user' && roleRaw !== 'assistant') {
     throw new ToolError('invalid_arguments', 'role must be user or assistant');
   }
+  const turnId = optionalString(args['turnId'], 'turnId', CODEX_THREADS_BOUNDS.maxThreadIdChars);
   return {
     server: requireServer(args['server'], config),
     threadId: requireThreadId(args['threadId']),
+    ...(turnId ? { turnId } : {}),
     last: boundedInteger(
       args['last'],
       'last',
@@ -1030,12 +1033,18 @@ export function createCodexThreadsToolDefinitions(
     {
       name: CODEX_THREADS_TOOL_NAMES.messages,
       description:
-        'Read a compact recent user/assistant transcript from one Codex thread. Defaults to 6 messages and never returns more than 12.',
+        'Read a compact recent user/assistant transcript from one Codex thread, optionally restricted to an exact turn id returned by a send. Defaults to 6 messages and never returns more than 12.',
       capabilities: readCapability,
       parameters: objectSchema(
         {
           server: serverProperty,
           threadId: threadIdProperty,
+          turnId: {
+            type: 'string',
+            maxLength: CODEX_THREADS_BOUNDS.maxThreadIdChars,
+            description:
+              'Optional exact turn id. Filtering occurs inside the bounded recent turn scan before the final message limit.',
+          },
           last: {
             type: 'integer',
             minimum: 1,
@@ -1060,8 +1069,7 @@ export function createCodexThreadsToolDefinitions(
           [
             'messages',
             input.threadId,
-            '--last',
-            String(input.last),
+            ...(input.turnId ? [] : ['--last', String(input.last)]),
             '--max-turns',
             String(CODEX_THREADS_BOUNDS.messageTurnScan),
             ...(input.role ? ['--role', input.role] : []),
@@ -1070,12 +1078,29 @@ export function createCodexThreadsToolDefinitions(
           READ_TIMEOUT_MS,
         );
         const rawMessages = Array.isArray(output['messages']) ? output['messages'] : [];
-        const projected = projectMessages(rawMessages);
+        const matchingMessages = input.turnId
+          ? rawMessages.filter(
+              (message) =>
+                message !== null &&
+                typeof message === 'object' &&
+                !Array.isArray(message) &&
+                (message as Record<string, unknown>)['turnId'] === input.turnId,
+            )
+          : rawMessages;
+        const selectedMessages = matchingMessages.slice(-input.last);
+        const projected = projectMessages(selectedMessages);
         return {
           server: input.server,
           threadId: input.threadId,
+          ...(input.turnId
+            ? {
+                turnId: input.turnId,
+                turnFound: projected.messages.length > 0,
+              }
+            : {}),
           ...projected,
-          historyTruncated: output['truncated'] === true,
+          historyTruncated:
+            output['truncated'] === true || matchingMessages.length > selectedMessages.length,
           scannedTurns: CODEX_THREADS_BOUNDS.messageTurnScan,
         };
       },

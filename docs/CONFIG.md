@@ -159,7 +159,7 @@ allowlisted for text agents and Realtime voice.
 | `codex_threads_status`   | Load and inspect one thread and its active-turn state.                                                     |
 | `codex_threads_messages` | Read a bounded recent user/assistant transcript.                                                           |
 | `codex_threads_send`     | Start or queue a turn; optionally wait up to 120 seconds for bounded final text.                           |
-| `codex_threads_steer`    | Add guidance to the exact currently active turn.                                                          |
+| `codex_threads_steer`    | Add guidance to the exact currently active turn.                                                           |
 | `codex_threads_create`   | Create, optionally name, and start a thread in an allowed cwd.                                             |
 | `codex_threads_rename`   | Set a non-empty thread name.                                                                               |
 
@@ -317,6 +317,12 @@ argument-array subprocess execution, hard time/output limits, and compact
 result projections. Full-text CLI search is intentionally not exposed because
 its time filtering can scan unbounded history; `codex_threads_find` searches a
 fixed recent metadata candidate set instead.
+
+`codex_threads_messages` accepts an optional exact `turnId` returned by
+`codex_threads_send`. When present, the server scans the bounded recent-turn
+window, filters to that turn, and only then applies the final message limit.
+This lets asynchronous relay agents retrieve the response for the turn they
+submitted without confusing it with newer thread activity.
 
 Text agents opt in through `toolAllowlist` and may additionally scope
 `codex_threads.read` versus `codex_threads.write` capabilities. Realtime opts in
