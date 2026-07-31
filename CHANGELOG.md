@@ -8,6 +8,7 @@
 
 ### Added
 
+- Added one-shot scheduled reminders with scheduled-session visibility, durable delivery, notification playback, and retry handling. ([#127](https://github.com/kcosr/assistant/pull/127))
 - Added bounded Codex Threads tools for thread discovery, status, transcripts, messaging, steering, creation, and renaming, with server/capability scoping and exact-turn response retrieval for asynchronous relay workflows. ([#126](https://github.com/kcosr/assistant/pull/126))
 - Added settlement-driven Android Auto Listen for successful local-origin turns with no final speakable output, while suppressing queued, stale, interrupted, error, and voice-control-completed turns. ([#125](https://github.com/kcosr/assistant/pull/125))
 - Added locally bundled UI and code font catalogs with consistent form-control and terminal rendering, plus unified mobile, Electron, and Tauri app artwork generation. ([#124](https://github.com/kcosr/assistant/pull/124))
@@ -40,6 +41,7 @@
 
 ### Changed
 
+- Changed the Android persistent voice notification to show thread-aware status and compact Start, response-mode, and Rearm controls, while sanitizing notification response text. ([#127](https://github.com/kcosr/assistant/pull/127))
 - Changed Android response-origin handling so server-initiated turns without a client origin play on all devices while suppressing Auto Listen. ([#124](https://github.com/kcosr/assistant/pull/124))
 - Changed the chat composer to grow with wrapped or multiline text up to a compact height limit, with Enter to send and Shift+Enter to add a newline. ([#119](https://github.com/kcosr/assistant/pull/119))
 - Updated the Earendil Pi dependency suite to 0.82.1 and migrated the agent server to Pi's current provider-owned, ESM-only runtime APIs. ([#117](https://github.com/kcosr/assistant/pull/117))
@@ -60,6 +62,7 @@
 
 ### Fixed
 
+- Fixed voice-first Pi sessions failing before an initial typed message by making native ESM runtime dependencies resolvable from bundled plugin servers. ([#127](https://github.com/kcosr/assistant/pull/127))
 - Fixed Android packaging and layout drift by exactly pinning and verifying the native Capacitor dependency stack. ([#124](https://github.com/kcosr/assistant/pull/124))
 - Fixed the Android in-app floating speaking control to use the same Skip transition as the headset control, preserving a pending Auto Listen follow-up instead of suppressing it. ([#123](https://github.com/kcosr/assistant/pull/123))
 - Fixed Android Back navigation so closed pinned Sessions/Agents panels are never opened, while an otherwise unhandled Back press swaps between the two most recently active regular workspace panels. ([#121](https://github.com/kcosr/assistant/pull/121))
