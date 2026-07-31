@@ -207,3 +207,57 @@ export interface SessionWakeupDeletedEvent {
     sessionId: string;
   };
 }
+
+export const SCHEDULED_REMINDER_MAX_TEXT_LENGTH = 2_000;
+
+export interface ScheduledReminderConfig {
+  reminderId: string;
+  text: string;
+  runAt: Date;
+  createdAt: Date;
+}
+
+export interface PersistedScheduledReminderRecord {
+  reminderId: string;
+  text: string;
+  runAt: string;
+  createdAt: string;
+}
+
+export interface ScheduledReminderCreateInput {
+  text: string;
+  runAt: Date;
+}
+
+export interface ScheduledReminderUpdateInput {
+  reminderId: string;
+  text?: string;
+  runAt?: Date;
+}
+
+export interface ScheduledReminderInfo {
+  kind: 'one_time_reminder';
+  scope: 'global';
+  manageable: true;
+  reminderId: string;
+  text: string;
+  runAt: string;
+  createdAt: string;
+  status: 'pending';
+  capabilities: {
+    canUpdate: true;
+    canCancel: true;
+  };
+}
+
+export interface ScheduledReminderSetEvent {
+  type: 'session_reminder:set';
+  payload: ScheduledReminderInfo;
+}
+
+export interface ScheduledReminderDeletedEvent {
+  type: 'session_reminder:deleted';
+  payload: {
+    reminderId: string;
+  };
+}

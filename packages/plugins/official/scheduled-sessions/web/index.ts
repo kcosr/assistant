@@ -57,8 +57,8 @@ const SCHEDULED_SESSIONS_TEMPLATE = `
         type="search"
         class="scheduled-sessions-search"
         data-role="search"
-        placeholder="Filter by title, session, message, or agent..."
-        aria-label="Filter scheduled sessions and wake-ups"
+        placeholder="Filter schedules, wake-ups, or reminders..."
+        aria-label="Filter schedules, wake-ups, and reminders"
         autocomplete="off"
       />
     </div>
@@ -112,6 +112,25 @@ type WakeupsResponse = {
   wakeups: SessionWakeupInfo[];
 };
 
+type ScheduledReminderInfo = {
+  kind: 'one_time_reminder';
+  scope: 'global';
+  manageable: true;
+  reminderId: string;
+  text: string;
+  runAt: string;
+  createdAt: string;
+  status: 'pending';
+};
+
+type RemindersResponse = {
+  reminders: ScheduledReminderInfo[];
+};
+
+type OneShotInfo =
+  | { kind: 'one_time_wakeup'; value: SessionWakeupInfo }
+  | { kind: 'one_time_reminder'; value: ScheduledReminderInfo };
+
 type OperationResponse<T> = {
   ok: boolean;
   result: T;
@@ -140,6 +159,18 @@ type SessionWakeupDeletedEvent = {
   payload: {
     wakeupId: string;
     sessionId: string;
+  };
+};
+
+type ScheduledReminderSetEvent = {
+  type: 'session_reminder:set';
+  payload: ScheduledReminderInfo;
+};
+
+type ScheduledReminderDeletedEvent = {
+  type: 'session_reminder:deleted';
+  payload: {
+    reminderId: string;
   };
 };
 
@@ -264,8 +295,8 @@ function sortSchedules(schedules: ScheduleInfo[]): ScheduleInfo[] {
   });
 }
 
-function sortWakeups(wakeups: SessionWakeupInfo[]): SessionWakeupInfo[] {
-  return [...wakeups].sort((a, b) => a.runAt.localeCompare(b.runAt));
+function sortOneShots(oneShots: OneShotInfo[]): OneShotInfo[] {
+  return [...oneShots].sort((a, b) => a.value.runAt.localeCompare(b.value.runAt));
 }
 
 function getScheduleTitle(schedule: ScheduleInfo): string {
@@ -313,15 +344,30 @@ async function fetchWakeups(): Promise<SessionWakeupInfo[]> {
   return payload.result.wakeups;
 }
 
+async function fetchReminders(): Promise<ScheduledReminderInfo[]> {
+  const response = await apiFetch('/api/plugins/scheduled-sessions/operations/reminder-list', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({}),
+  });
+  let payload: OperationResponse<RemindersResponse> | null = null;
+  try {
+    payload = (await response.json()) as OperationResponse<RemindersResponse>;
+  } catch {
+    // ignore
+  }
+  if (!response.ok || !payload?.ok || !payload.result || !Array.isArray(payload.result.reminders)) {
+    throw new Error(`Request failed (${response.status})`);
+  }
+  return payload.result.reminders;
+}
+
 async function runSchedule(agentId: string, scheduleId: string): Promise<RunResponse> {
-  const response = await apiFetch(
-    '/api/plugins/scheduled-sessions/operations/run',
-    {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ agentId, scheduleId }),
-    },
-  );
+  const response = await apiFetch('/api/plugins/scheduled-sessions/operations/run', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ agentId, scheduleId }),
+  });
   let payload: OperationResponse<RunResponse> | null = null;
   try {
     payload = (await response.json()) as OperationResponse<RunResponse>;
@@ -334,16 +380,17 @@ async function runSchedule(agentId: string, scheduleId: string): Promise<RunResp
   return payload.result;
 }
 
-async function setScheduleEnabled(agentId: string, scheduleId: string, enabled: boolean): Promise<void> {
+async function setScheduleEnabled(
+  agentId: string,
+  scheduleId: string,
+  enabled: boolean,
+): Promise<void> {
   const operationId = enabled ? 'enable' : 'disable';
-  const response = await apiFetch(
-    `/api/plugins/scheduled-sessions/operations/${operationId}`,
-    {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ agentId, scheduleId }),
-    },
-  );
+  const response = await apiFetch(`/api/plugins/scheduled-sessions/operations/${operationId}`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ agentId, scheduleId }),
+  });
   if (!response.ok) {
     throw new Error(`Request failed (${response.status})`);
   }
@@ -357,6 +404,17 @@ async function cancelWakeup(sessionId: string, wakeupId: string): Promise<void> 
       'x-session-id': sessionId,
     },
     body: JSON.stringify({ wakeupId }),
+  });
+  if (!response.ok) {
+    throw new Error(`Request failed (${response.status})`);
+  }
+}
+
+async function cancelReminder(reminderId: string): Promise<void> {
+  const response = await apiFetch('/api/plugins/scheduled-sessions/operations/reminder-cancel', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ reminderId }),
   });
   if (!response.ok) {
     throw new Error(`Request failed (${response.status})`);
@@ -394,6 +452,7 @@ if (!registry || typeof registry.registerPanel !== 'function') {
 
       let schedules = new Map<string, ScheduleInfo>();
       let wakeups = new Map<string, SessionWakeupInfo>();
+      let reminders = new Map<string, ScheduledReminderInfo>();
       let loading = false;
       let message = '';
       let searchQuery = '';
@@ -447,6 +506,11 @@ if (!registry || typeof registry.registerPanel !== 'function') {
         render();
       };
 
+      const updateReminders = (nextReminders: ScheduledReminderInfo[]): void => {
+        reminders = new Map(nextReminders.map((reminder) => [reminder.reminderId, reminder]));
+        render();
+      };
+
       const refresh = async (): Promise<void> => {
         if (loading) {
           return;
@@ -454,9 +518,14 @@ if (!registry || typeof registry.registerPanel !== 'function') {
         loading = true;
         setMessage('Loading schedules...');
         try {
-          const [scheduleData, wakeupData] = await Promise.all([fetchSchedules(), fetchWakeups()]);
+          const [scheduleData, wakeupData, reminderData] = await Promise.all([
+            fetchSchedules(),
+            fetchWakeups(),
+            fetchReminders(),
+          ]);
           updateSchedules(scheduleData);
           updateWakeups(wakeupData);
+          updateReminders(reminderData);
           message = '';
         } catch (err) {
           message = (err as Error).message || 'Failed to fetch schedules';
@@ -500,6 +569,24 @@ if (!registry || typeof registry.registerPanel !== 'function') {
           render();
           return;
         }
+        if (payload['type'] === 'session_reminder:deleted') {
+          const deleted = (payload as ScheduledReminderDeletedEvent).payload;
+          if (!deleted?.reminderId) {
+            return;
+          }
+          reminders.delete(deleted.reminderId);
+          render();
+          return;
+        }
+        if (payload['type'] === 'session_reminder:set') {
+          const reminder = (payload as ScheduledReminderSetEvent).payload;
+          if (!reminder?.reminderId) {
+            return;
+          }
+          reminders.set(reminder.reminderId, reminder);
+          render();
+          return;
+        }
         if (payload['type'] !== 'scheduled_session:status') {
           return;
         }
@@ -514,6 +601,11 @@ if (!registry || typeof registry.registerPanel !== 'function') {
       const render = (): void => {
         const allSchedules = Array.from(schedules.values());
         const allWakeups = Array.from(wakeups.values());
+        const allReminders = Array.from(reminders.values());
+        const allOneShots: OneShotInfo[] = [
+          ...allWakeups.map((value): OneShotInfo => ({ kind: 'one_time_wakeup', value })),
+          ...allReminders.map((value): OneShotInfo => ({ kind: 'one_time_reminder', value })),
+        ];
         const normalizedQuery = searchQuery.trim().toLowerCase();
         const orderedSchedules = sortSchedules(allSchedules).filter((schedule) => {
           if (!normalizedQuery) {
@@ -523,10 +615,17 @@ if (!registry || typeof registry.registerPanel !== 'function') {
           const agent = schedule.agentId.toLowerCase();
           return title.includes(normalizedQuery) || agent.includes(normalizedQuery);
         });
-        const orderedWakeups = sortWakeups(allWakeups).filter((wakeup) => {
+        const orderedOneShots = sortOneShots(allOneShots).filter((oneShot) => {
           if (!normalizedQuery) {
             return true;
           }
+          if (oneShot.kind === 'one_time_reminder') {
+            return (
+              oneShot.value.text.toLowerCase().includes(normalizedQuery) ||
+              'reminder'.includes(normalizedQuery)
+            );
+          }
+          const wakeup = oneShot.value;
           const sessionName = (wakeup.sessionName ?? '').toLowerCase();
           const sessionId = wakeup.sessionId.toLowerCase();
           const messageText = wakeup.message.toLowerCase();
@@ -538,28 +637,74 @@ if (!registry || typeof registry.registerPanel !== 'function') {
             agent.includes(normalizedQuery)
           );
         });
-        const runningCount = orderedSchedules.filter((schedule) => schedule.status === 'running').length;
-        const disabledCount = orderedSchedules.filter((schedule) => schedule.status === 'disabled').length;
+        const orderedWakeupCount = orderedOneShots.filter(
+          (oneShot) => oneShot.kind === 'one_time_wakeup',
+        ).length;
+        const orderedReminderCount = orderedOneShots.length - orderedWakeupCount;
+        const runningCount = orderedSchedules.filter(
+          (schedule) => schedule.status === 'running',
+        ).length;
+        const disabledCount = orderedSchedules.filter(
+          (schedule) => schedule.status === 'disabled',
+        ).length;
         summaryEl.textContent = normalizedQuery
-          ? `${orderedSchedules.length} of ${allSchedules.length} schedules | ${orderedWakeups.length} of ${allWakeups.length} wake-ups | ${runningCount} running | ${disabledCount} disabled`
-          : `${allSchedules.length} schedules | ${allWakeups.length} wake-ups | ${runningCount} running | ${disabledCount} disabled`;
+          ? `${orderedSchedules.length} of ${allSchedules.length} schedules | ${orderedWakeupCount} of ${allWakeups.length} wake-ups | ${orderedReminderCount} of ${allReminders.length} reminders | ${runningCount} running | ${disabledCount} disabled`
+          : `${allSchedules.length} schedules | ${allWakeups.length} wake-ups | ${allReminders.length} reminders | ${runningCount} running | ${disabledCount} disabled`;
         statusEl.textContent = message;
         chromeController?.scheduleLayoutCheck();
 
-        if (allSchedules.length === 0 && allWakeups.length === 0 && !loading) {
-          bodyEl.innerHTML = '<div class="scheduled-sessions-empty">No schedules or wake-ups configured.</div>';
+        if (allSchedules.length === 0 && allOneShots.length === 0 && !loading) {
+          bodyEl.innerHTML =
+            '<div class="scheduled-sessions-empty">No schedules, wake-ups, or reminders configured.</div>';
           return;
         }
-        if (orderedSchedules.length === 0 && orderedWakeups.length === 0 && !loading) {
-          bodyEl.innerHTML = `<div class="scheduled-sessions-empty">No schedules or wake-ups match "${escapeHtml(searchQuery.trim())}".</div>`;
+        if (orderedSchedules.length === 0 && orderedOneShots.length === 0 && !loading) {
+          bodyEl.innerHTML = `<div class="scheduled-sessions-empty">No schedules, wake-ups, or reminders match "${escapeHtml(searchQuery.trim())}".</div>`;
           return;
         }
 
         let html = '';
-        if (orderedWakeups.length > 0) {
-          html += '<div class="scheduled-sessions-section-title">Wake-ups</div>';
+        if (orderedOneShots.length > 0) {
+          html += '<div class="scheduled-sessions-section-title">One-shots</div>';
           html += '<div class="scheduled-sessions-list scheduled-sessions-wakeup-list">';
-          for (const wakeup of orderedWakeups) {
+          for (const oneShot of orderedOneShots) {
+            if (oneShot.kind === 'one_time_reminder') {
+              const reminder = oneShot.value;
+              html += `
+                <section class="scheduled-sessions-item scheduled-sessions-reminder-item" data-reminder-id="${escapeHtml(reminder.reminderId)}">
+                  <div class="scheduled-sessions-row">
+                    <span class="status-dot status-dot--reminder"></span>
+                    <div class="scheduled-sessions-row-main">
+                      <div class="scheduled-sessions-row-title-line">
+                        <div class="scheduled-sessions-row-title">${escapeHtml(reminder.text)}</div>
+                        <span class="scheduled-sessions-agent">Reminder</span>
+                      </div>
+                    </div>
+                    <div class="scheduled-sessions-row-meta">
+                      <div class="scheduled-sessions-row-next">${escapeHtml(formatRelative(reminder.runAt))}</div>
+                      <div class="scheduled-sessions-row-status">Reminder</div>
+                    </div>
+                    <div class="scheduled-sessions-row-actions">
+                      <button type="button" class="scheduled-sessions-button" data-action="cancel-reminder" data-reminder-id="${escapeHtml(reminder.reminderId)}">Cancel</button>
+                    </div>
+                  </div>
+                  <div class="scheduled-sessions-details">
+                    <div class="scheduled-sessions-detail-grid">
+                      <div class="scheduled-sessions-detail">
+                        <div class="scheduled-sessions-detail-label">Run at</div>
+                        <div class="scheduled-sessions-detail-value">${escapeHtml(formatTimestamp(reminder.runAt))} (${escapeHtml(formatRelative(reminder.runAt))})</div>
+                      </div>
+                      <div class="scheduled-sessions-detail scheduled-sessions-detail-wide">
+                        <div class="scheduled-sessions-detail-label">Text</div>
+                        <div class="scheduled-sessions-detail-value">${escapeHtml(reminder.text)}</div>
+                      </div>
+                    </div>
+                  </div>
+                </section>
+              `;
+              continue;
+            }
+            const wakeup = oneShot.value;
             const sessionTitle = wakeup.sessionName?.trim() || wakeup.sessionId;
             const wakeupStatus =
               wakeup.status === 'queued'
@@ -775,6 +920,22 @@ if (!registry || typeof registry.registerPanel !== 'function') {
           } catch (err) {
             setMessage((err as Error).message || 'Failed to cancel wake-up');
           }
+          return;
+        }
+
+        if (action === 'cancel-reminder') {
+          event.preventDefault();
+          event.stopPropagation();
+          const reminderId = actionEl.dataset['reminderId'] ?? '';
+          if (!reminderId) {
+            return;
+          }
+          try {
+            await cancelReminder(reminderId);
+            setMessage('Reminder cancelled');
+          } catch (err) {
+            setMessage((err as Error).message || 'Failed to cancel reminder');
+          }
         }
       };
 
@@ -803,7 +964,7 @@ if (!registry || typeof registry.registerPanel !== 'function') {
       });
 
       const timer = window.setInterval(() => {
-        if (schedules.size > 0 || wakeups.size > 0) {
+        if (schedules.size > 0 || wakeups.size > 0 || reminders.size > 0) {
           render();
         }
       }, 30_000);

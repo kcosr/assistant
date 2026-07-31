@@ -9,6 +9,7 @@ import {
   ScheduleValidationError,
   type ScheduledSessionService,
 } from '../../../../agent-server/src/scheduledSessions/scheduledSessionService';
+import { SCHEDULED_REMINDER_MAX_TEXT_LENGTH } from '../../../../agent-server/src/scheduledSessions/types';
 
 type PluginFactoryArgs = { manifest: CombinedPluginManifest };
 
@@ -28,6 +29,17 @@ function requireNonEmptyString(value: unknown, field: string): string {
     throw new ToolError('invalid_arguments', `${field} cannot be empty`);
   }
   return trimmed;
+}
+
+function requireReminderText(value: unknown): string {
+  const text = requireNonEmptyString(value, 'text');
+  if (text.length > SCHEDULED_REMINDER_MAX_TEXT_LENGTH) {
+    throw new ToolError(
+      'invalid_arguments',
+      `text must be at most ${SCHEDULED_REMINDER_MAX_TEXT_LENGTH} characters`,
+    );
+  }
+  return text;
 }
 
 function parseOptionalBoolean(value: unknown, field: string): boolean | undefined {
@@ -73,7 +85,7 @@ function parseRequiredSessionId(ctx: ToolContext): string {
   return sessionId;
 }
 
-function parseWakeupRunAt(parsed: Record<string, unknown>): Date {
+function parseOneShotRunAt(parsed: Record<string, unknown>): Date {
   const runAtRaw = parsed['runAt'];
   const delaySeconds = parseOptionalNumber(parsed['delaySeconds'], 'delaySeconds');
   const hasRunAt = runAtRaw !== undefined;
@@ -110,13 +122,13 @@ function parseWakeupRunAt(parsed: Record<string, unknown>): Date {
   return runAt;
 }
 
-function parseOptionalWakeupRunAt(parsed: Record<string, unknown>): Date | undefined {
+function parseOptionalOneShotRunAt(parsed: Record<string, unknown>): Date | undefined {
   const hasRunAt = parsed['runAt'] !== undefined;
   const hasDelay = parsed['delaySeconds'] !== undefined;
   if (!hasRunAt && !hasDelay) {
     return undefined;
   }
-  return parseWakeupRunAt(parsed);
+  return parseOneShotRunAt(parsed);
 }
 
 function parseOptionalNullableString(
@@ -175,7 +187,9 @@ function wrapServiceError(err: unknown): never {
         ? 'session_not_found'
         : err.message.startsWith('Wake-up not found:')
           ? 'wakeup_not_found'
-          : 'schedule_not_found';
+          : err.message.startsWith('Reminder not found:')
+            ? 'reminder_not_found'
+            : 'schedule_not_found';
     throw new ToolError(code, err.message);
   }
   throw err;
@@ -287,7 +301,7 @@ export function createPlugin(_options: PluginFactoryArgs): PluginModule {
       },
       'wakeup-list': async (_args, ctx) => {
         const sessionId = ctx.sessionId?.trim();
-        const wakeups = sessionId
+        const wakeups = sessionId && sessionId !== 'http'
           ? await requireService(ctx).listWakeupsVisibleToSession(sessionId)
           : await requireService(ctx).listWakeups();
         return { wakeups };
@@ -295,7 +309,7 @@ export function createPlugin(_options: PluginFactoryArgs): PluginModule {
       'wakeup-create': async (args, ctx) => {
         const parsed = asObject(args);
         const message = requireNonEmptyString(parsed['message'], 'message');
-        const runAt = parseWakeupRunAt(parsed);
+        const runAt = parseOneShotRunAt(parsed);
         try {
           return await requireService(ctx).createWakeupForSession({
             sessionId: parseRequiredSessionId(ctx),
@@ -313,7 +327,7 @@ export function createPlugin(_options: PluginFactoryArgs): PluginModule {
           parsed['message'] !== undefined
             ? requireNonEmptyString(parsed['message'], 'message')
             : undefined;
-        const runAt = parseOptionalWakeupRunAt(parsed);
+        const runAt = parseOptionalOneShotRunAt(parsed);
         if (message === undefined && runAt === undefined) {
           throw new ToolError(
             'invalid_arguments',
@@ -339,6 +353,49 @@ export function createPlugin(_options: PluginFactoryArgs): PluginModule {
             parseRequiredSessionId(ctx),
             wakeupId,
           );
+        } catch (err) {
+          wrapServiceError(err);
+        }
+      },
+      'reminder-list': async (_args, ctx) => {
+        return { reminders: requireService(ctx).listReminders() };
+      },
+      'reminder-create': async (args, ctx) => {
+        const parsed = asObject(args);
+        const text = requireReminderText(parsed['text']);
+        const runAt = parseOneShotRunAt(parsed);
+        try {
+          return await requireService(ctx).createReminder({ text, runAt });
+        } catch (err) {
+          wrapServiceError(err);
+        }
+      },
+      'reminder-update': async (args, ctx) => {
+        const parsed = asObject(args);
+        const reminderId = requireNonEmptyString(parsed['reminderId'], 'reminderId');
+        const text = parsed['text'] !== undefined ? requireReminderText(parsed['text']) : undefined;
+        const runAt = parseOptionalOneShotRunAt(parsed);
+        if (text === undefined && runAt === undefined) {
+          throw new ToolError(
+            'invalid_arguments',
+            'Provide text, runAt, or delaySeconds to update',
+          );
+        }
+        try {
+          return await requireService(ctx).updateReminder({
+            reminderId,
+            ...(text !== undefined ? { text } : {}),
+            ...(runAt !== undefined ? { runAt } : {}),
+          });
+        } catch (err) {
+          wrapServiceError(err);
+        }
+      },
+      'reminder-cancel': async (args, ctx) => {
+        const parsed = asObject(args);
+        const reminderId = requireNonEmptyString(parsed['reminderId'], 'reminderId');
+        try {
+          return await requireService(ctx).cancelReminder(reminderId);
         } catch (err) {
           wrapServiceError(err);
         }

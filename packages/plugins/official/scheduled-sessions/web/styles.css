@@ -220,6 +220,10 @@
   background-color: var(--color-accent-primary);
 }
 
+.status-dot--reminder {
+  background-color: var(--color-warning);
+}
+
 .scheduled-sessions-details {
   padding: 0 var(--spacing-sm) var(--spacing-sm);
   background-color: var(--color-bg-secondary);

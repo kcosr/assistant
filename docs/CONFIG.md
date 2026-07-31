@@ -727,6 +727,12 @@ operations, and send the configured message back to that session at the requeste
 session is busy when the wake-up fires, the message is added to the existing per-session message
 queue. A session can have up to 25 active wake-ups.
 
+Global one-time reminders are stored alongside them under
+`data/plugins/scheduled-sessions/default/reminders.json`. Reminders are not session-scoped and do
+not start an agent turn. When due, they create an ordinary durable notification titled `Reminder`
+with the reminder text as its body and TTS content, using one-way `speak` playback when standalone
+notification playback is enabled. A maximum of 25 reminders can be pending globally.
+
 Each persisted schedule record includes:
 
 - `agentId`
@@ -757,7 +763,7 @@ Notes:
 - When `reuseSession` is `false`, each run creates a fresh backing session.
 - `maxConcurrent` only matters when `reuseSession` is `false`.
 - Enable the `scheduled-sessions` plugin to create, edit, delete, run, and toggle schedules, and to
-  list/create/update/cancel pending session wake-ups.
+  list/create/update/cancel pending session wake-ups and global reminders.
 
 Wake-up tools:
 
@@ -781,6 +787,24 @@ read-only other-session wake-ups with only safe summary fields: `kind`, `scope`,
 `runAt`, `status`, `summary`, false capabilities, and an `omitted` list for redacted fields. The
 scheduled-sessions panel uses the same plugin operation without a session context to show all
 wake-ups for administration.
+
+Reminder tools:
+
+- `scheduled_sessions_reminder_create`
+  - `text`: content to display and speak when due, without “remind me” or scheduling language
+  - exactly one of `runAt` or `delaySeconds`
+  - `runAt` must be an absolute ISO timestamp with an explicit timezone offset or `Z`
+- `scheduled_sessions_reminder_update`
+  - `reminderId`
+  - at least one of `text`, `runAt`, or `delaySeconds`
+- `scheduled_sessions_reminder_cancel`
+  - `reminderId`
+- `scheduled_sessions_reminder_list`
+
+Reminder operations are global and do not require or accept a session id. The Scheduled Sessions
+panel displays wake-ups and reminders together in a time-ordered One-shots section. After a
+reminder fires, its delivered record appears in the Notifications panel and uses the existing
+standalone notification playback settings.
 
 #### `pi` Provider
 

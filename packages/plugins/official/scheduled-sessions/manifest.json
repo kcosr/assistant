@@ -207,6 +207,83 @@
         "required": ["wakeupId"]
       },
       "capabilities": ["scheduled-sessions.write"]
+    },
+    {
+      "id": "reminder-list",
+      "summary": "List all pending global one-time reminders, sorted by delivery time.",
+      "inputSchema": { "type": "object", "properties": {} },
+      "capabilities": ["scheduled-sessions.read"]
+    },
+    {
+      "id": "reminder-create",
+      "summary": "Schedule a global one-time reminder that creates a user notification without starting an agent turn. The text is what will be displayed and spoken when due; omit scheduling phrases such as 'remind me' and time expressions.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2000,
+            "description": "Content to display and speak when the reminder is due, without scheduling instructions."
+          },
+          "runAt": {
+            "type": "string",
+            "description": "Absolute ISO timestamp with a timezone offset or Z. Provide exactly one of runAt or delaySeconds."
+          },
+          "delaySeconds": {
+            "type": "number",
+            "exclusiveMinimum": 0,
+            "description": "Positive offset from now in seconds. Provide exactly one of runAt or delaySeconds."
+          }
+        },
+        "required": ["text"]
+      },
+      "capabilities": ["scheduled-sessions.write"]
+    },
+    {
+      "id": "reminder-update",
+      "summary": "Update the text or delivery time of a pending global reminder.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "reminderId": {
+            "type": "string",
+            "description": "Reminder id returned by reminder-create or reminder-list."
+          },
+          "text": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2000,
+            "description": "Updated content to display and speak when due."
+          },
+          "runAt": {
+            "type": "string",
+            "description": "Updated absolute ISO timestamp with a timezone offset or Z."
+          },
+          "delaySeconds": {
+            "type": "number",
+            "exclusiveMinimum": 0,
+            "description": "Updated positive offset from now in seconds."
+          }
+        },
+        "required": ["reminderId"]
+      },
+      "capabilities": ["scheduled-sessions.write"]
+    },
+    {
+      "id": "reminder-cancel",
+      "summary": "Cancel a pending global reminder by id.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "reminderId": {
+            "type": "string",
+            "description": "Reminder id returned by reminder-create or reminder-list."
+          }
+        },
+        "required": ["reminderId"]
+      },
+      "capabilities": ["scheduled-sessions.write"]
     }
   ],
   "web": {

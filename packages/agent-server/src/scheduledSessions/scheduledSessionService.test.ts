@@ -15,6 +15,11 @@ import type { SessionMessageStartResult } from '../sessionMessages';
 import type { ToolHost } from '../tools';
 import { ScheduledSessionService } from './scheduledSessionService';
 import { ScheduledSessionStore } from './scheduledSessionStore';
+import {
+  getNotificationsStore,
+  initializeNotificationsService,
+  shutdownNotificationsService,
+} from '../../../plugins/core/notifications/server/service';
 
 type SpawnResult = {
   exitCode: number;
@@ -541,6 +546,36 @@ function createWakeupService(options?: {
     broadcast,
     storeDir,
   };
+}
+
+function createReminderService(options?: {
+  storeDir?: string;
+  failDelivery?: boolean;
+  useDefaultDelivery?: boolean;
+}) {
+  const storeDir =
+    options?.storeDir ?? mkdtempSync(path.join(os.tmpdir(), 'scheduled-reminders-service-'));
+  mkdirSync(storeDir, { recursive: true });
+  const logger = {
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+    debug: vi.fn(),
+  };
+  const broadcast = vi.fn();
+  const createReminderNotificationFn = vi.fn(async () => {
+    if (options?.failDelivery) {
+      throw new Error('notification unavailable');
+    }
+  });
+  const service = new ScheduledSessionService({
+    agentRegistry: new AgentRegistry([]),
+    logger,
+    store: new ScheduledSessionStore(storeDir),
+    broadcast,
+    ...(!options?.useDefaultDelivery ? { createReminderNotificationFn } : {}),
+  });
+  return { service, storeDir, logger, broadcast, createReminderNotificationFn };
 }
 
 async function tick(): Promise<void> {
@@ -1312,15 +1347,15 @@ describe('ScheduledSessionService', () => {
       message: 'Check the issue',
       runAt: new Date(Date.now() + 5),
     });
-    await wait(40);
-
-    expect(sessionHub.queueMessage).toHaveBeenCalledWith(
-      expect.objectContaining({
-        sessionId: 'session-1',
-        text: 'Check the issue',
-        source: 'user',
-      }),
-    );
+    await vi.waitFor(() => {
+      expect(sessionHub.queueMessage).toHaveBeenCalledWith(
+        expect.objectContaining({
+          sessionId: 'session-1',
+          text: 'Check the issue',
+          source: 'user',
+        }),
+      );
+    });
     expect(startSessionMessageFn).not.toHaveBeenCalled();
     await expect(service.listWakeupsForSession('session-1')).resolves.toEqual([
       expect.objectContaining({
@@ -1342,5 +1377,182 @@ describe('ScheduledSessionService', () => {
     await expect(service.listWakeupsForSession('session-1')).resolves.toEqual([]);
 
     service.shutdown();
+  });
+
+  it('creates, updates, lists, and cancels global reminders', async () => {
+    const { service, storeDir, broadcast } = createReminderService();
+    await service.initialize();
+
+    const created = await service.createReminder({
+      text: 'Take out the trash',
+      runAt: new Date(Date.now() + 60_000),
+    });
+    expect(created).toMatchObject({
+      kind: 'one_time_reminder',
+      scope: 'global',
+      manageable: true,
+      text: 'Take out the trash',
+      status: 'pending',
+    });
+
+    const updated = await service.updateReminder({
+      reminderId: created.reminderId,
+      text: 'Take out the recycling',
+      runAt: new Date(Date.now() + 120_000),
+    });
+    expect(updated.text).toBe('Take out the recycling');
+    expect(service.listReminders()).toEqual([updated]);
+
+    const persisted = JSON.parse(
+      await fs.readFile(path.join(storeDir, 'reminders.json'), 'utf8'),
+    ) as { reminders: Array<Record<string, unknown>> };
+    expect(persisted.reminders).toEqual([
+      expect.objectContaining({
+        reminderId: created.reminderId,
+        text: 'Take out the recycling',
+      }),
+    ]);
+    expect(persisted.reminders[0]).not.toHaveProperty('status');
+    expect(persisted.reminders[0]).not.toHaveProperty('tts');
+
+    await expect(service.cancelReminder(created.reminderId)).resolves.toEqual({
+      cancelled: true,
+      reminderId: created.reminderId,
+    });
+    expect(service.listReminders()).toEqual([]);
+    expect(broadcast).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'session_reminder:set' }),
+    );
+    expect(broadcast).toHaveBeenCalledWith({
+      type: 'session_reminder:deleted',
+      payload: { reminderId: created.reminderId },
+    });
+
+    service.shutdown();
+  });
+
+  it('restores persisted reminders without session dependencies', async () => {
+    const first = createReminderService();
+    await first.service.initialize();
+    const created = await first.service.createReminder({
+      text: 'Start the laundry',
+      runAt: new Date(Date.now() + 60_000),
+    });
+    first.service.shutdown();
+
+    const second = createReminderService({ storeDir: first.storeDir });
+    await second.service.initialize();
+
+    expect(second.service.listReminders()).toEqual([
+      expect.objectContaining({
+        reminderId: created.reminderId,
+        text: 'Start the laundry',
+      }),
+    ]);
+    second.service.shutdown();
+  });
+
+  it('delivers due reminders and removes them', async () => {
+    const { service, createReminderNotificationFn, broadcast } = createReminderService();
+    await service.initialize();
+    const created = await service.createReminder({
+      text: 'Check the oven',
+      runAt: new Date(Date.now() + 5),
+    });
+
+    await wait(40);
+
+    expect(createReminderNotificationFn).toHaveBeenCalledWith({
+      reminderId: created.reminderId,
+      text: 'Check the oven',
+    });
+    expect(service.listReminders()).toEqual([]);
+    expect(broadcast).toHaveBeenCalledWith({
+      type: 'session_reminder:deleted',
+      payload: { reminderId: created.reminderId },
+    });
+    service.shutdown();
+  });
+
+  it('keeps reminders pending when notification delivery fails', async () => {
+    const { service, createReminderNotificationFn, logger } = createReminderService({
+      failDelivery: true,
+    });
+    await service.initialize();
+    const created = await service.createReminder({
+      text: 'Check the oven',
+      runAt: new Date(Date.now() + 5),
+    });
+
+    await wait(40);
+
+    expect(createReminderNotificationFn).toHaveBeenCalledOnce();
+    expect(service.listReminders()).toEqual([
+      expect.objectContaining({ reminderId: created.reminderId }),
+    ]);
+    expect(logger.error).toHaveBeenCalledWith(
+      expect.stringContaining('Failed to deliver reminder'),
+    );
+    service.shutdown();
+  });
+
+  it('enforces reminder text and global capacity bounds', async () => {
+    const { service } = createReminderService();
+    await service.initialize();
+    await expect(
+      service.createReminder({
+        text: 'x'.repeat(2_001),
+        runAt: new Date(Date.now() + 60_000),
+      }),
+    ).rejects.toThrow(/at most 2000 characters/i);
+
+    await Promise.all(
+      Array.from({ length: 25 }, (_, index) =>
+        service.createReminder({
+          text: `Reminder ${index + 1}`,
+          runAt: new Date(Date.now() + 60_000 + index),
+        }),
+      ),
+    );
+    await expect(
+      service.createReminder({
+        text: 'One too many',
+        runAt: new Date(Date.now() + 120_000),
+      }),
+    ).rejects.toThrow(/at most 25 reminders/i);
+    service.shutdown();
+  });
+
+  it('maps due reminders to ordinary standalone notification records', async () => {
+    const notificationsDir = mkdtempSync(
+      path.join(os.tmpdir(), 'scheduled-reminder-notifications-'),
+    );
+    initializeNotificationsService(notificationsDir);
+    const { service } = createReminderService({ useDefaultDelivery: true });
+    await service.initialize();
+    const created = await service.createReminder({
+      text: 'Bring in the package',
+      runAt: new Date(Date.now() + 5),
+    });
+
+    await wait(40);
+
+    const result = await getNotificationsStore().list();
+    expect(result.notifications).toEqual([
+      expect.objectContaining({
+        kind: 'notification',
+        title: 'Reminder',
+        body: 'Bring in the package',
+        source: 'system',
+        sessionId: null,
+        tts: true,
+        voiceMode: 'speak',
+        ttsText: 'Bring in the package',
+        sourceEventId: created.reminderId,
+      }),
+    ]);
+    expect(service.listReminders()).toEqual([]);
+    service.shutdown();
+    shutdownNotificationsService();
   });
 });

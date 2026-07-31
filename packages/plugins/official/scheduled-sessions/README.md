@@ -29,7 +29,14 @@ They are persisted immediately on create, update, delete, enable, and disable.
 Pending one-shot session wake-ups are stored in the same plugin instance under
 `data/plugins/scheduled-sessions/default/wakeups.json`.
 
+Pending global reminders are stored under
+`data/plugins/scheduled-sessions/default/reminders.json`. A reminder is a delayed external-style
+notification: when due, it creates a durable notification titled `Reminder`, speaks the reminder
+text when standalone notification playback is enabled, and does not start an agent turn. Reminder
+text is the content to deliver, without scheduling phrases such as “remind me” or a time expression.
+
 Each schedule can also carry an optional `sessionConfig` block with:
+
 - `model`
 - `thinking`
 - `workingDir`
@@ -58,7 +65,7 @@ wake-ups through the same operation when no session context is present.
 ## Panel
 
 - Panel type: `scheduled-sessions` (multi-instance, global scope).
-- Shows pending wake-ups and schedules in a flat compact list with collapsed-by-default schedule details, a live title/session/message/agent filter, wake-up cancel controls, and schedule enable/disable plus run controls.
+- Shows pending wake-ups and reminders together as time-ordered one-shots, followed by schedules in a flat compact list with collapsed-by-default schedule details, live filtering, one-shot cancel controls, and schedule enable/disable plus run controls.
 - Live updates via WebSocket events from the server.
 
 ## Tools
@@ -80,6 +87,12 @@ Tools are exposed when plugin tools are enabled:
 - `scheduled_sessions_wakeup_create`: schedule a wake-up for the current session using `delaySeconds` or an absolute `runAt` ISO timestamp with a timezone offset or `Z` (for example `2026-06-03T08:56:00-05:00` or `2026-06-03T13:56:00Z`).
 - `scheduled_sessions_wakeup_update`: update a pending wake-up for the current session by `wakeupId`.
 - `scheduled_sessions_wakeup_cancel`: cancel a wake-up for the current session by `wakeupId`.
+- `scheduled_sessions_reminder_list`: list all pending global reminders.
+- `scheduled_sessions_reminder_create`: schedule a global reminder using delivery `text` and
+  exactly one of `delaySeconds` or an absolute `runAt` with an offset or `Z`.
+- `scheduled_sessions_reminder_update`: update the text or time of a pending reminder by
+  `reminderId`.
+- `scheduled_sessions_reminder_cancel`: cancel a pending global reminder by `reminderId`.
 
 ## HTTP
 
@@ -96,6 +109,10 @@ Endpoints:
 - `POST /api/plugins/scheduled-sessions/operations/wakeup-create`
 - `POST /api/plugins/scheduled-sessions/operations/wakeup-update`
 - `POST /api/plugins/scheduled-sessions/operations/wakeup-cancel`
+- `POST /api/plugins/scheduled-sessions/operations/reminder-list`
+- `POST /api/plugins/scheduled-sessions/operations/reminder-create`
+- `POST /api/plugins/scheduled-sessions/operations/reminder-update`
+- `POST /api/plugins/scheduled-sessions/operations/reminder-cancel`
 
 Responses use the standard generated plugin operations envelope:
 
@@ -114,4 +131,5 @@ This plugin now participates in generated CLI output when plugin builds are run:
 npm run build:plugins
 ./dist/skills/assistant-scheduled-sessions/assistant-scheduled-sessions-cli list
 ./dist/skills/assistant-scheduled-sessions/assistant-scheduled-sessions-cli create --agentId coding --cron "0 9 * * *" --prompt "Daily review"
+./dist/skills/assistant-scheduled-sessions/assistant-scheduled-sessions-cli reminder-create --text "Take out the trash" --delaySeconds 1200
 ```

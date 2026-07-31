@@ -10,6 +10,7 @@ import type { SessionIndex, SessionSummary } from '../sessionIndex';
 import type { ToolHost } from '../tools';
 import type { SearchService } from '../search/searchService';
 import { startSessionMessage } from '../sessionMessages';
+import { createNotificationRecord } from '../../../plugins/core/notifications/server/service';
 import { getDefaultModelForNewSession, getDefaultThinkingForNewSession } from '../sessionModel';
 import {
   buildSessionAttributesPatchFromConfig,
@@ -20,10 +21,12 @@ import { buildCliEnv } from '../ws/cliEnv';
 
 import { describeCron, parseNextRun } from './cronUtils';
 import { ScheduledSessionStore } from './scheduledSessionStore';
+import { ScheduledReminderStore } from './scheduledReminderStore';
 import { SessionWakeupStore } from './sessionWakeupStore';
 import type {
   LastRunInfo,
   PersistedScheduleRecord,
+  PersistedScheduledReminderRecord,
   PersistedSessionWakeupRecord,
   ScheduleCreateInput,
   ScheduleDeletedEvent,
@@ -34,6 +37,12 @@ import type {
   ScheduleStatusEvent,
   TriggerResult,
   ScheduleUpdateInput,
+  ScheduledReminderConfig,
+  ScheduledReminderCreateInput,
+  ScheduledReminderDeletedEvent,
+  ScheduledReminderInfo,
+  ScheduledReminderSetEvent,
+  ScheduledReminderUpdateInput,
   SessionWakeupConfig,
   SessionWakeupCreateInput,
   SessionWakeupDeletedEvent,
@@ -42,6 +51,7 @@ import type {
   SessionWakeupSetEvent,
   SessionWakeupUpdateInput,
 } from './types';
+import { SCHEDULED_REMINDER_MAX_TEXT_LENGTH } from './types';
 
 type ScheduledRunProvider = NonNullable<NonNullable<AgentDefinition['chat']>['provider']>;
 
@@ -63,11 +73,14 @@ type PromptRunResult =
   | { result: 'failed'; error: string }
   | { result: 'skipped'; skipReason: string };
 
+type CreateReminderNotification = (reminder: { reminderId: string; text: string }) => Promise<void>;
+
 export interface ScheduledSessionServiceOptions {
   agentRegistry: AgentRegistry;
   logger: Logger;
   store: ScheduledSessionStore;
   wakeupStore?: SessionWakeupStore;
+  reminderStore?: ScheduledReminderStore;
   sessionHub?: SessionHub;
   sessionIndex?: SessionIndex;
   envConfig?: EnvConfig;
@@ -80,10 +93,13 @@ export interface ScheduledSessionServiceOptions {
       | ScheduleStatusEvent
       | ScheduleDeletedEvent
       | SessionWakeupSetEvent
-      | SessionWakeupDeletedEvent,
+      | SessionWakeupDeletedEvent
+      | ScheduledReminderSetEvent
+      | ScheduledReminderDeletedEvent,
   ) => void;
   spawnFn?: typeof spawn;
   startSessionMessageFn?: typeof startSessionMessage;
+  createReminderNotificationFn?: CreateReminderNotification;
 }
 
 export class ScheduleNotFoundError extends Error {
@@ -103,19 +119,46 @@ export class ScheduleValidationError extends Error {
 export class ScheduledSessionService {
   private static readonly MAX_TIMEOUT_MS = 2_147_483_647;
   private static readonly MAX_WAKEUPS_PER_SESSION = 25;
+  private static readonly MAX_REMINDERS = 25;
+  private static readonly REMINDER_RETRY_MS = 60_000;
   private readonly schedules = new Map<string, ScheduleState>();
   private readonly wakeups = new Map<string, SessionWakeupConfig>();
   private readonly wakeupTimers = new Map<string, NodeJS.Timeout>();
   private readonly wakeupSessionLocks = new Map<string, Promise<unknown>>();
+  private readonly reminders = new Map<string, ScheduledReminderConfig>();
+  private readonly reminderTimers = new Map<string, NodeJS.Timeout>();
+  private reminderMutationQueue: Promise<unknown> = Promise.resolve();
   private initialized = false;
   private readonly spawnFn: typeof spawn;
   private readonly startSessionMessageFn: typeof startSessionMessage;
   private readonly wakeupStore: SessionWakeupStore;
+  private readonly reminderStore: ScheduledReminderStore;
+  private readonly createReminderNotificationFn: CreateReminderNotification;
 
   constructor(private readonly options: ScheduledSessionServiceOptions) {
     this.spawnFn = options.spawnFn ?? spawn;
     this.startSessionMessageFn = options.startSessionMessageFn ?? startSessionMessage;
     this.wakeupStore = options.wakeupStore ?? new SessionWakeupStore(options.store.getDataDir());
+    this.reminderStore =
+      options.reminderStore ?? new ScheduledReminderStore(options.store.getDataDir());
+    this.createReminderNotificationFn =
+      options.createReminderNotificationFn ??
+      (async (reminder) => {
+        await createNotificationRecord({
+          input: {
+            kind: 'notification',
+            title: 'Reminder',
+            body: reminder.text,
+            sessionId: null,
+            tts: true,
+            voiceMode: 'speak',
+            ttsText: reminder.text,
+            sourceEventId: reminder.reminderId,
+          },
+          source: 'system',
+          ...(options.sessionHub ? { sessionHub: options.sessionHub } : {}),
+        });
+      });
   }
 
   async initialize(): Promise<void> {
@@ -132,7 +175,9 @@ export class ScheduledSessionService {
       const schedule = await this.normalizePersistedSchedule(record);
       const key = this.buildKey(record.agentId, schedule.id);
       if (this.schedules.has(key)) {
-        throw new ScheduleValidationError(`Duplicate schedule id "${schedule.id}" for agent "${record.agentId}"`);
+        throw new ScheduleValidationError(
+          `Duplicate schedule id "${schedule.id}" for agent "${record.agentId}"`,
+        );
       }
 
       const state: ScheduleState = {
@@ -157,6 +202,7 @@ export class ScheduledSessionService {
     if (this.hasSessionDependencies()) {
       await this.initializeWakeups();
     }
+    await this.initializeReminders();
 
     this.initialized = true;
   }
@@ -174,6 +220,12 @@ export class ScheduledSessionService {
     }
     this.wakeupTimers.clear();
     this.wakeups.clear();
+    for (const timer of this.reminderTimers.values()) {
+      clearTimeout(timer);
+    }
+    this.reminderTimers.clear();
+    this.reminders.clear();
+    this.reminderMutationQueue = Promise.resolve();
     this.initialized = false;
   }
 
@@ -459,18 +511,102 @@ export class ScheduledSessionService {
     });
   }
 
-  private async withWakeupSessionLock<T>(
-    sessionId: string,
-    task: () => Promise<T>,
-  ): Promise<T> {
+  listReminders(): ScheduledReminderInfo[] {
+    return Array.from(this.reminders.values())
+      .map((reminder) => this.buildReminderInfo(reminder))
+      .sort((left, right) => left.runAt.localeCompare(right.runAt));
+  }
+
+  async createReminder(input: ScheduledReminderCreateInput): Promise<ScheduledReminderInfo> {
+    const text = this.normalizeReminderText(input.text);
+    const runAt = this.normalizeReminderRunAt(input.runAt);
+    return this.withReminderMutation(async () => {
+      this.requireReminderCapacity();
+      const reminder: ScheduledReminderConfig = {
+        reminderId: `reminder-${randomUUID().slice(0, 8)}`,
+        text,
+        runAt,
+        createdAt: new Date(),
+      };
+      this.reminders.set(reminder.reminderId, reminder);
+      try {
+        await this.persistReminders();
+      } catch (error) {
+        this.removeReminderInMemory(reminder.reminderId);
+        throw error;
+      }
+      this.scheduleReminder(reminder);
+      const info = this.buildReminderInfo(reminder);
+      this.broadcastReminderSet(info);
+      return info;
+    });
+  }
+
+  async updateReminder(input: ScheduledReminderUpdateInput): Promise<ScheduledReminderInfo> {
+    const reminderId = this.normalizeRequiredString(input.reminderId, 'reminderId');
+    const text = input.text !== undefined ? this.normalizeReminderText(input.text) : undefined;
+    const runAt = input.runAt !== undefined ? this.normalizeReminderRunAt(input.runAt) : undefined;
+    if (text === undefined && runAt === undefined) {
+      throw new ScheduleValidationError('Provide text, runAt, or delaySeconds to update');
+    }
+    return this.withReminderMutation(async () => {
+      const reminder = this.requireReminder(reminderId);
+      const previous = { text: reminder.text, runAt: reminder.runAt };
+      if (text !== undefined) {
+        reminder.text = text;
+      }
+      if (runAt !== undefined) {
+        reminder.runAt = runAt;
+      }
+      try {
+        await this.persistReminders();
+      } catch (error) {
+        reminder.text = previous.text;
+        reminder.runAt = previous.runAt;
+        throw error;
+      }
+      this.scheduleReminder(reminder);
+      const info = this.buildReminderInfo(reminder);
+      this.broadcastReminderSet(info);
+      return info;
+    });
+  }
+
+  async cancelReminder(reminderIdInput: string): Promise<{ cancelled: true; reminderId: string }> {
+    const reminderId = this.normalizeRequiredString(reminderIdInput, 'reminderId');
+    return this.withReminderMutation(async () => {
+      this.requireReminder(reminderId);
+      await this.deleteReminder(reminderId);
+      return { cancelled: true, reminderId };
+    });
+  }
+
+  private async withReminderMutation<T>(task: () => Promise<T>): Promise<T> {
+    const previous = this.reminderMutationQueue;
+    let release!: () => void;
+    const current = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const next = previous.catch(() => undefined).then(() => current);
+    this.reminderMutationQueue = next;
+    await previous.catch(() => undefined);
+    try {
+      return await task();
+    } finally {
+      release();
+      if (this.reminderMutationQueue === next) {
+        this.reminderMutationQueue = Promise.resolve();
+      }
+    }
+  }
+
+  private async withWakeupSessionLock<T>(sessionId: string, task: () => Promise<T>): Promise<T> {
     const previous = this.wakeupSessionLocks.get(sessionId) ?? Promise.resolve();
     let release!: () => void;
     const current = new Promise<void>((resolve) => {
       release = resolve;
     });
-    const next = previous
-      .catch(() => undefined)
-      .then(() => current);
+    const next = previous.catch(() => undefined).then(() => current);
     this.wakeupSessionLocks.set(sessionId, next);
 
     await previous.catch(() => undefined);
@@ -748,8 +884,7 @@ export class ScheduledSessionService {
 
   private composePrompt(prompt: string | undefined, preCheckOutput: string | null): string | null {
     const trimmedPrompt = typeof prompt === 'string' ? prompt.trim() : '';
-    const trimmedPreCheck =
-      typeof preCheckOutput === 'string' ? preCheckOutput.trim() : '';
+    const trimmedPreCheck = typeof preCheckOutput === 'string' ? preCheckOutput.trim() : '';
 
     if (trimmedPrompt && trimmedPreCheck) {
       return `${trimmedPrompt}\n\n${trimmedPreCheck}`;
@@ -766,9 +901,9 @@ export class ScheduledSessionService {
   private hasSessionDependencies(): boolean {
     return Boolean(
       this.options.sessionHub &&
-        this.options.sessionIndex &&
-        this.options.envConfig &&
-        this.options.toolHost,
+      this.options.sessionIndex &&
+      this.options.envConfig &&
+      this.options.toolHost,
     );
   }
 
@@ -829,6 +964,111 @@ export class ScheduledSessionService {
     }
 
     return { result: 'failed', error: 'Unexpected session response status' };
+  }
+
+  private async initializeReminders(): Promise<void> {
+    let persisted: PersistedScheduledReminderRecord[];
+    try {
+      persisted = await this.reminderStore.load();
+    } catch (error) {
+      this.options.logger.error(
+        `[scheduled-sessions] Failed to load reminders; starting without reminders: ${String(error)}`,
+      );
+      this.reminders.clear();
+      return;
+    }
+
+    let pruned = false;
+    this.reminders.clear();
+    for (const record of persisted) {
+      const reminder = this.normalizePersistedReminder(record);
+      if (!reminder) {
+        pruned = true;
+        continue;
+      }
+      if (this.reminders.has(reminder.reminderId)) {
+        this.options.logger.warn(
+          `[scheduled-sessions] Dropping duplicate reminder id "${reminder.reminderId}"`,
+        );
+        pruned = true;
+        continue;
+      }
+      this.reminders.set(reminder.reminderId, reminder);
+      this.scheduleReminder(reminder);
+      this.broadcastReminderSet(this.buildReminderInfo(reminder));
+    }
+    if (pruned) {
+      await this.persistReminders();
+    }
+  }
+
+  private normalizePersistedReminder(
+    record: PersistedScheduledReminderRecord,
+  ): ScheduledReminderConfig | null {
+    const runAt = new Date(record.runAt);
+    const createdAt = new Date(record.createdAt);
+    if (!Number.isFinite(runAt.getTime()) || !Number.isFinite(createdAt.getTime())) {
+      return null;
+    }
+    return {
+      reminderId: record.reminderId,
+      text: record.text,
+      runAt,
+      createdAt,
+    };
+  }
+
+  private scheduleReminder(reminder: ScheduledReminderConfig): void {
+    const existingTimer = this.reminderTimers.get(reminder.reminderId);
+    if (existingTimer) {
+      clearTimeout(existingTimer);
+      this.reminderTimers.delete(reminder.reminderId);
+    }
+    const delay = Math.max(0, reminder.runAt.getTime() - Date.now());
+    const timeoutMs = Math.min(delay, ScheduledSessionService.MAX_TIMEOUT_MS);
+    const timer = setTimeout(() => {
+      if (delay > ScheduledSessionService.MAX_TIMEOUT_MS) {
+        this.scheduleReminder(reminder);
+        return;
+      }
+      void this.executeReminder(reminder.reminderId);
+    }, timeoutMs);
+    this.reminderTimers.set(reminder.reminderId, timer);
+  }
+
+  private async executeReminder(reminderId: string): Promise<void> {
+    this.reminderTimers.delete(reminderId);
+    await this.withReminderMutation(async () => {
+      const reminder = this.reminders.get(reminderId);
+      if (!reminder) {
+        return;
+      }
+      try {
+        await this.createReminderNotificationFn({
+          reminderId: reminder.reminderId,
+          text: reminder.text,
+        });
+        await this.deleteReminder(reminder.reminderId);
+      } catch (error) {
+        this.options.logger.error(
+          `[scheduled-sessions] Failed to deliver reminder "${reminder.reminderId}": ${String(error)}`,
+        );
+        if (this.reminders.has(reminder.reminderId)) {
+          this.scheduleReminderRetry(reminder);
+        }
+      }
+    });
+  }
+
+  private scheduleReminderRetry(reminder: ScheduledReminderConfig): void {
+    const existingTimer = this.reminderTimers.get(reminder.reminderId);
+    if (existingTimer) {
+      clearTimeout(existingTimer);
+    }
+    const timer = setTimeout(() => {
+      void this.executeReminder(reminder.reminderId);
+    }, ScheduledSessionService.REMINDER_RETRY_MS);
+    this.reminderTimers.set(reminder.reminderId, timer);
   }
 
   private async initializeWakeups(): Promise<void> {
@@ -1115,6 +1355,113 @@ export class ScheduledSessionService {
     return value;
   }
 
+  private normalizeReminderText(value: unknown): string {
+    const text = this.normalizeRequiredString(value, 'text');
+    if (text.length > SCHEDULED_REMINDER_MAX_TEXT_LENGTH) {
+      throw new ScheduleValidationError(
+        `text must be at most ${SCHEDULED_REMINDER_MAX_TEXT_LENGTH} characters`,
+      );
+    }
+    return text;
+  }
+
+  private normalizeReminderRunAt(value: Date): Date {
+    if (!(value instanceof Date) || !Number.isFinite(value.getTime())) {
+      throw new ScheduleValidationError('runAt must be a valid timestamp');
+    }
+    if (value.getTime() < Date.now() - 1000) {
+      throw new ScheduleValidationError('runAt must not be in the past');
+    }
+    return value;
+  }
+
+  private requireReminder(reminderId: string): ScheduledReminderConfig {
+    const reminder = this.reminders.get(reminderId);
+    if (!reminder) {
+      throw new ScheduleNotFoundError(`Reminder not found: ${reminderId}`);
+    }
+    return reminder;
+  }
+
+  private requireReminderCapacity(): void {
+    if (this.reminders.size >= ScheduledSessionService.MAX_REMINDERS) {
+      throw new ScheduleValidationError(
+        `At most ${ScheduledSessionService.MAX_REMINDERS} reminders can be active`,
+      );
+    }
+  }
+
+  private removeReminderInMemory(reminderId: string): ScheduledReminderConfig | null {
+    const reminder = this.reminders.get(reminderId) ?? null;
+    const timer = this.reminderTimers.get(reminderId);
+    if (timer) {
+      clearTimeout(timer);
+      this.reminderTimers.delete(reminderId);
+    }
+    this.reminders.delete(reminderId);
+    return reminder;
+  }
+
+  private async deleteReminder(reminderId: string): Promise<ScheduledReminderConfig | null> {
+    const reminder = this.removeReminderInMemory(reminderId);
+    if (!reminder) {
+      return null;
+    }
+    try {
+      await this.persistReminders();
+    } catch (error) {
+      this.reminders.set(reminder.reminderId, reminder);
+      this.scheduleReminder(reminder);
+      throw error;
+    }
+    this.broadcastReminderDeleted(reminder.reminderId);
+    return reminder;
+  }
+
+  private buildPersistedReminders(): PersistedScheduledReminderRecord[] {
+    return Array.from(this.reminders.values()).map((reminder) => ({
+      reminderId: reminder.reminderId,
+      text: reminder.text,
+      runAt: reminder.runAt.toISOString(),
+      createdAt: reminder.createdAt.toISOString(),
+    }));
+  }
+
+  private async persistReminders(): Promise<void> {
+    await this.reminderStore.save(this.buildPersistedReminders());
+  }
+
+  private buildReminderInfo(reminder: ScheduledReminderConfig): ScheduledReminderInfo {
+    return {
+      kind: 'one_time_reminder',
+      scope: 'global',
+      manageable: true,
+      reminderId: reminder.reminderId,
+      text: reminder.text,
+      runAt: reminder.runAt.toISOString(),
+      createdAt: reminder.createdAt.toISOString(),
+      status: 'pending',
+      capabilities: {
+        canUpdate: true,
+        canCancel: true,
+      },
+    };
+  }
+
+  private broadcastReminderSet(info: ScheduledReminderInfo): void {
+    this.options.broadcast?.({
+      type: 'session_reminder:set',
+      payload: info,
+    });
+  }
+
+  private broadcastReminderDeleted(reminderId: string): void {
+    this.options.broadcast?.({
+      type: 'session_reminder:deleted',
+      payload: { reminderId },
+    });
+  }
+
   private requireWakeupForSession(sessionId: string, wakeupId: string): SessionWakeupConfig {
     const wakeup = this.wakeups.get(wakeupId);
     if (!wakeup || wakeup.sessionId !== sessionId) {
@@ -1399,7 +1746,9 @@ export class ScheduledSessionService {
     return schedule;
   }
 
-  private async normalizePersistedSchedule(record: PersistedScheduleRecord): Promise<ScheduleConfig> {
+  private async normalizePersistedSchedule(
+    record: PersistedScheduleRecord,
+  ): Promise<ScheduleConfig> {
     const schedule: ScheduleConfig = {
       id: record.scheduleId,
       cron: record.cron,
@@ -1506,7 +1855,10 @@ export class ScheduledSessionService {
     if (!sessionConfig) {
       return undefined;
     }
-    if (typeof sessionConfig.sessionTitle === 'string' && sessionConfig.sessionTitle.trim().length > 0) {
+    if (
+      typeof sessionConfig.sessionTitle === 'string' &&
+      sessionConfig.sessionTitle.trim().length > 0
+    ) {
       throw new ScheduleValidationError(
         'sessionConfig.sessionTitle is not supported here; use sessionTitle instead',
       );
@@ -1583,7 +1935,7 @@ export class ScheduledSessionService {
   }
 
   private getEffectiveMaxConcurrent(schedule: ScheduleConfig): number {
-    return schedule.reuseSession ? 1 : schedule.maxConcurrent ?? 1;
+    return schedule.reuseSession ? 1 : (schedule.maxConcurrent ?? 1);
   }
 
   private buildPersistedRecords(): PersistedScheduleRecord[] {
@@ -1625,18 +1977,14 @@ export class ScheduledSessionService {
     }
     const data = raw as Record<string, unknown>;
     const agentId = typeof data['agentId'] === 'string' ? data['agentId'].trim() : '';
-    const scheduleId =
-      typeof data['scheduleId'] === 'string' ? data['scheduleId'].trim() : '';
+    const scheduleId = typeof data['scheduleId'] === 'string' ? data['scheduleId'].trim() : '';
     if (!agentId || !scheduleId) {
       return null;
     }
     return { agentId, scheduleId };
   }
 
-  private resolveScheduledSessionAutoTitle(
-    agentId: string,
-    schedule: ScheduleConfig,
-  ): string {
+  private resolveScheduledSessionAutoTitle(agentId: string, schedule: ScheduleConfig): string {
     return this.buildScheduledSessionAutoTitle(agentId, schedule.id);
   }
 
@@ -1681,7 +2029,8 @@ export class ScheduledSessionService {
     const agent = this.options.agentRegistry.getAgent(agentId);
     const resolvedConfig = await this.resolveRuntimeSessionConfig(agentId, schedule);
     const targetModel = resolvedConfig.model ?? getDefaultModelForNewSession(agent) ?? null;
-    const targetThinking = resolvedConfig.thinking ?? getDefaultThinkingForNewSession(agent) ?? null;
+    const targetThinking =
+      resolvedConfig.thinking ?? getDefaultThinkingForNewSession(agent) ?? null;
     let current = summary;
 
     if ((current.model ?? null) !== targetModel) {
@@ -1818,7 +2167,10 @@ export class ScheduledSessionService {
     return current;
   }
 
-  private buildRunCommand(agentId: string, prompt: string): {
+  private buildRunCommand(
+    agentId: string,
+    prompt: string,
+  ): {
     command: string;
     args: string[];
     env: NodeJS.ProcessEnv;
@@ -1915,15 +2267,21 @@ export class ScheduledSessionService {
     return config?.wrapper ?? null;
   }
 
-  private requireScheduledRunConfig(
-    agentId: string,
-  ): { provider: ScheduledRunProvider; config?: ScheduledRunChatConfig } {
+  private requireScheduledRunConfig(agentId: string): {
+    provider: ScheduledRunProvider;
+    config?: ScheduledRunChatConfig;
+  } {
     const agent = this.options.agentRegistry.getAgent(agentId);
     if (!agent) {
       throw new Error(`Agent ${agentId} not found`);
     }
     const provider: ScheduledRunProvider = agent.chat?.provider ?? 'pi';
-    if (provider !== 'claude-cli' && provider !== 'codex-cli' && provider !== 'pi' && provider !== 'pi-cli') {
+    if (
+      provider !== 'claude-cli' &&
+      provider !== 'codex-cli' &&
+      provider !== 'pi' &&
+      provider !== 'pi-cli'
+    ) {
       throw new Error(`Agent ${agentId} uses unsupported provider: ${provider}`);
     }
     const config = agent.chat?.config as ScheduledRunChatConfig | undefined;
