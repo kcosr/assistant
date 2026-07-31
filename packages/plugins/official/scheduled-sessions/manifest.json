@@ -242,7 +242,7 @@
     },
     {
       "id": "reminder-update",
-      "summary": "Update the text or delivery time of a pending global reminder.",
+      "summary": "Update the text or delivery time of a pending global reminder. When changing the time, provide exactly one of runAt or delaySeconds.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -258,12 +258,12 @@
           },
           "runAt": {
             "type": "string",
-            "description": "Updated absolute ISO timestamp with a timezone offset or Z."
+            "description": "Updated absolute ISO timestamp with a timezone offset or Z. Do not combine with delaySeconds."
           },
           "delaySeconds": {
             "type": "number",
             "exclusiveMinimum": 0,
-            "description": "Updated positive offset from now in seconds."
+            "description": "Updated positive offset from now in seconds. Do not combine with runAt."
           }
         },
         "required": ["reminderId"]

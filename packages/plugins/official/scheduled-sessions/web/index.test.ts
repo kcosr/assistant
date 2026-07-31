@@ -297,6 +297,7 @@ describe('scheduled sessions panel', () => {
       expect(details?.classList.contains('is-collapsed')).toBe(false);
       expect(persistPanelState).toHaveBeenLastCalledWith({
         expandedSchedules: ['agent-a:schedule-1'],
+        expandedOneShots: [],
       });
 
       const rerenderedRow = container.querySelector<HTMLElement>(
@@ -314,6 +315,7 @@ describe('scheduled sessions panel', () => {
       expect(rerenderedDetails?.classList.contains('is-collapsed')).toBe(true);
       expect(persistPanelState).toHaveBeenLastCalledWith({
         expandedSchedules: [],
+        expandedOneShots: [],
       });
     } finally {
       handle.unmount();
@@ -399,6 +401,20 @@ describe('scheduled sessions panel', () => {
       expect(container.querySelector('.scheduled-sessions-wakeup-item')?.textContent).toContain(
         'Check the issue status',
       );
+      expect(
+        container
+          .querySelector('.scheduled-sessions-wakeup-item .scheduled-sessions-details')
+          ?.classList.contains('is-collapsed'),
+      ).toBe(true);
+
+      container
+        .querySelector<HTMLElement>('[data-action="toggle-one-shot"]')
+        ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      expect(
+        container
+          .querySelector('.scheduled-sessions-wakeup-item .scheduled-sessions-details')
+          ?.classList.contains('is-collapsed'),
+      ).toBe(false);
 
       const cancel = container.querySelector<HTMLButtonElement>(
         '[data-action="cancel-wakeup"][data-wakeup-id="wakeup-1"]',
@@ -416,6 +432,7 @@ describe('scheduled sessions panel', () => {
           body: JSON.stringify({ wakeupId: 'wakeup-1' }),
         }),
       );
+      expect(container.querySelectorAll('.scheduled-sessions-wakeup-item')).toHaveLength(0);
     } finally {
       handle.unmount();
     }
@@ -477,6 +494,7 @@ describe('scheduled sessions panel', () => {
           body: JSON.stringify({ reminderId: 'reminder-sooner' }),
         }),
       );
+      expect(container.querySelectorAll('.scheduled-sessions-reminder-item')).toHaveLength(0);
     } finally {
       handle.unmount();
     }
@@ -516,6 +534,83 @@ describe('scheduled sessions panel', () => {
         },
       });
       expect(container.querySelectorAll('.scheduled-sessions-reminder-item')).toHaveLength(0);
+    } finally {
+      handle.unmount();
+    }
+  });
+
+  it('retries refreshes that overlap newer live reminder events', async () => {
+    const reminder: ScheduledReminderInfo = {
+      kind: 'one_time_reminder',
+      scope: 'global',
+      manageable: true,
+      reminderId: 'reminder-race',
+      text: 'Move the car',
+      runAt: '2026-04-01T12:00:00.000Z',
+      createdAt: '2026-04-01T11:00:00.000Z',
+      status: 'pending',
+    };
+    reminders = [reminder];
+    const { container, handle } = await mountPanel();
+    const staleReminders = [...reminders];
+    let resolveStaleResponse: ((response: Response) => void) | null = null;
+    let reminderRequestCount = 0;
+    apiFetch.mockImplementation(async (url: RequestInfo | URL) => {
+      const path = String(url);
+      if (path.includes('/operations/reminder-list')) {
+        reminderRequestCount += 1;
+        if (reminderRequestCount === 1) {
+          return new Promise<Response>((resolve) => {
+            resolveStaleResponse = resolve;
+          });
+        }
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ ok: true, result: { reminders } }),
+        } as Response;
+      }
+      if (path.includes('/operations/wakeup-list')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ ok: true, result: { wakeups } }),
+        } as Response;
+      }
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ ok: true, result: { schedules: SCHEDULES } }),
+      } as Response;
+    });
+
+    try {
+      container
+        .querySelector<HTMLButtonElement>('[data-role="refresh"]')
+        ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await vi.waitFor(() => expect(resolveStaleResponse).not.toBeNull());
+
+      reminders = [];
+      handle.onEvent?.({
+        panelId: '*',
+        panelType: 'scheduled-sessions',
+        sessionId: '*',
+        payload: {
+          type: 'session_reminder:deleted',
+          payload: { reminderId: reminder.reminderId },
+        },
+      });
+      resolveStaleResponse?.({
+        ok: true,
+        status: 200,
+        json: async () => ({ ok: true, result: { reminders: staleReminders } }),
+      } as Response);
+
+      await vi.waitFor(() => {
+        expect(reminderRequestCount).toBe(2);
+        expect(container.querySelectorAll('.scheduled-sessions-reminder-item')).toHaveLength(0);
+        expect(container.querySelector('[data-role="status"]')?.textContent).toBe('');
+      });
     } finally {
       handle.unmount();
     }

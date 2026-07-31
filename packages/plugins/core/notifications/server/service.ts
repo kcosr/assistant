@@ -47,6 +47,10 @@ function requireStore(): NotificationsStore {
   return store;
 }
 
+export function isNotificationsServiceInitialized(): boolean {
+  return getNotificationsServiceState().store !== null;
+}
+
 function buildPanelEvent(
   event: NotificationMutationEvent,
   revision: number,

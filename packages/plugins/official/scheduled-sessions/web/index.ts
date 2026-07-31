@@ -176,6 +176,7 @@ type ScheduledReminderDeletedEvent = {
 
 type PanelState = {
   expandedSchedules: string[];
+  expandedOneShots: string[];
 };
 
 const registry = window.ASSISTANT_PANEL_REGISTRY;
@@ -454,10 +455,13 @@ if (!registry || typeof registry.registerPanel !== 'function') {
       let wakeups = new Map<string, SessionWakeupInfo>();
       let reminders = new Map<string, ScheduledReminderInfo>();
       let loading = false;
+      let refreshRequested = false;
+      let liveRevision = 0;
       let message = '';
       let searchQuery = '';
 
       const expandedSchedules = new Set<string>();
+      const expandedOneShots = new Set<string>();
 
       const loadPanelState = (): void => {
         const saved = host.loadPanelState();
@@ -472,11 +476,19 @@ if (!registry || typeof registry.registerPanel !== 'function') {
             }
           }
         }
+        if (Array.isArray(raw.expandedOneShots)) {
+          for (const entry of raw.expandedOneShots) {
+            if (typeof entry === 'string') {
+              expandedOneShots.add(entry);
+            }
+          }
+        }
       };
 
       const persistPanelState = (): void => {
         const state: PanelState = {
           expandedSchedules: Array.from(expandedSchedules),
+          expandedOneShots: Array.from(expandedOneShots),
         };
         host.persistPanelState(state);
       };
@@ -503,19 +515,32 @@ if (!registry || typeof registry.registerPanel !== 'function') {
 
       const updateWakeups = (nextWakeups: SessionWakeupInfo[]): void => {
         wakeups = new Map(nextWakeups.map((wakeup) => [wakeup.wakeupId, wakeup]));
+        for (const key of Array.from(expandedOneShots)) {
+          if (key.startsWith('wakeup:') && !wakeups.has(key.slice('wakeup:'.length))) {
+            expandedOneShots.delete(key);
+          }
+        }
         render();
       };
 
       const updateReminders = (nextReminders: ScheduledReminderInfo[]): void => {
         reminders = new Map(nextReminders.map((reminder) => [reminder.reminderId, reminder]));
+        for (const key of Array.from(expandedOneShots)) {
+          if (key.startsWith('reminder:') && !reminders.has(key.slice('reminder:'.length))) {
+            expandedOneShots.delete(key);
+          }
+        }
         render();
       };
 
       const refresh = async (): Promise<void> => {
         if (loading) {
+          refreshRequested = true;
           return;
         }
         loading = true;
+        refreshRequested = false;
+        const startingLiveRevision = liveRevision;
         setMessage('Loading schedules...');
         try {
           const [scheduleData, wakeupData, reminderData] = await Promise.all([
@@ -523,6 +548,10 @@ if (!registry || typeof registry.registerPanel !== 'function') {
             fetchWakeups(),
             fetchReminders(),
           ]);
+          if (liveRevision !== startingLiveRevision) {
+            refreshRequested = true;
+            return;
+          }
           updateSchedules(scheduleData);
           updateWakeups(wakeupData);
           updateReminders(reminderData);
@@ -532,6 +561,9 @@ if (!registry || typeof registry.registerPanel !== 'function') {
         } finally {
           loading = false;
           render();
+          if (refreshRequested) {
+            void refresh();
+          }
         }
       };
 
@@ -546,6 +578,7 @@ if (!registry || typeof registry.registerPanel !== 'function') {
             return;
           }
           const key = `${deleted.agentId}:${deleted.scheduleId}`;
+          liveRevision += 1;
           schedules.delete(key);
           expandedSchedules.delete(key);
           render();
@@ -556,7 +589,9 @@ if (!registry || typeof registry.registerPanel !== 'function') {
           if (!deleted?.wakeupId) {
             return;
           }
+          liveRevision += 1;
           wakeups.delete(deleted.wakeupId);
+          expandedOneShots.delete(`wakeup:${deleted.wakeupId}`);
           render();
           return;
         }
@@ -565,6 +600,7 @@ if (!registry || typeof registry.registerPanel !== 'function') {
           if (!wakeup?.wakeupId || !wakeup.sessionId) {
             return;
           }
+          liveRevision += 1;
           wakeups.set(wakeup.wakeupId, wakeup);
           render();
           return;
@@ -574,7 +610,9 @@ if (!registry || typeof registry.registerPanel !== 'function') {
           if (!deleted?.reminderId) {
             return;
           }
+          liveRevision += 1;
           reminders.delete(deleted.reminderId);
+          expandedOneShots.delete(`reminder:${deleted.reminderId}`);
           render();
           return;
         }
@@ -583,6 +621,7 @@ if (!registry || typeof registry.registerPanel !== 'function') {
           if (!reminder?.reminderId) {
             return;
           }
+          liveRevision += 1;
           reminders.set(reminder.reminderId, reminder);
           render();
           return;
@@ -594,6 +633,7 @@ if (!registry || typeof registry.registerPanel !== 'function') {
         if (!schedule?.agentId || !schedule?.scheduleId) {
           return;
         }
+        liveRevision += 1;
         schedules.set(`${schedule.agentId}:${schedule.scheduleId}`, schedule);
         render();
       };
@@ -670,9 +710,11 @@ if (!registry || typeof registry.registerPanel !== 'function') {
           for (const oneShot of orderedOneShots) {
             if (oneShot.kind === 'one_time_reminder') {
               const reminder = oneShot.value;
+              const oneShotKey = `reminder:${reminder.reminderId}`;
+              const oneShotExpanded = expandedOneShots.has(oneShotKey);
               html += `
-                <section class="scheduled-sessions-item scheduled-sessions-reminder-item" data-reminder-id="${escapeHtml(reminder.reminderId)}">
-                  <div class="scheduled-sessions-row">
+                <section class="scheduled-sessions-item scheduled-sessions-reminder-item${oneShotExpanded ? ' is-expanded' : ''}" data-reminder-id="${escapeHtml(reminder.reminderId)}">
+                  <div class="scheduled-sessions-row" data-action="toggle-one-shot" data-one-shot-key="${escapeHtml(oneShotKey)}">
                     <span class="status-dot status-dot--reminder"></span>
                     <div class="scheduled-sessions-row-main">
                       <div class="scheduled-sessions-row-title-line">
@@ -687,8 +729,9 @@ if (!registry || typeof registry.registerPanel !== 'function') {
                     <div class="scheduled-sessions-row-actions">
                       <button type="button" class="scheduled-sessions-button" data-action="cancel-reminder" data-reminder-id="${escapeHtml(reminder.reminderId)}">Cancel</button>
                     </div>
+                    <span class="scheduled-sessions-expand-indicator" aria-hidden="true"></span>
                   </div>
-                  <div class="scheduled-sessions-details">
+                  <div class="scheduled-sessions-details${oneShotExpanded ? '' : ' is-collapsed'}">
                     <div class="scheduled-sessions-detail-grid">
                       <div class="scheduled-sessions-detail">
                         <div class="scheduled-sessions-detail-label">Run at</div>
@@ -705,6 +748,8 @@ if (!registry || typeof registry.registerPanel !== 'function') {
               continue;
             }
             const wakeup = oneShot.value;
+            const oneShotKey = `wakeup:${wakeup.wakeupId}`;
+            const oneShotExpanded = expandedOneShots.has(oneShotKey);
             const sessionTitle = wakeup.sessionName?.trim() || wakeup.sessionId;
             const wakeupStatus =
               wakeup.status === 'queued'
@@ -713,8 +758,8 @@ if (!registry || typeof registry.registerPanel !== 'function') {
                   ? 'Delivering'
                   : 'Wake-up';
             html += `
-              <section class="scheduled-sessions-item scheduled-sessions-wakeup-item" data-wakeup-id="${escapeHtml(wakeup.wakeupId)}" data-session-id="${escapeHtml(wakeup.sessionId)}">
-                <div class="scheduled-sessions-row">
+              <section class="scheduled-sessions-item scheduled-sessions-wakeup-item${oneShotExpanded ? ' is-expanded' : ''}" data-wakeup-id="${escapeHtml(wakeup.wakeupId)}" data-session-id="${escapeHtml(wakeup.sessionId)}">
+                <div class="scheduled-sessions-row" data-action="toggle-one-shot" data-one-shot-key="${escapeHtml(oneShotKey)}">
                   <span class="status-dot status-dot--wakeup"></span>
                   <div class="scheduled-sessions-row-main">
                     <div class="scheduled-sessions-row-title-line">
@@ -730,8 +775,9 @@ if (!registry || typeof registry.registerPanel !== 'function') {
                   <div class="scheduled-sessions-row-actions">
                     <button type="button" class="scheduled-sessions-button" data-action="cancel-wakeup" data-session-id="${escapeHtml(wakeup.sessionId)}" data-wakeup-id="${escapeHtml(wakeup.wakeupId)}">Cancel</button>
                   </div>
+                  <span class="scheduled-sessions-expand-indicator" aria-hidden="true"></span>
                 </div>
-                <div class="scheduled-sessions-details">
+                <div class="scheduled-sessions-details${oneShotExpanded ? '' : ' is-collapsed'}">
                   <div class="scheduled-sessions-detail-grid">
                     <div class="scheduled-sessions-detail">
                       <div class="scheduled-sessions-detail-label">Run at</div>
@@ -855,6 +901,21 @@ if (!registry || typeof registry.registerPanel !== 'function') {
         const scheduleId = actionEl.dataset.scheduleId ?? '';
         const sessionId = actionEl.dataset.sessionId ?? '';
 
+        if (action === 'toggle-one-shot') {
+          const oneShotKey = actionEl.dataset['oneShotKey'] ?? '';
+          if (!oneShotKey) {
+            return;
+          }
+          if (expandedOneShots.has(oneShotKey)) {
+            expandedOneShots.delete(oneShotKey);
+          } else {
+            expandedOneShots.add(oneShotKey);
+          }
+          persistPanelState();
+          render();
+          return;
+        }
+
         if (action === 'toggle-schedule') {
           if (!agentId || !scheduleId) {
             return;
@@ -916,6 +977,9 @@ if (!registry || typeof registry.registerPanel !== 'function') {
           }
           try {
             await cancelWakeup(sessionId, wakeupId);
+            liveRevision += 1;
+            wakeups.delete(wakeupId);
+            expandedOneShots.delete(`wakeup:${wakeupId}`);
             setMessage('Wake-up cancelled');
           } catch (err) {
             setMessage((err as Error).message || 'Failed to cancel wake-up');
@@ -932,6 +996,9 @@ if (!registry || typeof registry.registerPanel !== 'function') {
           }
           try {
             await cancelReminder(reminderId);
+            liveRevision += 1;
+            reminders.delete(reminderId);
+            expandedOneShots.delete(`reminder:${reminderId}`);
             setMessage('Reminder cancelled');
           } catch (err) {
             setMessage((err as Error).message || 'Failed to cancel reminder');

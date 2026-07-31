@@ -33,7 +33,7 @@ function requireNonEmptyString(value: unknown, field: string): string {
 
 function requireReminderText(value: unknown): string {
   const text = requireNonEmptyString(value, 'text');
-  if (text.length > SCHEDULED_REMINDER_MAX_TEXT_LENGTH) {
+  if (Array.from(text).length > SCHEDULED_REMINDER_MAX_TEXT_LENGTH) {
     throw new ToolError(
       'invalid_arguments',
       `text must be at most ${SCHEDULED_REMINDER_MAX_TEXT_LENGTH} characters`,
@@ -301,9 +301,10 @@ export function createPlugin(_options: PluginFactoryArgs): PluginModule {
       },
       'wakeup-list': async (_args, ctx) => {
         const sessionId = ctx.sessionId?.trim();
-        const wakeups = sessionId && sessionId !== 'http'
-          ? await requireService(ctx).listWakeupsVisibleToSession(sessionId)
-          : await requireService(ctx).listWakeups();
+        const wakeups =
+          sessionId && sessionId !== 'http'
+            ? await requireService(ctx).listWakeupsVisibleToSession(sessionId)
+            : await requireService(ctx).listWakeups();
         return { wakeups };
       },
       'wakeup-create': async (args, ctx) => {

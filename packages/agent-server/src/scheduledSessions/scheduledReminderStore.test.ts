@@ -68,5 +68,16 @@ describe('ScheduledReminderStore', () => {
         },
       ]),
     ).rejects.toThrow(/at most 2000 characters/i);
+
+    await expect(
+      store.save([
+        {
+          reminderId: 'reminder-emoji-boundary',
+          text: '😀'.repeat(SCHEDULED_REMINDER_MAX_TEXT_LENGTH),
+          runAt: '2026-08-01T13:00:00.000Z',
+          createdAt: '2026-07-31T12:00:00.000Z',
+        },
+      ]),
+    ).resolves.toBeUndefined();
   });
 });

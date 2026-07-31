@@ -89,7 +89,7 @@ export class ScheduledReminderStore {
     const record = value as Partial<PersistedScheduledReminderRecord>;
     const reminderId = this.requireString(record.reminderId, index, 'reminderId');
     const text = this.requireString(record.text, index, 'text');
-    if (text.length > SCHEDULED_REMINDER_MAX_TEXT_LENGTH) {
+    if (Array.from(text).length > SCHEDULED_REMINDER_MAX_TEXT_LENGTH) {
       throw new Error(
         this.describeError(
           index,

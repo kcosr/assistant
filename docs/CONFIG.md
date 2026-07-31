@@ -731,7 +731,8 @@ Global one-time reminders are stored alongside them under
 `data/plugins/scheduled-sessions/default/reminders.json`. Reminders are not session-scoped and do
 not start an agent turn. When due, they create an ordinary durable notification titled `Reminder`
 with the reminder text as its body and TTS content, using one-way `speak` playback when standalone
-notification playback is enabled. A maximum of 25 reminders can be pending globally.
+notification playback is enabled. The Notifications plugin must be enabled before creating a
+reminder. A maximum of 25 reminders can be pending globally.
 
 Each persisted schedule record includes:
 
@@ -797,6 +798,7 @@ Reminder tools:
 - `scheduled_sessions_reminder_update`
   - `reminderId`
   - at least one of `text`, `runAt`, or `delaySeconds`
+  - `runAt` and `delaySeconds` are mutually exclusive when changing the delivery time
 - `scheduled_sessions_reminder_cancel`
   - `reminderId`
 - `scheduled_sessions_reminder_list`

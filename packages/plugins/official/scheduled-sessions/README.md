@@ -34,6 +34,7 @@ Pending global reminders are stored under
 notification: when due, it creates a durable notification titled `Reminder`, speaks the reminder
 text when standalone notification playback is enabled, and does not start an agent turn. Reminder
 text is the content to deliver, without scheduling phrases such as “remind me” or a time expression.
+The Notifications plugin must be enabled before a reminder can be created.
 
 Each schedule can also carry an optional `sessionConfig` block with:
 
@@ -91,7 +92,7 @@ Tools are exposed when plugin tools are enabled:
 - `scheduled_sessions_reminder_create`: schedule a global reminder using delivery `text` and
   exactly one of `delaySeconds` or an absolute `runAt` with an offset or `Z`.
 - `scheduled_sessions_reminder_update`: update the text or time of a pending reminder by
-  `reminderId`.
+  `reminderId`; `runAt` and `delaySeconds` are mutually exclusive when changing its time.
 - `scheduled_sessions_reminder_cancel`: cancel a pending global reminder by `reminderId`.
 
 ## HTTP

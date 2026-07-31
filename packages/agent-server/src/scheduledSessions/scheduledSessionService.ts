@@ -10,7 +10,10 @@ import type { SessionIndex, SessionSummary } from '../sessionIndex';
 import type { ToolHost } from '../tools';
 import type { SearchService } from '../search/searchService';
 import { startSessionMessage } from '../sessionMessages';
-import { createNotificationRecord } from '../../../plugins/core/notifications/server/service';
+import {
+  createNotificationRecord,
+  isNotificationsServiceInitialized,
+} from '../../../plugins/core/notifications/server/service';
 import { getDefaultModelForNewSession, getDefaultThinkingForNewSession } from '../sessionModel';
 import {
   buildSessionAttributesPatchFromConfig,
@@ -134,6 +137,7 @@ export class ScheduledSessionService {
   private readonly wakeupStore: SessionWakeupStore;
   private readonly reminderStore: ScheduledReminderStore;
   private readonly createReminderNotificationFn: CreateReminderNotification;
+  private readonly isReminderDeliveryAvailableFn: () => boolean;
 
   constructor(private readonly options: ScheduledSessionServiceOptions) {
     this.spawnFn = options.spawnFn ?? spawn;
@@ -159,6 +163,9 @@ export class ScheduledSessionService {
           ...(options.sessionHub ? { sessionHub: options.sessionHub } : {}),
         });
       });
+    this.isReminderDeliveryAvailableFn = options.createReminderNotificationFn
+      ? () => true
+      : isNotificationsServiceInitialized;
   }
 
   async initialize(): Promise<void> {
@@ -520,6 +527,11 @@ export class ScheduledSessionService {
   async createReminder(input: ScheduledReminderCreateInput): Promise<ScheduledReminderInfo> {
     const text = this.normalizeReminderText(input.text);
     const runAt = this.normalizeReminderRunAt(input.runAt);
+    if (!this.isReminderDeliveryAvailableFn()) {
+      throw new ScheduleValidationError(
+        'The notifications plugin must be enabled before creating reminders',
+      );
+    }
     return this.withReminderMutation(async () => {
       this.requireReminderCapacity();
       const reminder: ScheduledReminderConfig = {
@@ -1043,6 +1055,10 @@ export class ScheduledSessionService {
       if (!reminder) {
         return;
       }
+      if (reminder.runAt.getTime() > Date.now()) {
+        this.scheduleReminder(reminder);
+        return;
+      }
       try {
         await this.createReminderNotificationFn({
           reminderId: reminder.reminderId,
@@ -1357,7 +1373,7 @@ export class ScheduledSessionService {
 
   private normalizeReminderText(value: unknown): string {
     const text = this.normalizeRequiredString(value, 'text');
-    if (text.length > SCHEDULED_REMINDER_MAX_TEXT_LENGTH) {
+    if (Array.from(text).length > SCHEDULED_REMINDER_MAX_TEXT_LENGTH) {
       throw new ScheduleValidationError(
         `text must be at most ${SCHEDULED_REMINDER_MAX_TEXT_LENGTH} characters`,
       );

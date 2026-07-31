@@ -14,6 +14,7 @@ import type { SessionIndex, SessionSummary } from '../sessionIndex';
 import type { SessionMessageStartResult } from '../sessionMessages';
 import type { ToolHost } from '../tools';
 import { ScheduledSessionService } from './scheduledSessionService';
+import { ScheduledReminderStore } from './scheduledReminderStore';
 import { ScheduledSessionStore } from './scheduledSessionStore';
 import {
   getNotificationsStore,
@@ -552,6 +553,7 @@ function createReminderService(options?: {
   storeDir?: string;
   failDelivery?: boolean;
   useDefaultDelivery?: boolean;
+  reminderStore?: ScheduledReminderStore;
 }) {
   const storeDir =
     options?.storeDir ?? mkdtempSync(path.join(os.tmpdir(), 'scheduled-reminders-service-'));
@@ -573,6 +575,7 @@ function createReminderService(options?: {
     logger,
     store: new ScheduledSessionStore(storeDir),
     broadcast,
+    ...(options?.reminderStore ? { reminderStore: options.reminderStore } : {}),
     ...(!options?.useDefaultDelivery ? { createReminderNotificationFn } : {}),
   });
   return { service, storeDir, logger, broadcast, createReminderNotificationFn };
@@ -1474,6 +1477,49 @@ describe('ScheduledSessionService', () => {
     service.shutdown();
   });
 
+  it('does not deliver from a stale timer while rescheduling', async () => {
+    const storeDir = mkdtempSync(path.join(os.tmpdir(), 'scheduled-reminder-reschedule-'));
+    const reminderStore = new ScheduledReminderStore(storeDir);
+    const originalSave = reminderStore.save.bind(reminderStore);
+    let blockSave = false;
+    let releaseSave!: () => void;
+    const blockedSave = new Promise<void>((resolve) => {
+      releaseSave = resolve;
+    });
+    vi.spyOn(reminderStore, 'save').mockImplementation(async (records) => {
+      if (blockSave) {
+        await blockedSave;
+      }
+      await originalSave(records);
+    });
+    const { service, createReminderNotificationFn } = createReminderService({
+      storeDir,
+      reminderStore,
+    });
+    await service.initialize();
+    const created = await service.createReminder({
+      text: 'Check the oven',
+      runAt: new Date(Date.now() + 20),
+    });
+
+    blockSave = true;
+    const update = service.updateReminder({
+      reminderId: created.reminderId,
+      runAt: new Date(Date.now() + 60_000),
+    });
+    await wait(40);
+    blockSave = false;
+    releaseSave();
+    await update;
+    await wait(20);
+
+    expect(createReminderNotificationFn).not.toHaveBeenCalled();
+    expect(service.listReminders()).toEqual([
+      expect.objectContaining({ reminderId: created.reminderId }),
+    ]);
+    service.shutdown();
+  });
+
   it('keeps reminders pending when notification delivery fails', async () => {
     const { service, createReminderNotificationFn, logger } = createReminderService({
       failDelivery: true,
@@ -1506,6 +1552,18 @@ describe('ScheduledSessionService', () => {
       }),
     ).rejects.toThrow(/at most 2000 characters/i);
 
+    const emojiBoundary = await service.createReminder({
+      text: '😀'.repeat(2_000),
+      runAt: new Date(Date.now() + 60_000),
+    });
+    await expect(
+      service.createReminder({
+        text: '😀'.repeat(2_001),
+        runAt: new Date(Date.now() + 60_000),
+      }),
+    ).rejects.toThrow(/at most 2000 characters/i);
+    await service.cancelReminder(emojiBoundary.reminderId);
+
     await Promise.all(
       Array.from({ length: 25 }, (_, index) =>
         service.createReminder({
@@ -1520,6 +1578,21 @@ describe('ScheduledSessionService', () => {
         runAt: new Date(Date.now() + 120_000),
       }),
     ).rejects.toThrow(/at most 25 reminders/i);
+    service.shutdown();
+  });
+
+  it('rejects reminder creation when notification delivery is unavailable', async () => {
+    shutdownNotificationsService();
+    const { service } = createReminderService({ useDefaultDelivery: true });
+    await service.initialize();
+
+    await expect(
+      service.createReminder({
+        text: 'Check the oven',
+        runAt: new Date(Date.now() + 60_000),
+      }),
+    ).rejects.toThrow(/notifications plugin must be enabled/i);
+    expect(service.listReminders()).toEqual([]);
     service.shutdown();
   });
 

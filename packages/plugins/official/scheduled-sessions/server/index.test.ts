@@ -587,15 +587,42 @@ describe('scheduled-sessions plugin operations', () => {
   it('rejects invalid reminder content and time arguments', async () => {
     const plugin = createPlugin({ manifest: manifestJson as CombinedPluginManifest });
     const create = plugin.operations?.['reminder-create'];
-    if (!create) {
-      throw new Error('Expected reminder-create operation');
+    const update = plugin.operations?.['reminder-update'];
+    if (!create || !update) {
+      throw new Error('Expected reminder create and update operations');
     }
-    const ctx = createCtx({ scheduledSessionService: { createReminder: vi.fn() } });
+    const ctx = createCtx({
+      scheduledSessionService: {
+        createReminder: vi.fn().mockResolvedValue({ reminderId: 'reminder-1' }),
+        updateReminder: vi.fn(),
+      },
+    });
 
     await expect(create({ text: 'x'.repeat(2_001), delaySeconds: 10 }, ctx)).rejects.toMatchObject({
       code: 'invalid_arguments',
     } satisfies Partial<ToolError>);
+    await expect(create({ text: '😀'.repeat(2_000), delaySeconds: 10 }, ctx)).resolves.toEqual({
+      reminderId: 'reminder-1',
+    });
+    await expect(create({ text: '😀'.repeat(2_001), delaySeconds: 10 }, ctx)).rejects.toMatchObject(
+      {
+        code: 'invalid_arguments',
+      } satisfies Partial<ToolError>,
+    );
     await expect(create({ text: 'Take out the trash' }, ctx)).rejects.toMatchObject({
+      code: 'invalid_arguments',
+      message: 'Provide exactly one of runAt or delaySeconds',
+    } satisfies Partial<ToolError>);
+    await expect(
+      update(
+        {
+          reminderId: 'reminder-1',
+          runAt: '2026-08-01T12:00:00Z',
+          delaySeconds: 10,
+        },
+        ctx,
+      ),
+    ).rejects.toMatchObject({
       code: 'invalid_arguments',
       message: 'Provide exactly one of runAt or delaySeconds',
     } satisfies Partial<ToolError>);

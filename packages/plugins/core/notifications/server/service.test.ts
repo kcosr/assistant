@@ -19,7 +19,9 @@ describe('notifications service', () => {
       const sourceA = (await import('./service?instance=source-a')) as typeof import('./service');
       const sourceB = (await import('./service?instance=source-b')) as typeof import('./service');
 
+      expect(sourceA.isNotificationsServiceInitialized()).toBe(false);
       sourceA.initializeNotificationsService(tempDir);
+      expect(sourceB.isNotificationsServiceInitialized()).toBe(true);
       await sourceB.createNotificationRecord({
         input: {
           kind: 'session_attention',
@@ -45,6 +47,7 @@ describe('notifications service', () => {
       });
 
       sourceB.shutdownNotificationsService();
+      expect(sourceA.isNotificationsServiceInitialized()).toBe(false);
     } finally {
       await rm(tempDir, { recursive: true, force: true });
     }
