@@ -477,6 +477,22 @@ export async function startSessionMessage(options: {
         });
       }
     } catch (err) {
+      const errorWithCode = err as {
+        name?: unknown;
+        message?: unknown;
+        stack?: unknown;
+        code?: unknown;
+      };
+      console.error('[sessions_message] async processUserMessage failure', {
+        sessionId: input.sessionId,
+        responseId,
+        inputType: input.inputType ?? 'text',
+        errorName: typeof errorWithCode?.name === 'string' ? errorWithCode.name : typeof err,
+        errorMessage:
+          typeof errorWithCode?.message === 'string' ? errorWithCode.message : String(err),
+        errorStack: typeof errorWithCode?.stack === 'string' ? errorWithCode.stack : null,
+        errorCode: typeof errorWithCode?.code === 'string' ? errorWithCode.code : null,
+      });
       if (input.webhook) {
         const message = err instanceof Error ? err.message : String(err);
         await deliverWebhook(input.webhook, {
