@@ -1542,6 +1542,50 @@ describe('ScheduledSessionService', () => {
     service.shutdown();
   });
 
+  it('backs off repeated reminder delivery failures up to an hourly interval', async () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(new Date('2026-07-31T12:00:00.000Z'));
+      const { service, createReminderNotificationFn } = createReminderService({
+        failDelivery: true,
+      });
+      await service.initialize();
+      await service.createReminder({
+        text: 'Check the oven',
+        runAt: new Date(Date.now() + 1_000),
+      });
+
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(createReminderNotificationFn).toHaveBeenCalledTimes(1);
+
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(createReminderNotificationFn).toHaveBeenCalledTimes(2);
+      await vi.advanceTimersByTimeAsync(119_999);
+      expect(createReminderNotificationFn).toHaveBeenCalledTimes(2);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(createReminderNotificationFn).toHaveBeenCalledTimes(3);
+
+      await vi.advanceTimersByTimeAsync(4 * 60_000);
+      expect(createReminderNotificationFn).toHaveBeenCalledTimes(4);
+      await vi.advanceTimersByTimeAsync(8 * 60_000);
+      expect(createReminderNotificationFn).toHaveBeenCalledTimes(5);
+      await vi.advanceTimersByTimeAsync(16 * 60_000);
+      expect(createReminderNotificationFn).toHaveBeenCalledTimes(6);
+      await vi.advanceTimersByTimeAsync(32 * 60_000);
+      expect(createReminderNotificationFn).toHaveBeenCalledTimes(7);
+      await vi.advanceTimersByTimeAsync(60 * 60_000);
+      expect(createReminderNotificationFn).toHaveBeenCalledTimes(8);
+      await vi.advanceTimersByTimeAsync(59 * 60_000 + 59_999);
+      expect(createReminderNotificationFn).toHaveBeenCalledTimes(8);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(createReminderNotificationFn).toHaveBeenCalledTimes(9);
+
+      service.shutdown();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('enforces reminder text and global capacity bounds', async () => {
     const { service } = createReminderService();
     await service.initialize();

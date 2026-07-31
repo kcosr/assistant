@@ -123,13 +123,15 @@ export class ScheduledSessionService {
   private static readonly MAX_TIMEOUT_MS = 2_147_483_647;
   private static readonly MAX_WAKEUPS_PER_SESSION = 25;
   private static readonly MAX_REMINDERS = 25;
-  private static readonly REMINDER_RETRY_MS = 60_000;
+  private static readonly REMINDER_RETRY_BASE_MS = 60_000;
+  private static readonly REMINDER_RETRY_MAX_MS = 60 * 60_000;
   private readonly schedules = new Map<string, ScheduleState>();
   private readonly wakeups = new Map<string, SessionWakeupConfig>();
   private readonly wakeupTimers = new Map<string, NodeJS.Timeout>();
   private readonly wakeupSessionLocks = new Map<string, Promise<unknown>>();
   private readonly reminders = new Map<string, ScheduledReminderConfig>();
   private readonly reminderTimers = new Map<string, NodeJS.Timeout>();
+  private readonly reminderRetryAttempts = new Map<string, number>();
   private reminderMutationQueue: Promise<unknown> = Promise.resolve();
   private initialized = false;
   private readonly spawnFn: typeof spawn;
@@ -231,6 +233,7 @@ export class ScheduledSessionService {
       clearTimeout(timer);
     }
     this.reminderTimers.clear();
+    this.reminderRetryAttempts.clear();
     this.reminders.clear();
     this.reminderMutationQueue = Promise.resolve();
     this.initialized = false;
@@ -1031,6 +1034,7 @@ export class ScheduledSessionService {
   }
 
   private scheduleReminder(reminder: ScheduledReminderConfig): void {
+    this.reminderRetryAttempts.delete(reminder.reminderId);
     const existingTimer = this.reminderTimers.get(reminder.reminderId);
     if (existingTimer) {
       clearTimeout(existingTimer);
@@ -1081,9 +1085,15 @@ export class ScheduledSessionService {
     if (existingTimer) {
       clearTimeout(existingTimer);
     }
+    const attempt = (this.reminderRetryAttempts.get(reminder.reminderId) ?? 0) + 1;
+    this.reminderRetryAttempts.set(reminder.reminderId, attempt);
+    const retryMs = Math.min(
+      ScheduledSessionService.REMINDER_RETRY_BASE_MS * 2 ** (attempt - 1),
+      ScheduledSessionService.REMINDER_RETRY_MAX_MS,
+    );
     const timer = setTimeout(() => {
       void this.executeReminder(reminder.reminderId);
-    }, ScheduledSessionService.REMINDER_RETRY_MS);
+    }, retryMs);
     this.reminderTimers.set(reminder.reminderId, timer);
   }
 
@@ -1414,6 +1424,7 @@ export class ScheduledSessionService {
       clearTimeout(timer);
       this.reminderTimers.delete(reminderId);
     }
+    this.reminderRetryAttempts.delete(reminderId);
     this.reminders.delete(reminderId);
     return reminder;
   }
