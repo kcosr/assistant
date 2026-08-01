@@ -15,6 +15,7 @@ export interface ChatRuntimeElements {
   toggleToolOutputButton: HTMLButtonElement | null;
   toggleToolExpandButton: HTMLButtonElement | null;
   toggleThinkingButton: HTMLButtonElement | null;
+  composerApprovalDock?: HTMLElement | null;
 }
 
 export interface ChatRuntimeOptions {
@@ -270,6 +271,9 @@ export function createChatRuntime(options: ChatRuntimeOptions): ChatRuntime {
       : {}),
     ...(options.sendQuestionnaireCancel
       ? { sendQuestionnaireCancel: options.sendQuestionnaireCancel }
+      : {}),
+    ...(elements.composerApprovalDock
+      ? { composerApprovalDock: elements.composerApprovalDock }
       : {}),
   });
 

@@ -72,7 +72,7 @@ export interface InteractionRequest {
   prompt?: string;
   approvalScopes?: Array<'once' | 'session' | 'always'>;
   inputSchema?: unknown;
-  presentation?: 'tool' | 'questionnaire';
+  presentation?: 'tool' | 'questionnaire' | 'composer';
   timeoutMs?: number;
   completedView?: {
     showInputs?: boolean;

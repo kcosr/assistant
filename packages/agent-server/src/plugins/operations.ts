@@ -11,7 +11,7 @@ import type {
 import type { HttpRouteHandler } from '../http/types';
 import type { ToolContext } from '../tools';
 import { ToolError } from '../tools';
-import { executeInteraction, interactionUnavailableError } from '../ws/toolCallHandling';
+import { executeInteraction, interactionUnavailableError } from '../interactionExecution';
 import type { CliToolCallRecord } from '../ws/cliToolCallRendezvous';
 
 import type { PluginToolDefinition } from './types';

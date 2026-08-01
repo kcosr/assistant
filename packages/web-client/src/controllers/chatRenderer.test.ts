@@ -3508,6 +3508,64 @@ describe('ChatRenderer', () => {
     expect(group).toBeNull();
   });
 
+  it('renders composer approvals above the toolbar and submits approve or deny', () => {
+    const container = document.createElement('div');
+    container.className = 'chat-log';
+    const composerDock = document.createElement('div');
+    const sendInteractionResponse = vi.fn();
+    document.body.append(container, composerDock);
+
+    const renderer = new ChatRenderer(container, {
+      composerApprovalDock: composerDock,
+      sendInteractionResponse,
+    });
+    renderLegacyEvent(
+      renderer,
+      createBaseEvent('interaction_request', {
+        id: 'approval-request',
+        payload: {
+          toolCallId: 'call-approval',
+          toolName: 'read',
+          interactionId: 'interaction-approval',
+          interactionType: 'approval',
+          presentation: 'composer',
+          prompt: 'Allow read for /tmp/file.txt?',
+          approvalScopes: ['once'],
+        },
+      }),
+    );
+
+    expect(container.querySelector('.interaction-approval')).toBeNull();
+    expect(composerDock.querySelector('.interaction-tool-label')?.textContent).toBe(
+      'Approval required · read',
+    );
+    const buttons = Array.from(composerDock.querySelectorAll<HTMLButtonElement>('button'));
+    expect(buttons.map((button) => button.textContent)).toEqual(['Deny', 'Approve']);
+    expect(buttons[0]?.classList.contains('interaction-action-deny')).toBe(true);
+    expect(buttons[1]?.classList.contains('interaction-action-approve')).toBe(true);
+    buttons[1]?.click();
+    expect(sendInteractionResponse).toHaveBeenCalledWith({
+      sessionId: 's1',
+      callId: 'call-approval',
+      interactionId: 'interaction-approval',
+      response: { action: 'approve', approvalScope: 'once' },
+    });
+
+    renderLegacyEvent(
+      renderer,
+      createBaseEvent('interaction_response', {
+        id: 'approval-response',
+        payload: {
+          toolCallId: 'call-approval',
+          interactionId: 'interaction-approval',
+          action: 'approve',
+          approvalScope: 'once',
+        },
+      }),
+    );
+    expect(composerDock.querySelector('.interaction-approval')).toBeNull();
+  });
+
   it('cancels approval interaction when the tool fails', () => {
     const container = document.createElement('div');
     container.className = 'chat-log';

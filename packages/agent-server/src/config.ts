@@ -25,6 +25,16 @@ const GlobPatternListSchema = z
     return value;
   });
 
+const ToolApprovalsConfigSchema = z
+  .object({
+    required: GlobPatternListSchema,
+  })
+  .optional()
+  .nullable()
+  .transform((value) =>
+    value?.required && value.required.length > 0 ? { required: value.required } : undefined,
+  );
+
 const ExtraArgsSchema = z
   .array(NonEmptyTrimmedStringSchema)
   .optional()
@@ -366,6 +376,7 @@ const RawAgentConfigSchema = z.object({
   systemPrompt: z.string().trim().min(1).optional(),
   toolAllowlist: GlobPatternListSchema,
   toolDenylist: GlobPatternListSchema,
+  toolApprovals: ToolApprovalsConfigSchema,
   toolExposure: z.enum(['tools', 'skills', 'mixed']).optional().nullable(),
   skillAllowlist: GlobPatternListSchema,
   skillDenylist: GlobPatternListSchema,
@@ -426,6 +437,7 @@ export const AgentConfigSchema = RawAgentConfigSchema.transform((value) => {
     systemPrompt,
     toolAllowlist,
     toolDenylist,
+    toolApprovals,
     toolExposure,
     skillAllowlist,
     skillDenylist,
@@ -675,6 +687,14 @@ export const AgentConfigSchema = RawAgentConfigSchema.transform((value) => {
   }
   if (toolDenylist) {
     extended.toolDenylist = toolDenylist;
+  }
+  if (toolApprovals) {
+    if (type !== 'chat' || (extended.chat?.provider && extended.chat.provider !== 'pi')) {
+      throw new Error(
+        `agents[${agentId}].toolApprovals is only supported by the native Pi SDK provider`,
+      );
+    }
+    extended.toolApprovals = toolApprovals;
   }
   if (toolExposure) {
     extended.toolExposure = toolExposure;

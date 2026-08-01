@@ -130,7 +130,7 @@ export type ToolResultPayload = z.infer<typeof ToolResultPayloadSchema>;
 export const InteractionTypeSchema = z.enum(['approval', 'input']);
 export type InteractionType = z.infer<typeof InteractionTypeSchema>;
 
-export const InteractionPresentationSchema = z.enum(['tool', 'questionnaire']);
+export const InteractionPresentationSchema = z.enum(['tool', 'questionnaire', 'composer']);
 export type InteractionPresentation = z.infer<typeof InteractionPresentationSchema>;
 
 export const ApprovalScopeSchema = z.enum(['once', 'session', 'always']);

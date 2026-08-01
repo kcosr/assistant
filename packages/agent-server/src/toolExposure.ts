@@ -5,6 +5,7 @@ import type { SkillSummary } from './skills';
 import { resolveToolExposure } from './skills';
 import { mapToolsToChatCompletionSpecs } from './tools';
 import type { ToolContext } from './tools';
+import { applyToolApprovalPolicy } from './toolApprovalPolicy';
 
 export async function resolveAgentToolExposureForHost(options: {
   scopedToolHost: ToolHost;
@@ -36,7 +37,11 @@ export async function resolveAgentToolExposureForHost(options: {
     try {
       const allAgentTools = await listAgentToolsForHost(scopedToolHost, toolContext);
       const visibleToolNames = new Set(visibleTools.map((tool) => tool.name));
-      agentTools = allAgentTools.filter((tool) => visibleToolNames.has(tool.name));
+      agentTools = applyToolApprovalPolicy({
+        tools: allAgentTools.filter((tool) => visibleToolNames.has(tool.name)),
+        required: agent?.toolApprovals?.required,
+        context: toolContext,
+      });
     } catch {
       agentTools = [];
     }

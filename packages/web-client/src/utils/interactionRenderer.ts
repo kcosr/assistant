@@ -98,6 +98,13 @@ function createApprovalInteraction(options: {
   wrapper.className = 'interaction-block interaction-approval';
   wrapper.dataset['interactionId'] = request.interactionId;
 
+  if (request.presentation === 'composer') {
+    const label = document.createElement('div');
+    label.className = 'interaction-tool-label';
+    label.textContent = `Approval required · ${request.toolName}`;
+    wrapper.appendChild(label);
+  }
+
   const prompt = document.createElement('div');
   prompt.className = 'interaction-prompt';
   prompt.textContent = request.prompt ?? `Allow "${request.toolName}"?`;
@@ -114,6 +121,7 @@ function createApprovalInteraction(options: {
   const denyButton = createActionButton('Deny', () => {
     onSubmit({ action: 'deny' });
   });
+  denyButton.classList.add('interaction-action-deny');
   actions.appendChild(denyButton);
 
   const scopes: Array<'once' | 'session' | 'always'> = request.approvalScopes?.length
@@ -122,15 +130,17 @@ function createApprovalInteraction(options: {
   for (const scope of scopes) {
     const label =
       scope === 'once'
-        ? 'Allow once'
+        ? request.presentation === 'composer'
+          ? 'Approve'
+          : 'Allow once'
         : scope === 'session'
           ? 'Allow for session'
           : 'Always allow';
-    actions.appendChild(
-      createActionButton(label, () => {
-        onSubmit({ action: 'approve', approvalScope: scope });
-      }),
-    );
+    const approveButton = createActionButton(label, () => {
+      onSubmit({ action: 'approve', approvalScope: scope });
+    });
+    approveButton.classList.add('interaction-action-approve');
+    actions.appendChild(approveButton);
   }
 
   if (!enabled) {

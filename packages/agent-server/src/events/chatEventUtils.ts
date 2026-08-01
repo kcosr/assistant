@@ -51,7 +51,7 @@ export interface EmitInteractionRequestEventParams {
   interactionId: string;
   toolName: string;
   interactionType: 'approval' | 'input';
-  presentation?: 'tool' | 'questionnaire';
+  presentation?: 'tool' | 'questionnaire' | 'composer';
   prompt?: string;
   approvalScopes?: Array<'once' | 'session' | 'always'>;
   inputSchema?: unknown;
@@ -84,7 +84,7 @@ export interface EmitInteractionPendingEventParams {
   toolCallId: string;
   toolName: string;
   pending: boolean;
-  presentation?: 'tool' | 'questionnaire';
+  presentation?: 'tool' | 'questionnaire' | 'composer';
 }
 
 export interface EmitToolOutputChunkParams {

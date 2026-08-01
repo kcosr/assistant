@@ -67,6 +67,9 @@ function getChatPanelDom(container: HTMLElement): ChatPanelDom {
     toggleThinkingButton: container.querySelector<HTMLButtonElement>(
       '[data-role="chat-toggle-thinking"]',
     ),
+    composerApprovalDock: container.querySelector<HTMLElement>(
+      '[data-role="composer-approval-dock"]',
+    ),
   };
   const inputElements: InputRuntimeElements = {
     contextPreviewEl: container.querySelector<HTMLElement>('[data-role="context-preview"]'),
