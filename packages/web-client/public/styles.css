@@ -100,6 +100,11 @@
   --color-info-border: color-mix(in srgb, var(--color-info) 35%, transparent);
   --color-accent-soft: color-mix(in srgb, var(--color-accent-primary) 12%, transparent);
   --color-accent-border: color-mix(in srgb, var(--color-accent-primary) 50%, transparent);
+  --color-prominent-action-bg: var(--color-accent-primary);
+  --color-prominent-action-bg-hover: var(--color-accent-primary-hover);
+  --color-prominent-action-bg-active: var(--color-accent-primary-hover);
+  --color-prominent-action-fg: var(--color-text-primary);
+  --color-prominent-action-border: transparent;
 
   /* Spacing */
   --spacing-xs: 4px;
@@ -383,6 +388,49 @@
   --theme-danger: #f7768e;
   --theme-success: #9ece6a;
   --theme-warning: #e0af68;
+}
+
+:root[data-theme='herdr'] {
+  color-scheme: dark;
+  --theme-bg-primary: #11111b;
+  --theme-bg-secondary: #181825;
+  --theme-bg-tertiary: #1e1e2e;
+  --theme-bg-hover: #1c1c2a;
+  --theme-bg-active: #202036;
+  --theme-border-color: #262636;
+  --theme-border-subtle: #1d1d2b;
+  --theme-border-strong: #313244;
+  --theme-text-primary: #cdd6f4;
+  --theme-text-secondary: #bac2de;
+  --theme-text-dim: #7f849c;
+  --theme-text-inverse: #11111b;
+  --theme-accent: #b4befe;
+  --theme-accent-hover: #c2caff;
+  --theme-accent-secondary: #74c7ec;
+  --theme-accent-chat: #b4befe;
+  --theme-info: #74c7ec;
+  --theme-danger: #f38ba8;
+  --theme-success: #a6e3a1;
+  --theme-warning: #f9e2af;
+  --theme-code-bg: #11111b;
+  --theme-code-inline-bg: #181825;
+  --hljs-color: #cdd6f4;
+  --hljs-keyword: #cba6f7;
+  --hljs-string: #a6e3a1;
+  --hljs-comment: #6c7086;
+  --hljs-number: #fab387;
+  --hljs-built-in: #89b4fa;
+  --hljs-attr: #f9e2af;
+  --hljs-function: #89b4fa;
+  --hljs-tag: #94e2d5;
+  --color-accent-soft: rgba(180, 190, 254, 0.14);
+  --color-prominent-action-bg: #313244;
+  --color-prominent-action-bg-hover: #45475a;
+  --color-prominent-action-bg-active: #585b70;
+  --color-prominent-action-fg: #b4befe;
+  --color-prominent-action-border: #45475a;
+  --radius-md: 9px;
+  --radius-lg: 13px;
 }
 
 :root[data-theme='catppuccin-mocha'] {
@@ -2083,10 +2131,10 @@ button.settings-dropdown-item {
   );
   width: 52px;
   height: 52px;
-  border: none;
+  border: 1px solid var(--color-prominent-action-border);
   border-radius: 999px;
-  background-color: var(--color-accent-primary);
-  color: var(--color-text-on-accent);
+  background-color: var(--color-prominent-action-bg);
+  color: var(--color-prominent-action-fg);
   display: none;
   align-items: center;
   justify-content: center;
@@ -2104,18 +2152,18 @@ button.settings-dropdown-item {
 }
 
 .command-palette-fab:hover {
-  background-color: var(--color-accent-primary);
+  background-color: var(--color-prominent-action-bg-hover);
   box-shadow: var(--shadow-lg);
 }
 
 .command-palette-fab:active {
-  background-color: var(--color-accent-primary);
+  background-color: var(--color-prominent-action-bg-active);
   transform: translateY(1px);
 }
 
 .command-palette-fab:focus,
 .command-palette-fab:focus-visible {
-  background-color: var(--color-accent-primary);
+  background-color: var(--color-prominent-action-bg);
 }
 
 .command-palette-fab .icon-sm {
@@ -2126,10 +2174,10 @@ button.settings-dropdown-item {
 .command-palette-fab.voice-fab {
   background: radial-gradient(
     circle at 30% 30%,
-    color-mix(in srgb, var(--color-accent-primary) 88%, white),
-    var(--color-accent-primary)
+    color-mix(in srgb, var(--color-prominent-action-bg) 85%, var(--color-prominent-action-fg)),
+    var(--color-prominent-action-bg)
   );
-  color: var(--color-text-on-accent);
+  color: var(--color-prominent-action-fg);
 }
 
 .command-palette-fab.voice-fab.voice-fab-disabled {
@@ -2557,8 +2605,8 @@ button.settings-dropdown-item {
   box-shadow: none;
 }
 
-.panel-frame.is-active::after,
-.panel-frame.is-chat-active::after {
+:root:not([data-panel-outlines='hidden']) .panel-frame.is-active::after,
+:root:not([data-panel-outlines='hidden']) .panel-frame.is-chat-active::after {
   content: '';
   position: absolute;
   inset: 0;
@@ -2567,23 +2615,23 @@ button.settings-dropdown-item {
   pointer-events: none;
 }
 
-.panel-frame.is-active > .panel,
-.panel-frame.is-active > .panel-instance,
-.panel-frame.is-active > .chat-panel {
+:root:not([data-panel-outlines='hidden']) .panel-frame.is-active > .panel,
+:root:not([data-panel-outlines='hidden']) .panel-frame.is-active > .panel-instance,
+:root:not([data-panel-outlines='hidden']) .panel-frame.is-active > .chat-panel {
   box-shadow: inset 0 0 0 2px var(--color-accent-primary);
 }
 
-.panel-frame.is-chat-active > .panel,
-.panel-frame.is-chat-active > .panel-instance,
-.panel-frame.is-chat-active > .chat-panel {
+:root:not([data-panel-outlines='hidden']) .panel-frame.is-chat-active > .panel,
+:root:not([data-panel-outlines='hidden']) .panel-frame.is-chat-active > .panel-instance,
+:root:not([data-panel-outlines='hidden']) .panel-frame.is-chat-active > .chat-panel {
   box-shadow: inset 0 0 0 2px var(--color-accent-primary);
 }
 
-.panel-instance.chat-active {
+:root:not([data-panel-outlines='hidden']) .panel-instance.chat-active {
   box-shadow: inset 0 0 0 2px var(--color-accent-primary);
 }
 
-.panel-frame.is-chat-active .chat-panel {
+:root:not([data-panel-outlines='hidden']) .panel-frame.is-chat-active .chat-panel {
   box-shadow: inset 0 0 0 2px var(--color-accent-primary);
 }
 
@@ -4592,9 +4640,9 @@ body.panel-reordering {
   gap: var(--spacing-xs);
   padding: var(--spacing-sm) var(--spacing-md);
   border-radius: var(--radius-full);
-  border: none;
-  background-color: var(--color-accent-primary);
-  color: white;
+  border: 1px solid var(--color-prominent-action-border);
+  background-color: var(--color-prominent-action-bg);
+  color: var(--color-prominent-action-fg);
   font-size: var(--font-size-xs);
   font-weight: 500;
   cursor: pointer;
@@ -4606,7 +4654,7 @@ body.panel-reordering {
 }
 
 .chat-scroll-to-bottom:hover {
-  background-color: var(--color-accent-primary-hover);
+  background-color: var(--color-prominent-action-bg-hover);
 }
 
 .chat-scroll-to-bottom.visible {
@@ -6719,9 +6767,9 @@ textarea.interaction-input {
 }
 
 .input-submit-button {
-  border: 1px solid transparent;
-  background-color: var(--color-accent-primary);
-  color: var(--color-text-primary);
+  border: 1px solid var(--color-prominent-action-border);
+  background-color: var(--color-prominent-action-bg);
+  color: var(--color-prominent-action-fg);
   cursor: pointer;
   transition:
     background-color var(--transition-fast),
@@ -6731,15 +6779,15 @@ textarea.interaction-input {
 
 @media (hover: hover) {
   .input-submit-button:hover {
-    background-color: var(--color-accent-primary);
-    color: var(--color-text-primary);
+    background-color: var(--color-prominent-action-bg-hover);
+    color: var(--color-prominent-action-fg);
   }
 }
 
 .input-mic-button {
-  border: 1px solid transparent;
-  background-color: var(--color-accent-primary);
-  color: var(--color-text-primary);
+  border: 1px solid var(--color-prominent-action-border);
+  background-color: var(--color-prominent-action-bg);
+  color: var(--color-prominent-action-fg);
   cursor: pointer;
   transition:
     background-color var(--transition-fast),
@@ -6749,9 +6797,14 @@ textarea.interaction-input {
 
 @media (hover: hover) {
   .input-mic-button:hover {
-    background-color: var(--color-accent-primary);
-    color: var(--color-text-primary);
+    background-color: var(--color-prominent-action-bg-hover);
+    color: var(--color-prominent-action-fg);
   }
+}
+
+.input-submit-button:active,
+.input-mic-button:active {
+  background-color: var(--color-prominent-action-bg-active);
 }
 
 .input-mic-button.stop-only {
@@ -6779,8 +6832,8 @@ textarea.interaction-input {
 .mic-icon {
   width: 18px;
   height: 18px;
-  fill: var(--color-text-primary);
-  stroke: var(--color-text-primary);
+  fill: currentColor;
+  stroke: currentColor;
   stroke-width: 2;
   stroke-linecap: round;
   stroke-linejoin: round;

@@ -43,6 +43,7 @@ export const THEME_OPTIONS: ThemeOption[] = [
   { id: 'one-dark', label: 'One Dark', scheme: 'dark' },
   { id: 'night-owl', label: 'Night Owl', scheme: 'dark' },
   { id: 'tokyo-night', label: 'Tokyo Night', scheme: 'dark' },
+  { id: 'herdr', label: 'Herdr', scheme: 'dark' },
   { id: 'catppuccin-mocha', label: 'Catppuccin Mocha', scheme: 'dark' },
   { id: 'catppuccin-latte', label: 'Catppuccin Latte', scheme: 'light' },
   { id: 'forest-dark', label: 'Forest Dark', scheme: 'dark' },

@@ -1825,10 +1825,10 @@
   right: var(--spacing-lg);
   width: 52px;
   height: 52px;
-  border: none;
+  border: 1px solid var(--color-prominent-action-border);
   border-radius: 999px;
-  background-color: var(--color-accent-primary);
-  color: var(--color-text-on-accent);
+  background-color: var(--color-prominent-action-bg);
+  color: var(--color-prominent-action-fg);
   display: none;
   align-items: center;
   justify-content: center;
@@ -1850,18 +1850,18 @@
 }
 
 .lists-fab-add:hover {
-  background-color: var(--color-accent-primary);
+  background-color: var(--color-prominent-action-bg-hover);
   box-shadow: var(--shadow-lg);
 }
 
 .lists-fab-add:active {
-  background-color: var(--color-accent-primary);
+  background-color: var(--color-prominent-action-bg-active);
   transform: translateY(1px);
 }
 
 .lists-fab-add:focus,
 .lists-fab-add:focus-visible {
-  background-color: var(--color-accent-primary);
+  background-color: var(--color-prominent-action-bg);
 }
 
 .lists-fab-add .icon-sm {
@@ -2832,103 +2832,6 @@ button.list-item-menu-checkbox {
 
 .list-item-menu-item.pin-toggle.active {
   color: #f59e0b;
-}
-
-.input-mic-button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: var(--input-action-size);
-  height: var(--input-action-size);
-  padding: 0;
-  border-radius: var(--radius-full);
-  background-color: var(--color-accent-primary);
-}
-
-.input-mic-button:hover {
-  background-color: var(--color-accent-primary);
-}
-
-.input-mic-button.recording {
-  background-color: var(--color-error);
-}
-
-.input-mic-button.recording:hover {
-  background-color: #dc2626;
-}
-
-.input-mic-button.stopping {
-  background-color: var(--color-error);
-  position: relative;
-}
-
-.input-mic-button.stopping:hover {
-  background-color: #dc2626;
-}
-
-.mic-icon {
-  width: 18px;
-  height: 18px;
-  fill: var(--color-text-primary);
-  display: block;
-}
-
-.input-mic-button.recording .mic-icon {
-  fill: white;
-}
-
-.input-mic-button.stopping .mic-icon {
-  display: none;
-}
-
-.input-mic-button.stopping::after {
-  content: '';
-  position: absolute;
-  width: 12px;
-  height: 12px;
-  border-radius: 2px;
-  background-color: white;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-}
-
-.input-mic-button.interrupting .mic-icon {
-  display: none;
-}
-
-.input-mic-button.interrupting {
-  position: relative;
-  background: radial-gradient(circle at center, var(--color-warning), var(--color-error));
-  box-shadow: 0 0 0 0 rgba(248, 113, 113, 0.6);
-  animation: mic-pulse 1.2s infinite ease-out;
-}
-
-.input-mic-button.interrupting::before {
-  content: '';
-  position: absolute;
-  inset: 6px;
-  border-radius: var(--radius-full);
-  background: repeating-linear-gradient(
-    90deg,
-    rgba(0, 0, 0, 0.1),
-    rgba(0, 0, 0, 0.1) 2px,
-    rgba(0, 0, 0, 0.3) 2px,
-    rgba(0, 0, 0, 0.3) 4px
-  );
-  opacity: 0.8;
-}
-
-@keyframes mic-pulse {
-  0% {
-    box-shadow: 0 0 0 0 rgba(248, 113, 113, 0.7);
-  }
-  70% {
-    box-shadow: 0 0 0 8px rgba(248, 113, 113, 0);
-  }
-  100% {
-    box-shadow: 0 0 0 0 rgba(248, 113, 113, 0);
-  }
 }
 
 /* ===== Icon Styles ===== */

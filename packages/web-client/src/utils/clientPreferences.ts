@@ -12,6 +12,7 @@ export interface ClientPreferencesState {
   keyboardShortcutBindings: ShortcutBindingOverrides | null;
   autoFocusChatOnSessionReady: boolean;
   autoScrollEnabled: boolean;
+  selectedPanelOutlinesEnabled: boolean;
   showContextEnabled: boolean;
   synthesizedPanelTitlesEnabled: boolean;
 }
@@ -22,6 +23,7 @@ export function loadClientPreferences(options: {
   keyboardShortcutsBindingsStorageKey: string;
   autoFocusChatStorageKey: string;
   autoScrollStorageKey: string;
+  selectedPanelOutlinesStorageKey: string;
   showContextStorageKey: string;
   synthesizedPanelTitlesStorageKey: string;
 }): ClientPreferencesState {
@@ -32,6 +34,7 @@ export function loadClientPreferences(options: {
   let keyboardShortcutBindings: ShortcutBindingOverrides | null = null;
   let autoFocusChatOnSessionReady = true;
   let autoScrollEnabled = true;
+  let selectedPanelOutlinesEnabled = true;
   let showContextEnabled = false;
   let synthesizedPanelTitlesEnabled = false;
 
@@ -61,6 +64,12 @@ export function loadClientPreferences(options: {
     if (autoScrollStored === 'false') {
       autoScrollEnabled = false;
     }
+    const selectedPanelOutlinesStored = localStorage.getItem(
+      options.selectedPanelOutlinesStorageKey,
+    );
+    if (selectedPanelOutlinesStored === 'false') {
+      selectedPanelOutlinesEnabled = false;
+    }
     const showContextStored = localStorage.getItem(options.showContextStorageKey);
     if (showContextStored === 'true') {
       showContextEnabled = true;
@@ -81,6 +90,7 @@ export function loadClientPreferences(options: {
     keyboardShortcutBindings,
     autoFocusChatOnSessionReady,
     autoScrollEnabled,
+    selectedPanelOutlinesEnabled,
     showContextEnabled,
     synthesizedPanelTitlesEnabled,
   };
@@ -90,18 +100,22 @@ export function wirePreferencesCheckboxes(options: {
   autoFocusChatCheckbox: HTMLInputElement;
   keyboardShortcutsCheckbox: HTMLInputElement;
   autoScrollCheckbox: HTMLInputElement;
+  selectedPanelOutlinesCheckbox: HTMLInputElement;
   synthesizedPanelTitlesCheckbox: HTMLInputElement;
   initialAutoFocusChatOnSessionReady: boolean;
   initialKeyboardShortcutsEnabled: boolean;
   initialAutoScrollEnabled: boolean;
+  initialSelectedPanelOutlinesEnabled: boolean;
   initialSynthesizedPanelTitlesEnabled: boolean;
   autoFocusChatStorageKey: string;
   keyboardShortcutsStorageKey: string;
   autoScrollStorageKey: string;
+  selectedPanelOutlinesStorageKey: string;
   synthesizedPanelTitlesStorageKey: string;
   setAutoFocusChatOnSessionReady: (enabled: boolean) => void;
   setKeyboardShortcutsEnabled: (enabled: boolean) => void;
   setAutoScrollEnabled: (enabled: boolean) => void;
+  setSelectedPanelOutlinesEnabled: (enabled: boolean) => void;
   setSynthesizedPanelTitlesEnabled: (enabled: boolean) => void;
 }): void {
   options.autoFocusChatCheckbox.checked = options.initialAutoFocusChatOnSessionReady;
@@ -132,6 +146,17 @@ export function wirePreferencesCheckboxes(options: {
     options.setAutoScrollEnabled(enabled);
     try {
       localStorage.setItem(options.autoScrollStorageKey, enabled ? 'true' : 'false');
+    } catch {
+      // Ignore localStorage errors
+    }
+  });
+
+  options.selectedPanelOutlinesCheckbox.checked = options.initialSelectedPanelOutlinesEnabled;
+  options.selectedPanelOutlinesCheckbox.addEventListener('change', () => {
+    const enabled = options.selectedPanelOutlinesCheckbox.checked;
+    options.setSelectedPanelOutlinesEnabled(enabled);
+    try {
+      localStorage.setItem(options.selectedPanelOutlinesStorageKey, enabled ? 'true' : 'false');
     } catch {
       // Ignore localStorage errors
     }

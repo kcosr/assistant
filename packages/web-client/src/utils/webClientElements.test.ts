@@ -70,6 +70,7 @@ describe('getWebClientElements', () => {
     expect(elements?.voiceTtsGainControl.id).toBe('voice-tts-gain-control');
     expect(elements?.voiceTtsGainSlider.id).toBe('voice-tts-gain-slider');
     expect(elements?.voiceTtsGainValue.id).toBe('voice-tts-gain-value');
+    expect(elements?.selectedPanelOutlinesCheckbox.id).toBe('selected-panel-outlines-checkbox');
   });
 
   it('keeps the voice settings modal hidden in the static document', () => {

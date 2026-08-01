@@ -41,6 +41,7 @@ export interface WebClientElements {
   autoFocusChatCheckbox: HTMLInputElement;
   keyboardShortcutsCheckbox: HTMLInputElement;
   autoScrollCheckbox: HTMLInputElement;
+  selectedPanelOutlinesCheckbox: HTMLInputElement;
   synthesizedPanelTitlesCheckbox: HTMLInputElement;
   interactionModeCheckbox: HTMLInputElement | null;
   panelWorkspace: HTMLElement | null;
@@ -154,6 +155,9 @@ export function getWebClientElements(): WebClientElements | null {
   const autoFocusChatCheckbox = getElement<HTMLInputElement>('autofocus-chat-checkbox');
   const keyboardShortcutsCheckbox = getElement<HTMLInputElement>('keyboard-shortcuts-checkbox');
   const autoScrollCheckbox = getElement<HTMLInputElement>('auto-scroll-checkbox');
+  const selectedPanelOutlinesCheckbox = getElement<HTMLInputElement>(
+    'selected-panel-outlines-checkbox',
+  );
   const synthesizedPanelTitlesCheckbox = getElement<HTMLInputElement>(
     'synthesized-panel-titles-checkbox',
   );
@@ -196,6 +200,7 @@ export function getWebClientElements(): WebClientElements | null {
     !autoFocusChatCheckbox ||
     !keyboardShortcutsCheckbox ||
     !autoScrollCheckbox ||
+    !selectedPanelOutlinesCheckbox ||
     !synthesizedPanelTitlesCheckbox ||
     !panelWorkspace
   ) {
@@ -246,6 +251,7 @@ export function getWebClientElements(): WebClientElements | null {
     autoFocusChatCheckbox,
     keyboardShortcutsCheckbox,
     autoScrollCheckbox,
+    selectedPanelOutlinesCheckbox,
     synthesizedPanelTitlesCheckbox,
     interactionModeCheckbox,
     panelWorkspace,
