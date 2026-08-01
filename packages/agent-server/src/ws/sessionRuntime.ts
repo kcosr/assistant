@@ -43,6 +43,7 @@ import {
   type ToolContext,
   type ToolHost,
 } from '../tools';
+import { applyToolApprovalPolicy } from '../toolApprovalPolicy';
 import { RateLimiter } from '../rateLimit';
 import type { SessionHub } from '../sessionHub';
 import type { LogicalSessionState } from '../sessionHub';
@@ -1149,7 +1150,11 @@ export class SessionRuntime {
       };
       const allAgentTools = await listAgentToolsForHost(sessionToolHost, toolContext);
       const visibleToolNames = new Set(visibleTools.map((tool) => tool.name));
-      const agentTools = allAgentTools.filter((tool) => visibleToolNames.has(tool.name));
+      const agentTools = applyToolApprovalPolicy({
+        tools: allAgentTools.filter((tool) => visibleToolNames.has(tool.name)),
+        required: agent?.toolApprovals?.required,
+        context: toolContext,
+      });
       if (visibleTools.length > 0 || (selectedSkills && selectedSkills.length > 0)) {
         await updateSystemPromptWithTools({
           state,

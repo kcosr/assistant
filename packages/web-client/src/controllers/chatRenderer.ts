@@ -100,6 +100,7 @@ export interface ChatRendererOptions {
     questionnaireRequestId: string;
     reason?: string;
   }) => void;
+  composerApprovalDock?: HTMLElement;
   onRequestDividerActivate?: (options: RequestDividerActionOptions) => void;
 }
 
@@ -655,6 +656,7 @@ export class ChatRenderer {
 
   private resetRenderState(): void {
     this.container.innerHTML = '';
+    this.options.composerApprovalDock?.replaceChildren();
     this.typingIndicator = null;
     this.turnElements.clear();
     this.responseElements.clear();
@@ -1997,6 +1999,11 @@ export class ChatRenderer {
     const enabled = this.options.getInteractionEnabled?.() ?? true;
     const presentation = payload.presentation ?? 'tool';
 
+    if (presentation === 'composer' && this.options.composerApprovalDock) {
+      this.renderComposerInteraction(event, enabled);
+      return;
+    }
+
     if (presentation === 'questionnaire') {
       this.questionnaireToolCalls.add(toolCallId);
       this.standaloneToolCalls.add(toolCallId);
@@ -2050,6 +2057,12 @@ export class ChatRenderer {
     const element = this.interactionElements.get(interactionId);
     if (element) {
       applyInteractionResponse(element, payload);
+      if (element.classList.contains('interaction-composer')) {
+        element.remove();
+        this.interactionElements.delete(interactionId);
+        this.interactionByToolCall.delete(payload.toolCallId);
+        return;
+      }
       const toolBlock = element.closest<HTMLDivElement>('.tool-output-block');
       if (toolBlock) {
         this.updateToolInteractionState(toolBlock);
@@ -2250,6 +2263,44 @@ export class ChatRenderer {
     }
     this.interactionElements.set(payload.interactionId, element);
     this.updateToolInteractionState(block);
+  }
+
+  private renderComposerInteraction(
+    event: RenderedTranscriptEvent<InteractionRequestEvent['payload']>,
+    enabled: boolean,
+  ): void {
+    const dock = this.options.composerApprovalDock;
+    if (!dock) {
+      return;
+    }
+    const payload = event.payload;
+    const existingId = this.interactionByToolCall.get(payload.toolCallId);
+    if (existingId) {
+      this.interactionElements.get(existingId)?.remove();
+      this.interactionElements.delete(existingId);
+    }
+
+    const element = createInteractionElement({
+      request: payload,
+      enabled,
+      onSubmit: (response) => {
+        this.sendInteractionResponse(payload, response, event.sessionId);
+      },
+    });
+    element.classList.add('interaction-composer');
+    element.dataset['sessionId'] = event.sessionId;
+    dock.appendChild(element);
+    this.interactionElements.set(payload.interactionId, element);
+    this.interactionByToolCall.set(payload.toolCallId, payload.interactionId);
+
+    const pendingResponse = this.pendingInteractionResponses.get(payload.interactionId);
+    if (pendingResponse) {
+      this.pendingInteractionResponses.delete(payload.interactionId);
+      applyInteractionResponse(element, pendingResponse);
+      element.remove();
+      this.interactionElements.delete(payload.interactionId);
+      this.interactionByToolCall.delete(payload.toolCallId);
+    }
   }
 
   private createToolBlockForInteraction(
@@ -2607,6 +2658,11 @@ export class ChatRenderer {
           action: 'cancel',
           ...(reason ? { reason } : {}),
         });
+        if (element.classList.contains('interaction-composer')) {
+          element.remove();
+          this.interactionElements.delete(interactionId);
+          this.interactionByToolCall.delete(toolCallId);
+        }
         const toolBlock = element.closest<HTMLDivElement>('.tool-output-block');
         if (toolBlock) {
           this.updateToolInteractionState(toolBlock);

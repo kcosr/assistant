@@ -529,6 +529,9 @@ Defines external MCP tool servers (Model Context Protocol) launched over stdio.
   "type": "chat",
   "toolAllowlist": ["notes_*"],
   "toolDenylist": [],
+  "toolApprovals": {
+    "required": ["bash", "write", "edit"]
+  },
   "toolExposure": "skills",
   "skillAllowlist": ["notes"],
   "sessionWorkingDir": {
@@ -555,6 +558,7 @@ Defines external MCP tool servers (Model Context Protocol) launched over stdio.
 | `systemPrompt`        | string  | Optional custom prompt.                                                                                                                                                                                                  |
 | `toolAllowlist`       | array   | Glob patterns for tool access.                                                                                                                                                                                           |
 | `toolDenylist`        | array   | Glob patterns for tool denylist.                                                                                                                                                                                         |
+| `toolApprovals`       | object  | Native Pi SDK tool approval policy. `required` contains tool-name glob patterns that must receive an interactive Approve response before execution.                                                                      |
 | `toolExposure`        | string  | `tools`, `skills`, or `mixed`.                                                                                                                                                                                           |
 | `skillAllowlist`      | array   | Plugin ids exposed as CLI skills.                                                                                                                                                                                        |
 | `skillDenylist`       | array   | Plugin ids blocked from skill exposure.                                                                                                                                                                                  |
@@ -566,6 +570,27 @@ Defines external MCP tool servers (Model Context Protocol) launched over stdio.
 | `sessionWorkingDir`   | object  | Optional working-directory policy for new sessions. Use `{ "mode": "fixed", "path": "/abs/path" }`, `{ "mode": "prompt", "roots": ["/abs/root"] }`, or `{ "mode": "none" }` to leave `core.workingDir` unset by default. |
 | `uiVisible`           | boolean | Hide from built-in UI if `false`.                                                                                                                                                                                        |
 | `apiExposed`          | boolean | Reserved for external API tools (currently unused).                                                                                                                                                                      |
+
+#### Native tool approvals
+
+`toolApprovals.required` accepts the same exact-name and `*` glob patterns used by the tool
+allowlist. Every matching native Pi SDK tool call pauses before execution and appears above the
+chat composer with **Deny** and **Approve** actions. For example, protect filesystem reads and
+writes as well as shell commands:
+
+```json
+{
+  "toolApprovals": {
+    "required": ["bash", "read", "write", "edit", "find", "grep"]
+  }
+}
+```
+
+The policy is enforced only for the native `pi` provider, whose tools execute through the
+Assistant tool host. Configuration is rejected for CLI providers because their internal tool
+execution cannot be intercepted by Assistant. Approval fails closed: if no connected client has
+interactive tool prompts enabled, the matching tool returns an `interaction_unavailable` error
+without running.
 
 #### Working directory behavior
 

@@ -131,6 +131,13 @@ export interface AgentDefinition {
    */
   toolDenylist?: string[];
   /**
+   * Optional approval policy for native SDK tool calls. Matching tool names
+   * must be approved by an interactive client before execution begins.
+   */
+  toolApprovals?: {
+    required: string[];
+  };
+  /**
    * Optional tool exposure mode:
    * - "tools": expose tools via model tool calls (default)
    * - "skills": expose plugin operations only via CLI skills

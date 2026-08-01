@@ -95,6 +95,51 @@ describe('loadConfig', () => {
     expect(server.env).toEqual({ GITHUB_TOKEN: 'test-token' });
   });
 
+  it('loads native Pi SDK tool approval patterns', async () => {
+    const filePath = createTempFile('config-tool-approvals');
+    await fs.writeFile(
+      filePath,
+      JSON.stringify({
+        agents: [
+          {
+            agentId: 'approval-agent',
+            displayName: 'Approval Agent',
+            description: 'Requires approval for selected tools.',
+            chat: { provider: 'pi' },
+            toolApprovals: { required: ['bash', 'write', '*_delete'] },
+          },
+        ],
+      }),
+      'utf8',
+    );
+
+    const config = loadConfig(filePath);
+    expect(config.agents[0]?.toolApprovals).toEqual({
+      required: ['bash', 'write', '*_delete'],
+    });
+  });
+
+  it('rejects tool approval policy for CLI providers', async () => {
+    const filePath = createTempFile('config-cli-tool-approvals');
+    await fs.writeFile(
+      filePath,
+      JSON.stringify({
+        agents: [
+          {
+            agentId: 'cli-agent',
+            displayName: 'CLI Agent',
+            description: 'Uses an opaque CLI provider.',
+            chat: { provider: 'codex-cli' },
+            toolApprovals: { required: ['bash'] },
+          },
+        ],
+      }),
+      'utf8',
+    );
+
+    expect(() => loadConfig(filePath)).toThrow(/only supported by the native Pi SDK provider/i);
+  });
+
   it('performs env var substitution for multiple variables within a value', async () => {
     const filePath = createTempFile('config-env-substitution');
     const configJson = {
