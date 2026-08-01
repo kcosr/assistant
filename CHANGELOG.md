@@ -8,6 +8,7 @@
 
 ### Added
 
+- Added configurable native Pi SDK tool approvals that block selected exact-name or glob-matched tools until an interactive client approves or denies them, with fail-closed handling and composer-level approval controls. ([#128](https://github.com/kcosr/assistant/pull/128))
 - Added one-shot scheduled reminders with scheduled-session visibility, durable delivery, notification playback, and retry handling. ([#127](https://github.com/kcosr/assistant/pull/127))
 - Added bounded Codex Threads tools for thread discovery, status, transcripts, messaging, steering, creation, and renaming, with server/capability scoping and exact-turn response retrieval for asynchronous relay workflows. ([#126](https://github.com/kcosr/assistant/pull/126))
 - Added settlement-driven Android Auto Listen for successful local-origin turns with no final speakable output, while suppressing queued, stale, interrupted, error, and voice-control-completed turns. ([#125](https://github.com/kcosr/assistant/pull/125))
