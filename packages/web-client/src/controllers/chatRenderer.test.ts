@@ -3566,6 +3566,87 @@ describe('ChatRenderer', () => {
     expect(composerDock.querySelector('.interaction-approval')).toBeNull();
   });
 
+  it('cleans up a composer approval when its response arrives before its request', () => {
+    const container = document.createElement('div');
+    container.className = 'chat-log';
+    const composerDock = document.createElement('div');
+    document.body.append(container, composerDock);
+
+    const renderer = new ChatRenderer(container, {
+      composerApprovalDock: composerDock,
+    });
+    renderLegacyEvent(
+      renderer,
+      createBaseEvent('interaction_response', {
+        id: 'approval-response',
+        payload: {
+          toolCallId: 'call-approval',
+          interactionId: 'interaction-approval',
+          action: 'approve',
+          approvalScope: 'once',
+        },
+      }),
+    );
+    renderLegacyEvent(
+      renderer,
+      createBaseEvent('interaction_request', {
+        id: 'approval-request',
+        payload: {
+          toolCallId: 'call-approval',
+          toolName: 'read',
+          interactionId: 'interaction-approval',
+          interactionType: 'approval',
+          presentation: 'composer',
+          prompt: 'Allow read for /tmp/file.txt?',
+          approvalScopes: ['once'],
+        },
+      }),
+    );
+
+    expect(composerDock.querySelector('.interaction-approval')).toBeNull();
+  });
+
+  it('removes a composer approval when the tool fails', () => {
+    const container = document.createElement('div');
+    container.className = 'chat-log';
+    const composerDock = document.createElement('div');
+    document.body.append(container, composerDock);
+
+    const renderer = new ChatRenderer(container, {
+      composerApprovalDock: composerDock,
+    });
+    renderLegacyEvent(
+      renderer,
+      createBaseEvent('interaction_request', {
+        id: 'approval-request',
+        payload: {
+          toolCallId: 'call-approval',
+          toolName: 'bash',
+          interactionId: 'interaction-approval',
+          interactionType: 'approval',
+          presentation: 'composer',
+          prompt: 'Run command?\nnpm test',
+          approvalScopes: ['once'],
+        },
+      }),
+    );
+    expect(composerDock.querySelector('.interaction-approval')).not.toBeNull();
+
+    renderLegacyEvent(
+      renderer,
+      createBaseEvent('tool_result', {
+        id: 'approval-tool-result',
+        payload: {
+          toolCallId: 'call-approval',
+          toolName: 'bash',
+          error: { code: 'interaction_timeout', message: 'Interaction timed out' },
+        },
+      }),
+    );
+
+    expect(composerDock.querySelector('.interaction-approval')).toBeNull();
+  });
+
   it('cancels approval interaction when the tool fails', () => {
     const container = document.createElement('div');
     container.className = 'chat-log';

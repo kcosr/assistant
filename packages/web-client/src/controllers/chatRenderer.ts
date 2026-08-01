@@ -2297,6 +2297,9 @@ export class ChatRenderer {
     if (pendingResponse) {
       this.pendingInteractionResponses.delete(payload.interactionId);
       applyInteractionResponse(element, pendingResponse);
+      element.remove();
+      this.interactionElements.delete(payload.interactionId);
+      this.interactionByToolCall.delete(payload.toolCallId);
     }
   }
 

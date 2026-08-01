@@ -6261,6 +6261,7 @@ textarea.interaction-input {
   width: calc(100% + var(--spacing-sm));
   max-width: calc(var(--input-bar-max-width) + var(--spacing-sm));
   margin-inline: calc(0px - var(--spacing-xs));
+  margin-bottom: 2px;
   display: flex;
   flex-direction: column;
   gap: var(--spacing-xs);
