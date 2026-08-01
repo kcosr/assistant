@@ -5,7 +5,9 @@ import {
   CODE_FONT_OPTIONS,
   CODE_FONT_STORAGE_KEY,
   loadThemePreferences,
+  resolveThemeScheme,
   saveThemePreferences,
+  THEME_OPTIONS,
   THEME_STORAGE_KEY,
   UI_FONT_OPTIONS,
   UI_FONT_STORAGE_KEY,
@@ -87,6 +89,11 @@ describe('themeManager', () => {
       uiFont: defaultUIFont.value,
       codeFont: defaultCodeFont.value,
     });
+  });
+
+  it('offers Herdr as a dark theme', () => {
+    expect(THEME_OPTIONS).toContainEqual({ id: 'herdr', label: 'Herdr', scheme: 'dark' });
+    expect(resolveThemeScheme('herdr')).toBe('dark');
   });
 
   it('normalizes invalid stored values', () => {

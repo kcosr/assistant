@@ -21,6 +21,9 @@
           if (codeFont && codeFont.trim()) {
             document.documentElement.style.setProperty('--font-mono', codeFont.trim());
           }
+          if (storage.getItem('aiAssistantSelectedPanelOutlinesEnabled') === 'false') {
+            document.documentElement.setAttribute('data-panel-outlines', 'hidden');
+          }
           const lightThemes = new Set([
             'light',
             'solarized-light',
@@ -231,6 +234,12 @@
               <label for="auto-scroll-checkbox">
                 <input type="checkbox" id="auto-scroll-checkbox" />
                 Auto-scroll on new messages
+              </label>
+            </div>
+            <div class="settings-dropdown-item">
+              <label for="selected-panel-outlines-checkbox">
+                <input type="checkbox" id="selected-panel-outlines-checkbox" />
+                Show selected panel outlines
               </label>
             </div>
             <div class="settings-dropdown-item">

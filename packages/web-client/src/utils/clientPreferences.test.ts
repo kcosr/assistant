@@ -17,6 +17,7 @@ const defaultOptions = {
   keyboardShortcutsBindingsStorageKey: 'shortcut-bindings',
   autoFocusChatStorageKey: 'autofocus',
   autoScrollStorageKey: 'autoscroll',
+  selectedPanelOutlinesStorageKey: 'selected-panel-outlines',
   showContextStorageKey: 'show-context',
   synthesizedPanelTitlesStorageKey: 'synthesized-panel-titles',
 };
@@ -47,6 +48,7 @@ describe('loadClientPreferences', () => {
     expect(preferences.voice.recognitionCueGain).toBe(1);
     expect(preferences.voice.startupPreRollMs).toBe(512);
     expect(preferences.synthesizedPanelTitlesEnabled).toBe(false);
+    expect(preferences.selectedPanelOutlinesEnabled).toBe(true);
   });
 
   it('defaults tool audio mode on in Capacitor Android when unset', () => {
@@ -136,5 +138,13 @@ describe('loadClientPreferences', () => {
     const preferences = loadClientPreferences(defaultOptions);
 
     expect(preferences.synthesizedPanelTitlesEnabled).toBe(true);
+  });
+
+  it('loads the selected panel outline preference when disabled', () => {
+    localStorage.setItem(defaultOptions.selectedPanelOutlinesStorageKey, 'false');
+
+    const preferences = loadClientPreferences(defaultOptions);
+
+    expect(preferences.selectedPanelOutlinesEnabled).toBe(false);
   });
 });

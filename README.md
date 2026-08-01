@@ -42,7 +42,7 @@ by an integration with the badlogic/pi-mono agent SDK.
 - **Built-in session tools** – agent can list, search, create, switch, rename, and pin sessions
 - **Persistent sessions** with JSONL event logs and optional naming/pinning
 - **Multi-client support** – multiple browser windows can share a session
-- **Theme + font preferences** (auto/light/dark + presets)
+- **Theme + font preferences** (auto/light/dark + presets, including Herdr)
 
 ## Quick Start
 

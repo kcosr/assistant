@@ -567,6 +567,7 @@ async function main(): Promise<void> {
     autoFocusChatCheckbox: autoFocusChatCheckboxEl,
     keyboardShortcutsCheckbox: keyboardShortcutsCheckboxEl,
     autoScrollCheckbox: autoScrollCheckboxEl,
+    selectedPanelOutlinesCheckbox: selectedPanelOutlinesCheckboxEl,
     synthesizedPanelTitlesCheckbox: synthesizedPanelTitlesCheckboxEl,
     interactionModeCheckbox: interactionModeCheckboxEl,
     panelWorkspace: panelWorkspaceRoot,
@@ -651,6 +652,7 @@ async function main(): Promise<void> {
   const KEYBOARD_SHORTCUT_BINDINGS_STORAGE_KEY = 'aiAssistantKeyboardShortcutBindings';
   const AUTO_FOCUS_CHAT_STORAGE_KEY = 'aiAssistantAutoFocusChatOnSessionReady';
   const AUTO_SCROLL_STORAGE_KEY = 'aiAssistantAutoScrollEnabled';
+  const SELECTED_PANEL_OUTLINES_STORAGE_KEY = 'aiAssistantSelectedPanelOutlinesEnabled';
   const INTERACTION_MODE_STORAGE_KEY = 'aiAssistantInteractiveModeEnabled';
   const SHOW_CONTEXT_STORAGE_KEY = 'aiAssistantShowContextEnabled';
   const SYNTHESIZED_PANEL_TITLES_STORAGE_KEY = 'aiAssistantSynthesizedPanelTitlesEnabled';
@@ -694,6 +696,7 @@ async function main(): Promise<void> {
     keyboardShortcutsBindingsStorageKey: KEYBOARD_SHORTCUT_BINDINGS_STORAGE_KEY,
     autoFocusChatStorageKey: AUTO_FOCUS_CHAT_STORAGE_KEY,
     autoScrollStorageKey: AUTO_SCROLL_STORAGE_KEY,
+    selectedPanelOutlinesStorageKey: SELECTED_PANEL_OUTLINES_STORAGE_KEY,
     showContextStorageKey: SHOW_CONTEXT_STORAGE_KEY,
     synthesizedPanelTitlesStorageKey: SYNTHESIZED_PANEL_TITLES_STORAGE_KEY,
   });
@@ -704,10 +707,19 @@ async function main(): Promise<void> {
   const keyboardShortcutBindings = initialPreferences.keyboardShortcutBindings;
   let autoFocusChatOnSessionReady = initialPreferences.autoFocusChatOnSessionReady;
   let autoScrollEnabled = initialPreferences.autoScrollEnabled;
+  const selectedPanelOutlinesEnabled = initialPreferences.selectedPanelOutlinesEnabled;
   let showContextEnabled = initialPreferences.showContextEnabled;
   let synthesizedPanelTitlesEnabled = initialPreferences.synthesizedPanelTitlesEnabled;
   let includePanelContext = true;
   let interactionEnabled = true;
+  const applySelectedPanelOutlinesEnabled = (enabled: boolean): void => {
+    if (enabled) {
+      document.documentElement.removeAttribute('data-panel-outlines');
+    } else {
+      document.documentElement.setAttribute('data-panel-outlines', 'hidden');
+    }
+  };
+  applySelectedPanelOutlinesEnabled(selectedPanelOutlinesEnabled);
   voiceAdapterBaseUrlInputEl.placeholder = DEFAULT_VOICE_ADAPTER_BASE_URL;
 
   const updateInteractionElementsEnabled = (enabled: boolean): void => {
@@ -3921,14 +3933,17 @@ async function main(): Promise<void> {
     autoFocusChatCheckbox: autoFocusChatCheckboxEl,
     keyboardShortcutsCheckbox: keyboardShortcutsCheckboxEl,
     autoScrollCheckbox: autoScrollCheckboxEl,
+    selectedPanelOutlinesCheckbox: selectedPanelOutlinesCheckboxEl,
     synthesizedPanelTitlesCheckbox: synthesizedPanelTitlesCheckboxEl,
     initialAutoFocusChatOnSessionReady: autoFocusChatOnSessionReady,
     initialKeyboardShortcutsEnabled: keyboardShortcutsEnabled,
     initialAutoScrollEnabled: autoScrollEnabled,
+    initialSelectedPanelOutlinesEnabled: selectedPanelOutlinesEnabled,
     initialSynthesizedPanelTitlesEnabled: synthesizedPanelTitlesEnabled,
     autoFocusChatStorageKey: AUTO_FOCUS_CHAT_STORAGE_KEY,
     keyboardShortcutsStorageKey: KEYBOARD_SHORTCUTS_STORAGE_KEY,
     autoScrollStorageKey: AUTO_SCROLL_STORAGE_KEY,
+    selectedPanelOutlinesStorageKey: SELECTED_PANEL_OUTLINES_STORAGE_KEY,
     synthesizedPanelTitlesStorageKey: SYNTHESIZED_PANEL_TITLES_STORAGE_KEY,
     setAutoFocusChatOnSessionReady: (enabled) => {
       autoFocusChatOnSessionReady = enabled;
@@ -3941,6 +3956,9 @@ async function main(): Promise<void> {
       for (const entry of chatPanelsById.values()) {
         entry.runtime.chatScrollManager.setAutoScrollEnabled(enabled);
       }
+    },
+    setSelectedPanelOutlinesEnabled: (enabled) => {
+      applySelectedPanelOutlinesEnabled(enabled);
     },
     setSynthesizedPanelTitlesEnabled: (enabled) => {
       synthesizedPanelTitlesEnabled = enabled;

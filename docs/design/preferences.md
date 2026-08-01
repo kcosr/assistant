@@ -127,25 +127,26 @@ Legacy naming note: keys containing `artifact` are retained from the previous ar
 refer to artifacts UI state. They can be renamed in a later cleanup once migration support is
 defined.
 
-| Key                              | Description                         | Structure                                 |
-| -------------------------------- | ----------------------------------- | ----------------------------------------- |
-| `aiAssistantPanelLayout`         | Panel layout state (new)            | `LayoutPersistence`                       |
-| `aiAssistantPanelLayoutVersion`  | Layout schema version (new)         | `number`                                  |
-| `aiAssistantTheme`               | Theme id (auto/light/dark/preset)   | `string`                                  |
-| `aiAssistantUIFont`              | UI font stack                       | `string`                                  |
-| `aiAssistantCodeFont`            | Code/terminal font stack            | `string`                                  |
-| `aiAssistantArtifactSearchState` | Artifacts search state (legacy key) | `{ query: string, filters: TagFilter[] }` |
-| `aiAssistantSidebarViewMode`     | Sidebar view mode (legacy)          | `'sessions' \| 'artifacts'`               |
-| `artifactBrowserViewMode`        | Artifacts browser mode (legacy)     | `'list' \| 'grid'`                        |
-| `artifactBrowserSortMode`        | Artifacts sort mode (legacy)        | `'alpha' \| 'updated'`                    |
-| `sidebarVisible`                 | Sidebar visibility (legacy)         | `'true' \| 'false'`                       |
-| `chatVisible`                    | Chat visibility (legacy)            | `'true' \| 'false'`                       |
-| `inputBarVisible`                | Input bar visibility (legacy)       | `'true' \| 'false'`                       |
-| `layoutMode`                     | Desktop layout mode (legacy)        | `'default' \| 'wide'`                     |
-| `paneOrder`                      | Pane arrangement (legacy)           | `'chat-first' \| 'artifact-first'`        |
-| `mobileShowBoth`                 | Mobile dual-pane mode (legacy)      | `'true' \| 'false'`                       |
-| `sidebarWidth`                   | Sidebar width (legacy)              | `'<number>px'`                            |
-| `aiAssistantArtifactPanelOpen`   | Artifacts panel open (legacy)       | `'true' \| 'false'`                       |
+| Key                                       | Description                          | Structure                                 |
+| ----------------------------------------- | ------------------------------------ | ----------------------------------------- |
+| `aiAssistantPanelLayout`                  | Panel layout state (new)             | `LayoutPersistence`                       |
+| `aiAssistantPanelLayoutVersion`           | Layout schema version (new)          | `number`                                  |
+| `aiAssistantTheme`                        | Theme id (auto/light/dark/preset)    | `string`                                  |
+| `aiAssistantUIFont`                       | UI font stack                        | `string`                                  |
+| `aiAssistantCodeFont`                     | Code/terminal font stack             | `string`                                  |
+| `aiAssistantSelectedPanelOutlinesEnabled` | Show outlines around selected panels | `'true' \| 'false'`                       |
+| `aiAssistantArtifactSearchState`          | Artifacts search state (legacy key)  | `{ query: string, filters: TagFilter[] }` |
+| `aiAssistantSidebarViewMode`              | Sidebar view mode (legacy)           | `'sessions' \| 'artifacts'`               |
+| `artifactBrowserViewMode`                 | Artifacts browser mode (legacy)      | `'list' \| 'grid'`                        |
+| `artifactBrowserSortMode`                 | Artifacts sort mode (legacy)         | `'alpha' \| 'updated'`                    |
+| `sidebarVisible`                          | Sidebar visibility (legacy)          | `'true' \| 'false'`                       |
+| `chatVisible`                             | Chat visibility (legacy)             | `'true' \| 'false'`                       |
+| `inputBarVisible`                         | Input bar visibility (legacy)        | `'true' \| 'false'`                       |
+| `layoutMode`                              | Desktop layout mode (legacy)         | `'default' \| 'wide'`                     |
+| `paneOrder`                               | Pane arrangement (legacy)            | `'chat-first' \| 'artifact-first'`        |
+| `mobileShowBoth`                          | Mobile dual-pane mode (legacy)       | `'true' \| 'false'`                       |
+| `sidebarWidth`                            | Sidebar width (legacy)               | `'<number>px'`                            |
+| `aiAssistantArtifactPanelOpen`            | Artifacts panel open (legacy)        | `'true' \| 'false'`                       |
 
 ### Search State Structure
 
