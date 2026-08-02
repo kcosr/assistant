@@ -53,11 +53,23 @@ export function isListItemSearchResult(result: SearchApiResult): boolean {
   return getListItemSearchRef(result) !== null;
 }
 
-function parseListSelectionItems(value: unknown): ListSelectionItem[] {
+type MoveTargetList = ListSelectionItem & {
+  updatedAtMs: number;
+};
+
+function parseUpdatedAtMs(value: unknown): number {
+  if (typeof value !== 'string' || !value.trim()) {
+    return 0;
+  }
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function parseListSelectionItems(value: unknown): MoveTargetList[] {
   if (!Array.isArray(value)) {
     return [];
   }
-  const items: ListSelectionItem[] = [];
+  const items: MoveTargetList[] = [];
   for (const entry of value) {
     const record = asRecord(entry);
     if (!record) {
@@ -68,9 +80,29 @@ function parseListSelectionItems(value: unknown): ListSelectionItem[] {
     if (!id || !name) {
       continue;
     }
-    items.push({ id, name });
+    items.push({
+      id,
+      name,
+      updatedAtMs: parseUpdatedAtMs(record['updatedAt']),
+    });
   }
   return items;
+}
+
+/** Newest-updated first, then name — matches lists panel "updated" move-target order. */
+function sortMoveTargetsByUpdated(items: MoveTargetList[]): ListSelectionItem[] {
+  return [...items]
+    .sort((a, b) => {
+      if (a.updatedAtMs !== b.updatedAtMs) {
+        return b.updatedAtMs - a.updatedAtMs;
+      }
+      return a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
+    })
+    .map(({ id, name, instanceLabel }) => ({
+      id,
+      name,
+      ...(instanceLabel ? { instanceLabel } : {}),
+    }));
 }
 
 async function callListsOperation<T>(
@@ -120,7 +152,9 @@ export async function promptAndMoveListItemFromSearch(
   let targets: ListSelectionItem[] = [];
   try {
     const rawLists = await callListsOperation<unknown>('list', instanceBody, fetchImpl);
-    targets = parseListSelectionItems(rawLists).filter((list) => list.id !== ref.listId);
+    targets = sortMoveTargetsByUpdated(
+      parseListSelectionItems(rawLists).filter((list) => list.id !== ref.listId),
+    );
   } catch (error) {
     console.error('Failed to load lists for search move:', error);
     options.setStatus('Failed to load lists');
@@ -131,8 +165,6 @@ export async function promptAndMoveListItemFromSearch(
     options.setStatus('No other lists available');
     return false;
   }
-
-  targets.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
 
   const itemLabel = options.result.title.trim() || ref.itemId;
   const selected = await openListSelectionDialog({

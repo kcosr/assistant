@@ -97,6 +97,42 @@ describe('searchListItemMove', () => {
     });
   });
 
+  it('orders destination lists by last updated then name', async () => {
+    const setStatus = vi.fn();
+    const fetchImpl = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        result: [
+          { id: 'groceries', name: 'Groceries', updatedAt: '2026-08-01T10:00:00.000Z' },
+          { id: 'alpha', name: 'Alpha', updatedAt: '2026-07-01T10:00:00.000Z' },
+          { id: 'zeta', name: 'Zeta', updatedAt: '2026-08-02T10:00:00.000Z' },
+          { id: 'beta', name: 'Beta', updatedAt: '2026-08-02T10:00:00.000Z' },
+        ],
+      }),
+    })) as unknown as typeof import('../utils/api').apiFetch;
+
+    const promise = promptAndMoveListItemFromSearch({
+      result: listItemResult(),
+      dialogManager: createDialogManager(),
+      setStatus,
+      fetchImpl,
+    });
+
+    await vi.waitFor(() => {
+      expect(document.querySelector('.list-selection-dialog')).not.toBeNull();
+    });
+
+    const items = Array.from(
+      document.querySelectorAll<HTMLButtonElement>('.list-selection-item'),
+    );
+    // Source groceries excluded; remaining sorted by updatedAt desc, then name
+    expect(items.map((item) => item.dataset['listId'])).toEqual(['beta', 'zeta', 'alpha']);
+
+    document.querySelector<HTMLButtonElement>('.confirm-dialog-button.cancel')?.click();
+    await expect(promise).resolves.toBe(false);
+  });
+
   it('prompts for a list and moves the item via the lists API', async () => {
     const setStatus = vi.fn();
     const fetchImpl = vi.fn(async (url: string) => {
