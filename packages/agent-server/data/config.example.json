@@ -235,32 +235,8 @@
     }
   ],
   "plugins": {
-    "hello": {
-      "enabled": false
-    },
     "chat": {
       "enabled": true
-    },
-    "ws-echo": {
-      "enabled": false
-    },
-    "terminal": {
-      "enabled": false
-    },
-    "files": {
-      "enabled": false
-    },
-    "diff": {
-      "enabled": false,
-      "workspaceRoot": "/var/lib/assistant/coding-workspaces",
-      "instances": [
-        "work",
-        {
-          "id": "oss",
-          "label": "Open Source",
-          "workspaceRoot": "/var/lib/assistant/oss-workspaces"
-        }
-      ]
     },
     "lists": {
       "enabled": true

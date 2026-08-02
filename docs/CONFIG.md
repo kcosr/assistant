@@ -416,13 +416,12 @@ Plugins that support multiple data instances can also define `instances`:
 ```json
 {
   "plugins": {
-    "diff": {
+    "notes": {
       "enabled": true,
-      "workspaceRoot": "/path/to/workspace",
       "instances": [
         "work",
-        { "id": "oss", "label": "Open Source", "workspaceRoot": "/path/to/oss" },
-        { "id": "client", "config": { "workspaceRoot": "/path/to/client" } }
+        { "id": "personal", "label": "Personal" },
+        { "id": "shared", "config": { "label": "Shared" } }
       ]
     }
   }
@@ -454,7 +453,7 @@ Plugins can opt into automatic git snapshots of their data directories using `gi
 
 ##### Execution Mode (Coding Plugins)
 
-Plugins that execute code (like the coding/terminal plugin) can run in `local` or `sidecar` mode.
+Plugins that execute code (like the coding plugin) can run in `local` or `sidecar` mode.
 In `local` mode, `local.workspaceRoot` may use the session-scoped macro `${session.workingDir}` so
 relative file paths and `bash` commands anchor to the session picker’s working directory.
 

@@ -35,7 +35,7 @@ type TabRenderState = {
   isActiveChild: boolean;
 };
 
-const SESSION_BOUND_PANEL_TYPES = new Set(['chat', 'session-info', 'terminal']);
+const SESSION_BOUND_PANEL_TYPES = new Set(['chat']);
 
 function isSessionBoundPanelType(panelType: string): boolean {
   return SESSION_BOUND_PANEL_TYPES.has(panelType);

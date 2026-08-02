@@ -384,9 +384,6 @@ export class KeyboardNavigationController {
         if (!this.canHandlePanelNavigationShortcut(event)) {
           return false;
         }
-        if (this.isTerminalKeyTarget(event)) {
-          return false;
-        }
         const activePanelId = panelWorkspace.getActivePanelId();
         if (!activePanelId) {
           return false;
@@ -409,9 +406,6 @@ export class KeyboardNavigationController {
             return false;
           }
           if (!this.canHandlePanelNavigationShortcut(event)) {
-            return false;
-          }
-          if (this.isTerminalKeyTarget(event)) {
             return false;
           }
           const activePanelId = panelWorkspace.getActivePanelId();
@@ -454,15 +448,7 @@ export class KeyboardNavigationController {
       );
     };
 
-    registerLastPanelShortcut(
-      'focus-last-artifacts',
-      'a',
-      'Focus last used artifacts panel',
-      'artifacts',
-    );
     registerLastPanelShortcut('focus-last-chat', 'c', 'Focus last used chat panel', 'chat');
-    registerLastPanelShortcut('focus-last-diff', 'd', 'Focus last used diff panel', 'diff');
-    registerLastPanelShortcut('focus-last-files', 'f', 'Focus last used files panel', 'files');
     registerLastPanelShortcut('focus-last-lists', 'l', 'Focus last used lists panel', 'lists');
     registerLastPanelShortcut('focus-last-notes', 'n', 'Focus last used notes panel', 'notes');
 
@@ -476,9 +462,6 @@ export class KeyboardNavigationController {
             return false;
           }
           if (!this.canHandlePanelNavigationShortcut(event)) {
-            return false;
-          }
-          if (this.isTerminalKeyTarget(event)) {
             return false;
           }
           const activePanelId = panelWorkspace.getActivePanelId();
@@ -857,15 +840,6 @@ export class KeyboardNavigationController {
     }
     this.startHeaderNavigation();
     return true;
-  }
-
-  private isTerminalKeyTarget(event: KeyboardEvent): boolean {
-    const target = event.target;
-    if (target instanceof HTMLElement && target.closest('.terminal-panel')) {
-      return true;
-    }
-    const active = document.activeElement;
-    return active instanceof HTMLElement && Boolean(active.closest('.terminal-panel'));
   }
 
   private isMediaKeyEvent(event: KeyboardEvent): boolean {

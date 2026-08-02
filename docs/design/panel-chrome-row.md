@@ -20,7 +20,7 @@
 
 - Shared `PanelChromeController` + `InstanceDropdownController` extracted to web client
 - Chrome row in all built-in panels (chat, navigator, sessions sidebar, empty, placeholder),
-  official plugin panels, and example panels (session-info, hello, ws-echo)
+  and official plugin panels
 
 ## Summary
 
@@ -331,7 +331,7 @@ chromeController.setInstances(instances, selectedInstanceId);
 - Controllers live in `packages/web-client/src/controllers/panelChromeController.ts` and
   `packages/web-client/src/controllers/instanceDropdownController.ts`.
 - Chrome row integrated in all built-in panels (chat, navigator, sessions sidebar, empty,
-  placeholder), official plugin panels, and example panels (session-info, hello, ws-echo).
+  placeholder), and official plugin panels.
 - `PanelChromeController` wires move/reorder/menu/close to workspace APIs; legacy overlay controls
   are removed.
 

@@ -63,11 +63,6 @@ Server listens on `http://localhost:3000` (configurable via `PORT`).
 │  ├── POST /api/plugins/panels/operations/list → List open panels │
 │  ├── POST /api/plugins/panels/operations/selected → Get selected panels │
 │  ├── POST /api/plugins/panels/operations/tree → Panel layout tree │
-│  ├── POST /api/plugins/files/operations/workspace-list → List workspace entries │
-│  ├── POST /api/plugins/files/operations/workspace-read → Preview file contents │
-│  ├── POST /api/plugins/diff/operations/status → List diff entries │
-│  ├── POST /api/plugins/diff/operations/workspace-repos → List repositories │
-│  ├── POST /api/plugins/diff/operations/patch → Get diff patch │
 ├──────────────────────────────────────────────────────────────┤
 │  WebSocket Server (/ws)                                       │
 │  └── Session                                                  │
@@ -114,18 +109,11 @@ High-level map of `packages/agent-server/src/` after the backend refactor:
     - `packages/plugins/core/panels/`: panel inventory + event operations
     - `packages/plugins/core/sessions/`: session operations
   - `packages/plugins/official/`: bundled first-party plugins
-    - `packages/plugins/official/diff/`: diff review panel and operations bundle
-    - `packages/plugins/official/files/`: file browser panel and workspace operations
     - `packages/plugins/official/lists/`: lists panel + operations plugin (includes list store helpers)
     - `packages/plugins/official/notes/`: notes panel + operations plugin (includes note store helpers)
     - `packages/plugins/official/time-tracker/`: time tracking panel and operations bundle
     - `packages/plugins/official/links/`: links operations plugin
-    - `packages/plugins/official/terminal/`: terminal panel + operations plugin
     - `packages/plugins/official/url-fetch/`: URL fetch operations plugin
-  - `packages/plugins/examples/`: sample plugins
-    - `packages/plugins/examples/hello/`: sample panel plugin bundle
-    - `packages/plugins/examples/session-info/`: session info panel + operations plugin
-    - `packages/plugins/examples/ws-echo/`: WebSocket echo panel example
 - `src/tts/`: TTS factories and streaming sessions
   - `src/tts/backends.ts`: barrel exports
   - `src/tts/openAiTtsBackend.ts`, `src/tts/elevenLabsTtsBackend.ts`: per-backend implementations
@@ -729,16 +717,6 @@ active timer is persisted server-side across reloads. Most operations accept an 
 | `time_tracker_timer_discard` | Discard the active timer              |
 | `time_tracker_set_filter`    | Set the time-tracker panel date range |
 
-### Session Info Plugin
-
-The session info plugin exposes a debug panel plus tools for writing a session-scoped label. The
-label is stored under `sessionInfo.label` in session attributes and broadcast to connected clients.
-
-| Tool                     | Description                                   |
-| ------------------------ | --------------------------------------------- |
-| `session_info_label_set` | Set the label shown in the Session Info panel |
-| `session_info_label_get` | Read the current Session Info panel label     |
-
 ### Coding Plugin
 
 The coding plugin provides tools for working with the configured workspace root on disk:
@@ -761,127 +739,6 @@ relative coding-tool paths and `bash` commands resolve from the session’s
 
 - `path` (optional): Directory to list. Defaults to the workspace root.
 - `limit` (optional): Maximum number of entries to return. Defaults to `500`. Output is truncated to approximately 50KB.
-
-### Files Plugin
-
-The files plugin provides a read-only file browser panel (`files`) for a configured workspace root.
-
-**Configuration:**
-
-```jsonc
-{
-  "plugins": {
-    "files": { "enabled": true, "workspaceRoot": "/path/to/workspace" },
-  },
-}
-```
-
-`workspaceRoot` must be an absolute path.
-
-**Operations (HTTP):**
-
-- `POST /api/plugins/files/operations/workspace-list`
-  - Body: `{ path?: string }`
-  - Response: `{ root, rootName, rootIsRepo, path, entries, truncated }`
-- `POST /api/plugins/files/operations/workspace-read`
-  - Body: `{ path: string }`
-  - Response: `{ path, content, truncated, binary }`
-
-All file paths are resolved within `workspaceRoot`; traversal outside the root is rejected.
-
-### Diff Plugin
-
-The diff plugin provides a git diff panel (`diff`) for repositories within a configured workspace root. It requires `git` on the server and a valid repository under `plugins.diff.workspaceRoot`.
-
-**Configuration:**
-
-```jsonc
-{
-  "plugins": {
-    "diff": { "enabled": true, "workspaceRoot": "/path/to/workspace" },
-  },
-}
-```
-
-The diff plugin supports instances; object entries can override the base config:
-
-```jsonc
-{
-  "plugins": {
-    "diff": {
-      "enabled": true,
-      "workspaceRoot": "/path/to/workspace",
-      "instances": [
-        "work",
-        { "id": "oss", "label": "Open Source", "workspaceRoot": "/path/to/oss" },
-      ],
-    },
-  },
-}
-```
-
-**Operations (HTTP):**
-
-- `POST /api/plugins/diff/operations/instance_list`
-- `POST /api/plugins/diff/operations/status`
-- `POST /api/plugins/diff/operations/workspace-repos`
-- `POST /api/plugins/diff/operations/patch`
-- `POST /api/plugins/diff/operations/hunk`
-- `POST /api/plugins/diff/operations/show`
-- `POST /api/plugins/diff/operations/comments-list`
-- `POST /api/plugins/diff/operations/comment-add`
-- `POST /api/plugins/diff/operations/comment-update`
-- `POST /api/plugins/diff/operations/comment-delete`
-- `POST /api/plugins/diff/operations/stage`
-- `POST /api/plugins/diff/operations/unstage`
-
-Operations accept an optional `instance_id` (defaults to `default`) to target a specific instance.
-Use `repoPath` to point to a directory or file inside a nested repository within the workspace root.
-
-Diff review comments are stored per instance under `data/plugins/diff/<instance>/diff-comments.json`,
-keyed by repository root and branch. Diff operations return an error for repositories in detached
-HEAD state.
-
-**Panel events:**
-
-Panel events are emitted as `panel_event` messages:
-
-- `panel_update` with `status_changed`, `status_error`, or comment updates.
-- `diff_show` to focus a diff panel on a file/hunk.
-- `diff_hunks_snapshot`, `diff_hunk_selected`, `diff_hunk_cleared` for selection state.
-- `diff_watch_register`, `diff_watch_ping`, `diff_watch_unregister` for auto-refresh.
-
-### Terminal Plugin
-
-The terminal plugin provides a PTY-backed panel (`terminal`) for interactive shells and exposes tools for reading and writing terminal content. Source lives under `packages/plugins/official/terminal/`.
-
-**Configuration:**
-
-```jsonc
-{
-  "plugins": {
-    "terminal": {
-      "enabled": true,
-      "shell": "/bin/bash",
-      "debug": false,
-    },
-  },
-}
-```
-
-**Operations (HTTP):**
-
-- `POST /api/plugins/terminal/operations/write`
-- `POST /api/plugins/terminal/operations/read-screen`
-
-**Tools:**
-
-| Tool                   | Description                                                                  |
-| ---------------------- | ---------------------------------------------------------------------------- |
-| `terminal_write`       | Write text to a terminal panel PTY (optionally target a specific `panelId`). |
-| `terminal_read_screen` | Capture the visible terminal screen from a client panel (requires a client). |
-
-`terminal_read_screen` requires at least one connected client with the target panel open.
 
 ### URL Fetch Plugin
 

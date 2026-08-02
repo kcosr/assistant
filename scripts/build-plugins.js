@@ -465,7 +465,7 @@ async function buildWebBundle(entryPath, outputPath) {
   });
 }
 
-const SERVER_BUNDLE_EXTERNALS = ['node-pty', 'jsdom', '@mozilla/readability', 'better-sqlite3'];
+const SERVER_BUNDLE_EXTERNALS = ['jsdom', '@mozilla/readability', 'better-sqlite3'];
 
 async function buildServerBundle(entryPath, outputPath) {
   await fs.mkdir(path.dirname(outputPath), { recursive: true });

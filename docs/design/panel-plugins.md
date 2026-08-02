@@ -56,7 +56,7 @@
 - Draft v0.50 (living document; expect revisions)
 - Scope: Web + server only. Android is out of scope and assumed removed.
 - Backward compatibility is not required during the refactor; only the final state must be correct.
-- Progress: Chat, artifacts, and sessions panels initialize their runtimes inside the panel modules (sessions still exposes DOM bindings for keyboard navigation). Files, diff, and terminal sample panels are available as plugin bundles. Legacy layout controllers removed; toolbar toggles replaced by panel launcher. Server exposes plugin manifests (`GET /api/plugins`), client loads them into panel context, and `panel_event` is plumbed through shared protocol, panel host (`sendEvent`), and the `panels_event` tool. Session attributes are persisted in the session index, exposed via `POST /api/plugins/sessions/operations/update-attributes`, and surfaced to panels through `getSessionContext`/`subscribeSessionContext`. Capability gating now scopes built-in tools and panel availability; plugin dependencies and per-plugin data directories are enforced; a panel-only artifacts plugin manifest exists.
+- Progress: Chat, artifacts, and sessions panels initialize their runtimes inside the panel modules (sessions still exposes DOM bindings for keyboard navigation). Legacy layout controllers removed; toolbar toggles replaced by panel launcher. Server exposes plugin manifests (`GET /api/plugins`), client loads them into panel context, and `panel_event` is plumbed through shared protocol, panel host (`sendEvent`), and the `panels_event` tool. Session attributes are persisted in the session index, exposed via `POST /api/plugins/sessions/operations/update-attributes`, and surfaced to panels through `getSessionContext`/`subscribeSessionContext`. Capability gating now scopes built-in tools and panel availability; plugin dependencies and per-plugin data directories are enforced; a panel-only artifacts plugin manifest exists.
 
 ## Summary
 
@@ -114,7 +114,6 @@ This design aims to:
 - View tools (`view_set`, `view_get`, `view_create`, etc.) are provided by the artifacts plugin rather than built-in tools.
 - Artifacts panel endpoints (`/api/plugins/artifacts/panel`) and related tools (`artifacts_show`, `artifacts_panel_show`) now live under the artifacts plugin.
 - Artifact item endpoints (`/api/plugins/artifacts/items`, `/list`, `/note`, list item operations) are served by the artifacts plugin HTTP routes.
-- Sample `hello`, `session-info`, `ws-echo`, and `terminal` panel plugin bundles are available under `/plugins/hello/`, `/plugins/session-info/`, `/plugins/ws-echo/`, and `/plugins/terminal/` and can be enabled via `config.json`.
 
 ## Problems with the Current Model
 

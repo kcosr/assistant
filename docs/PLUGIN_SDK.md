@@ -114,9 +114,10 @@ Plugin packages are grouped under:
 
 - `packages/plugins/core/` (required)
 - `packages/plugins/official/` (first-party bundled)
-- `packages/plugins/examples/` (samples)
 
 ## Quick Start (Hello Panel)
+
+The following uses a minimal `hello` panel as a pedagogical example of the plugin API shape. It is illustrative only and is not a shipped plugin package in this repository.
 
 1. **Create a plugin package** under `packages/plugins/<group>/<pluginId>` with `manifest.json`.
 2. **Build a panel bundle** from `packages/plugins/<group>/<pluginId>/web/index.ts`.
@@ -126,34 +127,26 @@ Plugin packages are grouped under:
 
 ### Built-in Panel Bundles
 
-Plugin packages under `packages/plugins/` (for example `core/`, `official/`, `examples/`) are
+Plugin packages under `packages/plugins/` (for example `core/`, `official/`) are
 bundled into `dist/plugins/<pluginId>/public`
 by `npm run build:plugins`. Some core panels are still bundled from
 `packages/web-client/src/plugins/` into `packages/web-client/public/plugins/` by
 `npm run bundle` (which runs `npm run bundle:plugins`).
 
-This repo ships core plugins (`agents`, `sessions`, `panels`), official plugins (`artifacts`,
-`diff`, `files`, `links`, `lists`, `notes`, `questions`, `terminal`, `time-tracker`, `url-fetch`),
-and examples (`hello`, `session-info`).
+This repo ships core plugins (`agents`, `sessions`, `panels`) and official plugins (
+`links`, `lists`, `notes`, `questions`, `time-tracker`, `url-fetch`).
 Enable them with:
 
 ```json
 {
   "plugins": {
-    "diff": { "enabled": true },
     "lists": { "enabled": true },
     "notes": { "enabled": true },
-    "terminal": { "enabled": true },
     "links": { "enabled": true },
-    "url-fetch": { "enabled": true },
-    "hello": { "enabled": true },
-    "session-info": { "enabled": true }
+    "url-fetch": { "enabled": true }
   }
 }
 ```
-
-The `session-info` plugin also registers `session_info_label_set` and `session_info_label_get` tools
-to write and read the session label stored in `sessionInfo.label`.
 
 ## Manifest basics
 
@@ -400,10 +393,10 @@ Exporting skills bundles to Codex:
 npm run build:plugins -- --skills-dir ~/.codex/skills
 ```
 
-Or copy the default bundle manually:
+Or copy a default bundle manually:
 
 ```sh
-cp -R dist/skills/session-info ~/.codex/skills/
+cp -R dist/skills/assistant-notes ~/.codex/skills/
 ```
 
 ## Agent Tool Exposure (Tools vs Skills)

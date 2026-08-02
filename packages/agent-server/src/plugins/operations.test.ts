@@ -94,7 +94,7 @@ describe('plugin operations', () => {
 
   it('normalizes tool names for dashed plugin ids', async () => {
     const manifest: CombinedPluginManifest = {
-      id: 'session-info',
+      id: 'my-plugin',
       version: '0.1.0',
       operations: [
         {
@@ -113,7 +113,7 @@ describe('plugin operations', () => {
       handlers: { label_set: vi.fn().mockResolvedValue({ ok: true }) },
     });
 
-    expect(tools[0]?.name).toBe('session_info_label_set');
+    expect(tools[0]?.name).toBe('my_plugin_label_set');
   });
 
   it('respects manifest surface toggles', async () => {

@@ -96,12 +96,6 @@ describe('time tracker range picker', () => {
         json: async () => ({ ok: true, result }),
       });
 
-      if (plugin === 'artifacts' && operation === 'instance_list') {
-        return json([{ id: 'default', label: 'Default' }]);
-      }
-      if (plugin === 'artifacts' && operation === 'upload') {
-        return json({ id: 'artifact-1', filename: 'time-report.xlsx' });
-      }
       if (plugin !== 'time-tracker') {
         return json(null);
       }
@@ -484,9 +478,17 @@ describe('time tracker range picker', () => {
       showSaveDialog,
       saveArtifactFile,
     };
-    const fetchSpy = vi
-      .spyOn(globalThis, 'fetch')
-      .mockResolvedValue(new Response(new Uint8Array([1, 2, 3]), { status: 200 }));
+    // jsdom does not implement blob object URLs by default.
+    Object.defineProperty(URL, 'createObjectURL', {
+      value: vi.fn().mockReturnValue('blob:http://localhost/export'),
+      configurable: true,
+      writable: true,
+    });
+    Object.defineProperty(URL, 'revokeObjectURL', {
+      value: vi.fn(),
+      configurable: true,
+      writable: true,
+    });
     mockEntries = [
       makeEntry({
         id: 'entry-1',
@@ -516,6 +518,7 @@ describe('time tracker range picker', () => {
       );
       expect(link).not.toBeNull();
       expect(link?.download).toBe('time-report.xlsx');
+      expect(link?.href).toBe('blob:http://localhost/export');
       expect(link?.target).toBe('');
 
       const dispatched = link?.dispatchEvent(
@@ -526,10 +529,8 @@ describe('time tracker range picker', () => {
 
       expect(dispatched).toBe(false);
       expect(showSaveDialog).toHaveBeenCalledWith('time-report.xlsx');
-      expect(fetchSpy).toHaveBeenCalledWith(
-        'http://localhost/api/plugins/artifacts/files/default/artifact-1?download=1',
-      );
-      expect(saveArtifactFile).toHaveBeenCalledWith('/tmp/time-report.xlsx', 'AQID');
+      // export_xlsx mock returns base64("test") = "dGVzdA=="
+      expect(saveArtifactFile).toHaveBeenCalledWith('/tmp/time-report.xlsx', 'dGVzdA==');
     } finally {
       handle.unmount();
     }

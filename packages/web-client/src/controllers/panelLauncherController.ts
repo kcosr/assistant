@@ -25,7 +25,7 @@ type PanelToggle = {
 };
 
 const PANEL_TYPE_ORDER = ['sessions', 'navigator', 'empty', 'chat', 'lists', 'notes'];
-const SESSION_BOUND_PANEL_TYPES = new Set(['chat', 'session-info', 'terminal']);
+const SESSION_BOUND_PANEL_TYPES = new Set(['chat']);
 
 function isSessionBoundPanelType(panelType: string): boolean {
   return SESSION_BOUND_PANEL_TYPES.has(panelType);

@@ -69,23 +69,13 @@ This index maps the repository documentation into predictable categories so it i
 
 ### Official Plugins
 
-- [Artifacts Plugin](../packages/plugins/official/artifacts/README.md)
-- [Diff Plugin](../packages/plugins/official/diff/README.md)
-- [Files Plugin](../packages/plugins/official/files/README.md)
 - [Links Plugin](../packages/plugins/official/links/README.md)
 - [Lists Plugin](../packages/plugins/official/lists/README.md)
 - [Notes Plugin](../packages/plugins/official/notes/README.md)
 - [Questions Plugin](../packages/plugins/official/questions/README.md)
-- [Terminal Plugin](../packages/plugins/official/terminal/README.md)
 - [Time Tracker Plugin](../packages/plugins/official/time-tracker/README.md)
 - [Time Tracker Spec](../packages/plugins/official/time-tracker/SPEC.md)
 - [URL Fetch Plugin](../packages/plugins/official/url-fetch/README.md)
-
-### Example Plugins
-
-- [Hello Plugin](../packages/plugins/examples/hello/README.md)
-- [Session Info Plugin](../packages/plugins/examples/session-info/README.md)
-- [WS Echo Plugin](../packages/plugins/examples/ws-echo/README.md)
 
 ## Process and Policies
 

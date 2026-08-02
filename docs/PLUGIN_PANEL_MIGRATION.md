@@ -81,11 +81,5 @@ Already migrated to TS sources:
 Moved to packaged plugin sources:
 
 - `packages/plugins/core/chat/web/index.ts` -> `dist/plugins/chat/public/bundle.js`
-- `packages/plugins/official/diff/web/index.ts` -> `dist/plugins/diff/public/bundle.js`
-- `packages/plugins/official/files/web/index.ts` -> `dist/plugins/files/public/bundle.js`
 - `packages/plugins/official/lists/web/index.ts` -> `dist/plugins/lists/public/bundle.js`
 - `packages/plugins/official/notes/web/index.ts` -> `dist/plugins/notes/public/bundle.js`
-- `packages/plugins/official/terminal/web/index.ts` -> `dist/plugins/terminal/public/bundle.js`
-- `packages/plugins/examples/hello/web/index.ts` -> `dist/plugins/hello/public/bundle.js`
-- `packages/plugins/examples/session-info/web/index.ts` -> `dist/plugins/session-info/public/bundle.js`
-- `packages/plugins/examples/ws-echo/web/index.ts` -> `dist/plugins/ws-echo/public/bundle.js`

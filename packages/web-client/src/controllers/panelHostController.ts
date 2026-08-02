@@ -72,32 +72,8 @@ interface PanelEntry {
 }
 
 const EMPTY_HANDLE: PanelHandle = { unmount: () => undefined };
-const SESSION_BOUND_PANEL_TYPES = new Set(['chat', 'session-info', 'terminal']);
+const SESSION_BOUND_PANEL_TYPES = new Set(['chat']);
 const PANEL_EVENT_DEBUG_KEYS = ['aiAssistantPanelEventDebug', 'aiAssistantWsDebug'];
-
-const isDiffDebugEnabled = (): boolean => {
-  if (typeof window === 'undefined') {
-    return false;
-  }
-  try {
-    const stored = window.localStorage?.getItem('diff.debug');
-    return stored === '1' || stored === 'true';
-  } catch {
-    return false;
-  }
-};
-
-const diffDebugLog = (...args: unknown[]) => {
-  if (isDiffDebugEnabled()) {
-    console.log('[diff]', ...args);
-  }
-};
-
-const diffDebugWarn = (...args: unknown[]) => {
-  if (isDiffDebugEnabled()) {
-    console.warn('[diff]', ...args);
-  }
-};
 
 const isPanelEventDebugEnabled = (): boolean => {
   if (typeof window === 'undefined') {
@@ -343,15 +319,6 @@ export class PanelHostController {
         payloadType,
       });
     }
-    if (event.panelType === 'diff' && isDiffDebugEnabled()) {
-      diffDebugLog('panel_event_received', {
-        panelId: event.panelId,
-        panelType: event.panelType,
-        sessionId: event.sessionId ?? null,
-        payloadType,
-        action: payload?.action,
-      });
-    }
     if (event.panelId === '*') {
       const rawSessionId = typeof event.sessionId === 'string' ? event.sessionId.trim() : '';
       const sessionId = rawSessionId || null;
@@ -388,16 +355,6 @@ export class PanelHostController {
           panelId: event.panelId,
           panelType: event.panelType,
           payloadType,
-          availablePanels,
-        });
-      }
-      if (event.panelType === 'diff' && isDiffDebugEnabled()) {
-        const availablePanels = Array.from(this.entries.values())
-          .filter((candidate) => candidate.panelType === 'diff')
-          .map((candidate) => candidate.panelId);
-        diffDebugWarn('panel_event dropped', {
-          panelId: event.panelId,
-          panelType: event.panelType,
           availablePanels,
         });
       }

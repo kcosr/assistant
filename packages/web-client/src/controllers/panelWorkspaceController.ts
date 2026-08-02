@@ -41,7 +41,7 @@ import {
 type PanelSessionScope = 'required' | 'optional' | 'global';
 type PanelFocusSource = 'content' | 'chrome' | 'program';
 
-const SESSION_BOUND_PANEL_TYPES = new Set(['chat', 'session-info', 'terminal']);
+const SESSION_BOUND_PANEL_TYPES = new Set(['chat']);
 
 function isSessionBoundPanelType(panelType: string): boolean {
   return SESSION_BOUND_PANEL_TYPES.has(panelType);
@@ -1658,7 +1658,7 @@ export class PanelWorkspaceController {
     const positions = new Map<HTMLElement, number>();
     for (const container of this.panelElements.values()) {
       const scrollables = container.querySelectorAll<HTMLElement>(
-        '.chat-log, .terminal-panel-body',
+        '.chat-log',
       );
       for (const element of scrollables) {
         positions.set(element, element.scrollTop);
