@@ -56,6 +56,7 @@ import {
   type SearchApiResponse,
   type SearchableScope,
 } from './controllers/commandPaletteController';
+import { promptAndMoveListItemFromSearch } from './controllers/searchListItemMove';
 import { PanelWorkspaceController } from './controllers/panelWorkspaceController';
 import {
   closeShareModal,
@@ -4585,6 +4586,15 @@ async function main(): Promise<void> {
   };
 
   const handleSearchLaunch = (result: SearchApiResult, action: LaunchAction): boolean => {
+    if (action.type === 'move-to-list') {
+      void promptAndMoveListItemFromSearch({
+        result,
+        dialogManager,
+        setStatus: (text) => setStatus(statusEl, text),
+      });
+      return true;
+    }
+
     if (!panelWorkspace) {
       return false;
     }

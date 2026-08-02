@@ -1,3 +1,5 @@
+import { isListItemSearchResult } from './searchListItemMove';
+
 export interface SearchableScope {
   pluginId: string;
   label: string;
@@ -39,7 +41,8 @@ export type LaunchAction =
   | { type: 'modal' }
   | { type: 'workspace' }
   | { type: 'pin' }
-  | { type: 'replace' };
+  | { type: 'replace' }
+  | { type: 'move-to-list' };
 
 export interface CommandPaletteControllerOptions {
   overlay: HTMLElement | null;
@@ -255,6 +258,11 @@ export class CommandPaletteController {
       }
     });
     document.addEventListener('keydown', this.handleKeyDown);
+  }
+
+  detach(): void {
+    this.close();
+    document.removeEventListener('keydown', this.handleKeyDown);
   }
 
   open(): void {
@@ -1385,12 +1393,20 @@ export class CommandPaletteController {
       return;
     }
     const hasSelection = Boolean(this.options.getSelectedPanelId());
-    const entries = MAIN_MENU_ITEMS.map((item) => ({
+    const activeResult = this.getActiveResults()[this.resultIndex];
+    const entries: MenuEntry[] = MAIN_MENU_ITEMS.map((item) => ({
       id: item.id,
       label: item.label,
       disabled: Boolean(item.requiresSelection && !hasSelection),
       onSelect: () => this.executeAction(item.action),
     }));
+    if (activeResult && isListItemSearchResult(activeResult)) {
+      entries.push({
+        id: 'move-to-list',
+        label: 'Move to list',
+        onSelect: () => this.executeAction({ type: 'move-to-list' }),
+      });
+    }
     let index = entries.findIndex((entry) => !entry.disabled);
     if (index < 0) {
       index = 0;

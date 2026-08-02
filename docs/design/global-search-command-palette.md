@@ -268,6 +268,7 @@ Default launch behavior:
 │   │   Open workspace    │                   │
 │   │   Pin to header     │                   │
 │   │   Replace           │                   │
+│   │   Move to list      │ ← list items only │
 │   └─────────────────────┘                   │
 └─────────────────────────────────────────────┘
 ```
@@ -296,6 +297,7 @@ Default launch behavior:
 | **Open workspace** | Add new panel docked to right of workspace | No |
 | **Pin to header** | Open result as a pinned panel in the header dock | No |
 | **Replace** | Replace selected panel with new panel showing result | Yes |
+| **Move to list** | List-item results only: close the palette, open the searchable list picker, and move the item via the lists API without opening the item | No |
 
 ---
 

@@ -8,6 +8,7 @@
 
 ### Added
 
+- Added Move to list on global search list-item results so items can be reassigned from the command palette without opening them first. ([#130](https://github.com/kcosr/assistant/pull/130))
 - Added a Herdr-inspired dark theme with coordinated prominent-action styling and a persistent preference for showing or hiding selected panel outlines. ([#129](https://github.com/kcosr/assistant/pull/129))
 - Added configurable native Pi SDK tool approvals that block selected exact-name or glob-matched tools until an interactive client approves or denies them, with fail-closed handling and composer-level approval controls. ([#128](https://github.com/kcosr/assistant/pull/128))
 - Added one-shot scheduled reminders with scheduled-session visibility, durable delivery, notification playback, and retry handling. ([#127](https://github.com/kcosr/assistant/pull/127))

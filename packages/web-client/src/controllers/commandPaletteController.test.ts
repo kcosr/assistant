@@ -7,18 +7,27 @@ import {
 } from './commandPaletteController';
 
 describe('CommandPaletteController', () => {
+  let activeController: CommandPaletteController | null = null;
+
   beforeEach(() => {
     document.body.innerHTML = '';
     vi.useFakeTimers();
     window.localStorage.clear();
+    activeController = null;
   });
 
   afterEach(() => {
+    activeController?.detach();
+    activeController = null;
     vi.useRealTimers();
     vi.restoreAllMocks();
   });
 
-  const buildController = () => {
+  const buildController = (options?: {
+    getSelectedPanelId?: () => string | null;
+    onLaunch?: CommandPaletteControllerOptions['onLaunch'];
+  }) => {
+    activeController?.detach();
     const overlay = document.createElement('div');
     const palette = document.createElement('div');
     const input = document.createElement('input');
@@ -39,6 +48,7 @@ describe('CommandPaletteController', () => {
       results: [],
     }));
     const resolveIcon = vi.fn(() => '<svg></svg>');
+    const onLaunch = options?.onLaunch ?? vi.fn();
 
     const controller = new CommandPaletteController({
       overlay,
@@ -51,18 +61,20 @@ describe('CommandPaletteController', () => {
       triggerButton,
       fetchScopes,
       fetchResults,
-      getSelectedPanelId: () => null,
-      onLaunch: vi.fn(),
+      getSelectedPanelId: options?.getSelectedPanelId ?? (() => null),
+      onLaunch,
       resolveIcon,
     });
 
     controller.attach();
+    activeController = controller;
 
     return {
       controller,
       input,
       fetchResults,
       resolveIcon,
+      onLaunch,
     };
   };
 
@@ -225,5 +237,80 @@ describe('CommandPaletteController', () => {
       document.querySelectorAll<HTMLElement>('.command-palette-group'),
     ).map((el) => el.textContent);
     expect(headers).toEqual(['List items', 'Lists', 'Notes']);
+  });
+
+  it('includes Move to list in the action menu for list item results', async () => {
+    const onLaunch = vi.fn(() => true);
+    const { controller, input, fetchResults } = buildController({ onLaunch });
+    const result: SearchApiResult = {
+      pluginId: 'lists',
+      instanceId: 'default',
+      id: 'item-1',
+      title: 'Buy milk',
+      launch: {
+        panelType: 'lists',
+        payload: {
+          type: 'lists_show',
+          listId: 'tasks',
+          itemId: 'item-1',
+        },
+      },
+    };
+    fetchResults.mockResolvedValueOnce({ results: [result] });
+
+    controller.open();
+    input.value = 'milk';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    await vi.runAllTimersAsync();
+
+    input.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true, cancelable: true }),
+    );
+
+    const labels = Array.from(
+      document.querySelectorAll<HTMLButtonElement>('.command-palette-menu-item'),
+    ).map((button) => button.textContent);
+    expect(labels).toContain('Move to list');
+    expect(labels).toContain('Open modal');
+
+    const moveButton = Array.from(
+      document.querySelectorAll<HTMLButtonElement>('.command-palette-menu-item'),
+    ).find((button) => button.textContent === 'Move to list');
+    moveButton?.click();
+
+    expect(onLaunch).toHaveBeenCalledWith(result, { type: 'move-to-list' });
+  });
+
+  it('omits Move to list for non list-item results', async () => {
+    const { controller, input, fetchResults } = buildController();
+    fetchResults.mockResolvedValueOnce({
+      results: [
+        {
+          pluginId: 'lists',
+          instanceId: 'default',
+          id: 'list:tasks',
+          title: 'Tasks',
+          launch: {
+            panelType: 'lists',
+            payload: { type: 'lists_show', listId: 'tasks' },
+          },
+        },
+      ],
+    });
+
+    controller.open();
+    input.value = 'tasks';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    await vi.runAllTimersAsync();
+
+    input.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true, cancelable: true }),
+    );
+
+    const labels = Array.from(
+      document.querySelectorAll<HTMLButtonElement>('.command-palette-menu-item'),
+    ).map((button) => button.textContent);
+    expect(labels).toContain('Open modal');
+    expect(labels).not.toContain('Move to list');
   });
 });
