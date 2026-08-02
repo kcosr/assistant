@@ -3,8 +3,7 @@
 > **Status: Planned** — This feature is not yet implemented.
 
 > Note: This document assumes a dedicated calendar panel plugin in the panel layout architecture.
-> The body still uses legacy artifact event naming; treat "artifact" as the underlying tool/event
-> metadata name. HTTP routes should live under `/api/plugins/artifacts/...` when implementing.
+> Calendar routes and events are owned by the calendar plugin.
 
 ## Table of Contents
 
@@ -18,7 +17,7 @@
 - [Client UI](#client-ui)
 - [Plugin Configuration](#plugin-configuration)
 - [Agent Configuration](#agent-configuration)
-- [Artifact Registry](#artifact-registry)
+- [Calendar Registry](#calendar-registry)
 - [Implementation Plan](#implementation-plan)
 - [Protocol Changes](#protocol-changes)
 - [Testing](#testing)
@@ -27,7 +26,7 @@
 
 ## Overview
 
-The calendar plugin provides calendar event management capabilities for both agents and users. Events are stored in a single calendar with tag-based filtering (similar to how lists work). The plugin exposes MCP tools for the agent and a REST API for client interactions, with real-time updates via WebSocket panel events (`artifacts_*` messages in the API layer).
+The calendar plugin provides calendar event management capabilities for both agents and users. Events are stored in a single calendar with tag-based filtering (similar to how lists work). The plugin exposes MCP tools for the agent and a REST API for client interactions, with real-time updates via calendar-specific WebSocket panel events.
 
 This design follows the established patterns from the lists plugin and adheres to the [Panel Layout UI Specification](panel-layout-ui-spec.md).
 
@@ -127,8 +126,7 @@ Create a new calendar event.
       tags: { type: 'array', items: { type: 'string' }, description: 'Tags for organizing events' }
     },
     required: ['title', 'startTime']
-  },
-  artifact: { type: 'calendar', idParam: null }  // No specific ID - calendar is singleton
+  }
 }
 ```
 
@@ -146,8 +144,7 @@ Get a specific event by ID.
       id: { type: 'string', description: 'Event ID' }
     },
     required: ['id']
-  },
-  artifact: { type: 'calendar', idParam: null, readOnly: true }
+  }
 }
 ```
 
@@ -167,8 +164,7 @@ Display the calendar in the calendar panel.
       tags: { type: 'array', items: { type: 'string' }, description: 'Filter events by tags' }
     },
     required: []
-  },
-  artifact: { type: 'calendar', idParam: null }
+  }
 }
 ```
 
@@ -190,8 +186,7 @@ List events within a date range.
       limit: { type: 'number', description: 'Maximum events to return (default: 50)' }
     },
     required: []
-  },
-  artifact: { type: 'calendar', idParam: null, readOnly: true }
+  }
 }
 ```
 
@@ -240,8 +235,7 @@ Update an existing event.
       tags: { type: 'array', items: { type: 'string' }, description: 'New tags (replaces existing)' }
     },
     required: ['id']
-  },
-  artifact: { type: 'calendar', idParam: null }
+  }
 }
 ```
 
@@ -259,8 +253,7 @@ Delete an event.
       id: { type: 'string', description: 'Event ID' }
     },
     required: ['id']
-  },
-  artifact: { type: 'calendar', idParam: null }
+  }
 }
 ```
 
@@ -282,7 +275,7 @@ Get events currently selected in the UI.
 
 ## REST API
 
-### GET /api/plugins/artifacts/calendar
+### GET /api/plugins/calendar
 
 Get calendar data for display in the calendar panel.
 
@@ -303,7 +296,7 @@ Response:
 }
 ```
 
-### POST /api/plugins/artifacts/calendar/events
+### POST /api/plugins/calendar/events
 
 Create a new event (for client-side modal).
 
@@ -311,7 +304,7 @@ Request body: Same as `calendar_create` tool parameters.
 
 Response: Created `CalendarEvent` object.
 
-### PATCH /api/plugins/artifacts/calendar/events/:id
+### PATCH /api/plugins/calendar/events/:id
 
 Update an event (for client-side modal or inline editing).
 
@@ -319,7 +312,7 @@ Request body: Partial `CalendarEvent` fields.
 
 Response: Updated `CalendarEvent` object.
 
-### DELETE /api/plugins/artifacts/calendar/events/:id
+### DELETE /api/plugins/calendar/events/:id
 
 Delete an event.
 
@@ -327,21 +320,21 @@ Response: `{ "ok": true }`
 
 ## WebSocket Integration
 
-### Artifact Messages
+### Calendar Messages
 
-The calendar uses the existing artifact protocol (legacy item events):
+The calendar uses calendar-scoped panel events:
 
 ```typescript
 // Server sends when calendar becomes active
 {
-  type: 'artifacts_active',
-  artifact: { type: 'calendar', id: 'default' }
+  type: 'calendar_active',
+  calendar: { id: 'default' }
 }
 
 // Server sends when events change
 {
-  type: 'artifacts_updated',
-  artifact: { type: 'calendar', id: 'default' },
+  type: 'calendar_updated',
+  calendar: { id: 'default' },
   change: {
     action: 'event_added' | 'event_updated' | 'event_removed',
     itemId: '<event-id>'  // The affected event
@@ -399,7 +392,7 @@ The calendar appears in its own panel following the standard structure:
 
 **Content Header (within panel body):**
 
-- Title: "Calendar" (h2, artifact-section-title class; legacy CSS naming)
+- Title: "Calendar" (h2, `calendar-section-title` class)
 - Button group (right-aligned):
   - Clear selection button (hidden when no selection, shows "Clear (N)")
   - Add Event button (+ icon)
@@ -409,7 +402,7 @@ The calendar appears in its own panel following the standard structure:
 
 ### List View (Default)
 
-A chronological table of events, following the list item table structure (legacy artifact classes):
+A chronological table of events, following the shared list-item table structure:
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -534,7 +527,7 @@ Modal dialog for creating/editing events, following the confirm-dialog pattern f
 
 - Uses `.confirm-dialog-overlay` and `.confirm-dialog` classes (existing pattern)
 - Closes on Escape key, overlay click, or Cancel button
-- Save button POSTs to `/api/plugins/artifacts/calendar/events` (create) or PATCHes (edit)
+- Save button POSTs to `/api/plugins/calendar/events` (create) or PATCHes (edit)
 - Optimistic update with revert on error
 
 **Form Fields:**
@@ -605,7 +598,7 @@ Following the list scroll and highlight behavior from UI_SPEC:
 
 **Agent Change Highlighting:**
 
-1. Server sends `artifacts_updated` with `change: { action: 'event_added', itemId }`
+1. Server sends `calendar_updated` with `change: { action: 'event_added', itemId }`
 2. Client scrolls to changed event (if not already visible)
 3. Changed row shows highlight animation (2 blinks, 0.5s, 1px accent outline)
 4. Animation waits for scroll to complete (uses `scrollend` event with fallback)
@@ -614,8 +607,8 @@ Following the list scroll and highlight behavior from UI_SPEC:
 
 - `recentUserEventUpdates` Set tracks user-modified events
 - Events cleared from set after 5 seconds
-- If `artifacts_updated` for user-changed event: preserve scroll, no highlight
-- If `artifacts_updated` for agent-changed event: scroll to it and highlight
+- If `calendar_updated` for user-changed event: preserve scroll, no highlight
+- If `calendar_updated` for agent-changed event: scroll to it and highlight
 
 ### Icons
 
@@ -623,7 +616,7 @@ Following the SVG-based icon pattern from UI_SPEC (Lucide style, no emoji):
 
 | Icon         | Usage                   | Description                      |
 | ------------ | ----------------------- | -------------------------------- |
-| Calendar     | Artifact type indicator | Calendar icon (grid with header) |
+| Calendar     | Calendar type indicator | Calendar icon (grid with header) |
 | Plus         | Add Event button        | Plus sign                        |
 | ChevronDown  | View dropdown           | Down arrow                       |
 | GripVertical | Drag handle             | Vertical dots (⋮⋮)               |
@@ -689,9 +682,9 @@ Example calendar agent:
 }
 ```
 
-## Artifact Registry
+## Calendar Registry
 
-Register calendar as an artifact item type (artifact API type):
+Register calendar data with the calendar plugin:
 
 ```typescript
 // In calendar plugin
@@ -699,7 +692,7 @@ export function createCalendarPlugin(): ToolPlugin {
   return {
     name: 'calendar',
     tools: createToolDefinitions(),
-    artifacts: {
+    calendar: {
       types: ['calendar'],
       async get(type: string, id: string): Promise<unknown> {
         if (type !== 'calendar') return undefined;
@@ -713,7 +706,7 @@ export function createCalendarPlugin(): ToolPlugin {
         // Single calendar, always available
         return [{ id: 'default', name: 'Calendar' }];
       },
-      async updateItem(type, artifactId, itemId, updates): Promise<unknown> {
+      async updateEvent(type, itemId, updates): Promise<unknown> {
         if (type !== 'calendar') return undefined;
         const store = requireStore();
         return store.updateEvent({ id: itemId, ...updates });
@@ -772,24 +765,19 @@ export function createCalendarPlugin(): ToolPlugin {
 
 ## Protocol Changes
 
-### ArtifactChange Extension
+### CalendarChange Extension
 
 Add new actions for calendar events:
 
 ```typescript
 // In packages/shared/src/protocol.ts
-export const ArtifactChangeSchema = z.object({
+export const CalendarChangeSchema = z.object({
   action: z.enum([
-    'item_added',
-    'item_updated',
-    'item_removed', // Existing
-    'list_updated',
-    'note_updated', // Existing
     'event_added',
     'event_updated',
-    'event_removed', // New for calendar
+    'event_removed',
   ]),
-  itemId: z.string().optional(),
+  eventId: z.string().optional(),
 });
 ```
 
@@ -806,7 +794,7 @@ export const ArtifactChangeSchema = z.object({
 
 - Tool execution
 - REST API endpoints
-- WebSocket item updates (artifact\_\* messages)
+- WebSocket calendar updates (`calendar_*` messages)
 
 ### E2E Tests
 
@@ -832,7 +820,7 @@ The calendar plugin follows established patterns from the lists and notes plugin
 - JSON file storage
 - Plugin tools for agent access
 - REST API for client CRUD
-- WebSocket item updates (artifact\_\* messages)
+- WebSocket calendar updates (`calendar_*` messages)
 - Calendar panel rendering with selection
 
 Key differences from lists:

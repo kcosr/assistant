@@ -222,7 +222,7 @@ Panel plugins may register additional shortcuts scoped to the focused panel.
 
 - Lists and notes are separate plugin panels with their own browsing and editing surfaces.
 - Each panel owns its local search, filter, and selection state.
-- Neither panel relies on a removed shared Artifacts panel or global layout state.
+- Neither panel relies on a shared panel or global layout state.
 
 ## Accessibility
 

@@ -1,9 +1,5 @@
 # External Agents (Async Connector) — Design
 
-> Note: References to artifact content/context reflect the legacy model. In the panel plugin
-> architecture, these map to artifact item context providers. Item HTTP routes now live under
-> `/api/plugins/artifacts/*`.
-
 ## Table of Contents
 
 - [Overview](#overview)
@@ -51,7 +47,7 @@ This enables integrating an out-of-process agent system while keeping the AI Ass
 
 ## Non-goals (v1)
 
-- No artifact item content attachment or tool forwarding (can be added later).
+- No panel item content attachment or tool forwarding (can be added later).
 - No auth/ACLs for the inbound injection endpoint (internal network assumption for now).
 - No streaming assistant output back to the browser.
 
@@ -282,14 +278,14 @@ No create-session URL is required in v1.
 
 ## Future Extensions
 
-### Send active item pointer/content (legacy artifact naming)
+### Send active item pointer/content
 
 Later we may add an opt-in UI toggle: “Send active item content with messages”.
 
 If enabled, the forwarded payload could include:
 
-- `activeArtifact: { type, id, name? }`
-- `activeArtifactContent: <full artifact JSON>` (legacy name; for example, full note content)
+- `activeItem: { type, id, name? }`
+- `activeItemContent: <full item JSON>`
 
 This would require defining:
 

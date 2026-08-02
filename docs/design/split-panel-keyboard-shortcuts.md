@@ -22,7 +22,7 @@ Introduce a keyboard shortcut (`Ctrl + S`) to split the active panel by selectin
 - Register `Ctrl + S` in `registerShortcuts()` and remove the existing sessions focus binding.
 - Reuse `computeHighlightRect()` and overlay styling from panel drag, or add a small helper in `PanelWorkspaceController` to create/manage a split overlay for keyboard usage.
 - On confirm, call `panelWorkspace.openPanel('empty', { placement: { region }, targetPanelId, focus: true })`.
-- Ensure the mode is gated by `isKeyboardShortcutsEnabled`, no open dialogs, and not inside terminal/editor inputs.
+- Ensure the mode is gated by `isKeyboardShortcutsEnabled`, no open dialogs, and not inside code-editor inputs.
 
 ## Files to update
 - `packages/web-client/src/controllers/keyboardNavigationController.ts`

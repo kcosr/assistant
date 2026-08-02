@@ -1,7 +1,5 @@
 # Agents Design Document
 
-> Note: Sections referencing the artifacts panel assume the panel plugin architecture (the panel is owned by the artifacts plugin, not core layout).
-
 ## Table of Contents
 
 - [Overview](#overview)
@@ -426,7 +424,7 @@ The server constructs a full system prompt for every chat run. This prompt combi
 - A **base system prompt** (global or agent-specific instructions)
 - A list of **available tools**
 - Optional **CLI skills** (when `toolExposure` enables skills)
-- Optional **artifacts sections** (available artifact items, message context instructions, artifacts panel state)
+- Optional **panel context** section describing the selected panel and its current selection
 - Optional **agent discovery** section (other agents you can delegate to or switch to)
 
 ### Base System Prompt
@@ -440,49 +438,37 @@ When a chat run starts, the server chooses the base prompt:
 
 All other sections described below are appended after this base prompt.
 
-### Tool and Artifacts Sections
+### Tool and Panel Context Sections
 
 If tools are available for the run, the server appends:
 
 - **Available tools**: A list of non-`system_` tools with name and short description.
 - **Available CLI skills**: When `toolExposure` is `"skills"` or `"mixed"`, the prompt lists the
   plugin skills that should be used via `bash` (each entry includes a SKILL.md path and CLI path).
-- **Available artifact items**: When artifacts tools (lists/notes/views) are present and a list of items is provided, the server groups them by type and lists each item by name and id.
-
 These sections are informational only; tool scoping is enforced separately as described above.
 
 ### Message Context Section
 
-When artifacts tools are available, the system prompt also includes a **Message Context** section that describes the XML context line the client prepends to each user message:
+When tools or CLI skills are available, the system prompt also includes a **Message Context** section that describes the XML context line the client prepends to each user message:
 
-- Format: `<context panel-id="<panel-id>" panel-type="<panel-type>" panel-title="<panel-title>" type="<type>" id="<id>" name="<name>" selection="<item-ids>" mode="<mode>" />` or, when viewing a View, `<context panel-id="<panel-id>" panel-type="<panel-type>" panel-title="<panel-title>" view-name="<view-name>" view-query="<view-query>" selection="<item-ids>" mode="<mode>" />`
-- Semantics:
-  - `panel-id` / `panel-type` / `panel-title` describe the currently selected panel in the UI.
-  - `type` / `id` / `name` describe the active artifact item, if any (when not in View mode).
-  - `view-name` / `view-query` describe the active View when the artifacts panel is in View mode.
-  - `selection` is a comma-separated list of selected item IDs, if any.
-  - `mode` communicates response style hints (for example `brief` for concise outputs).
-  - If no item or view is active, only the panel attributes are present.
+- Format: `<context panel-id="<panel-id>" panel-type="<panel-type>" panel-title="<panel-title>" window-id="<window-id>" pane-id="<pane-id>" pane-tab-count="<pane-tab-count>" pane-tab-panel-ids="<pane-tab-panel-ids>" />`
+- `panel-id`, `panel-type`, and `panel-title` identify the selected panel.
+- `window-id` identifies the active app window for multi-window panel operations.
+- `pane-id`, `pane-tab-count`, and `pane-tab-panel-ids` identify the active pane and its tabs.
+- Panel plugins may add selection metadata, including `selection` and `selection-titles`.
+- `mode="brief"` indicates that the user prefers a concise response.
 
 Important design points:
 
-- The **client** is responsible for building and prepending this context line on every user message, typically via the artifacts panel's context provider. The server does not synthesize or rewrite it.
+- The **client** is responsible for building and prepending this context line on every user message. The server does not synthesize or rewrite it.
 - The same context line is stored in the transcript, so replayed conversations reuse identical user messages (good for prompt caching).
-- Selection data comes directly from the UI (e.g., selected list items), which would otherwise require extra server state.
+- Selection data comes directly from the UI, which avoids duplicating transient selection state on the server.
 
 The UI behavior and exact parsing rules for this context line are documented in `docs/UI_SPEC.md` under **Message Context**.
 
-### Artifacts Panels Section
-
-When artifacts tools are available, the system prompt may include an **Artifacts Panels** section listing the open artifacts panels:
-
-- Each entry shows the panel id and (when available) the active artifact summary (type/id/name).
-- The data comes from the panel inventory snapshot pushed by the client (`panel_event` payload `panel_inventory`) and uses per-panel context emitted by the artifacts panel.
-- If no UI is connected (headless agents), the agent can call `panels_list` / `panels_selected` with `includeContext: true` to locate the target panel.
-
 ### Available Agents Section
 
-After the artifacts sections, the system prompt may include an **Available agents** section:
+After the tool and context sections, the system prompt may include an **Available agents** section:
 
 - Lists other agents that are visible and allowed from the current agent (respecting `agentAllowlist`/`agentDenylist`).
 - Explains how to use `agents_message` to collaborate with these agents.
