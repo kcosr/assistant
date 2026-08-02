@@ -18,7 +18,7 @@
 - [Keyboard Shortcuts (Default)](#keyboard-shortcuts-default)
 - [Persistence](#persistence)
 - [Chat Panel Requirements](#chat-panel-requirements)
-- [Artifacts Panel Requirements](#artifacts-panel-requirements)
+- [Lists and Notes Panel Requirements](#lists-and-notes-panel-requirements)
 - [Accessibility](#accessibility)
 - [Open Questions](#open-questions)
 
@@ -38,7 +38,7 @@
 
 ## Overview
 
-The UI is built around a **panel workspace** that can contain any number of panels. Panels are plugin instances (chat, artifacts, diff, terminal, etc.) arranged in **panes**. Panes may be split against each other, and each pane owns its own tab strip. The shell provides a panel launcher and global commands; panels provide their own UI and tool integrations.
+The UI is built around a **panel workspace** that can contain any number of panels. Panels are plugin instances (chat, sessions, lists, notes, and other installed plugins) arranged in **panes**. Panes may be split against each other, and each pane owns its own tab strip. The shell provides a panel launcher and global commands; panels provide their own UI and tool integrations.
 
 ## Layout and Shell
 
@@ -75,14 +75,15 @@ Optional items:
 Panels are plugin-defined. Core provides only the workspace and host API. Default bundles include:
 
 - **Chat Panel** (core): chat transcript + input bar.
-- **Artifacts Panel** (plugin): notes/tags/lists browser, views, details.
-- **Sessions Panel** (plugin): list of sessions and agents.
+- **Sessions Panel** (core): list of sessions and agents.
+- **Lists and Notes Panels** (plugins): list/item management and markdown notes.
+- **Notifications Panel** (plugin): durable notification browsing and actions.
 
 Other examples:
 
-- **File Browser Panel** (plugin)
-- **Diff Panel** (plugin)
-- **Terminal Panel** (plugin)
+- **Search Panel** (plugin)
+- **Questions Panel** (plugin)
+- **Time Tracker Panel** (plugin)
 
 ### Panel Chrome
 
@@ -217,11 +218,11 @@ Panel plugins may register additional shortcuts scoped to the focused panel.
 - Selecting or creating a chat panel does not automatically move focus into the composer.
 - Creating a new unbound chat panel opens the session picker automatically so the user can bind it immediately.
 
-## Artifacts Panel Requirements
+## Lists and Notes Panel Requirements
 
-- Contains browser, view mode, and detail mode within the plugin.
-- Uses panel-local search and filter UI.
-- Does not rely on global layout state.
+- Lists and notes are separate plugin panels with their own browsing and editing surfaces.
+- Each panel owns its local search, filter, and selection state.
+- Neither panel relies on a removed shared Artifacts panel or global layout state.
 
 ## Accessibility
 

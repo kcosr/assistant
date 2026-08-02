@@ -5,9 +5,9 @@
 - [Status](#status)
 - [Summary](#summary)
 - [Source files](#source-files)
-- [Background: Current State](#background-current-state)
-- [Current Implementation Snapshot (v0.49)](#current-implementation-snapshot-v049)
-- [Problems with the Current Model](#problems-with-the-current-model)
+- [Background: Historical State](#background-historical-state)
+- [Historical Implementation Snapshot (v0.49)](#historical-implementation-snapshot-v049)
+- [Problems with the Historical Model](#problems-with-the-historical-model)
 - [Terminology](#terminology)
 - [Goals](#goals)
 - [Non-Goals (Initial Iterations)](#non-goals-initial-iterations)
@@ -56,11 +56,13 @@
 - Draft v0.50 (living document; expect revisions)
 - Scope: Web + server only. Android is out of scope and assumed removed.
 - Backward compatibility is not required during the refactor; only the final state must be correct.
-- Progress: Chat, artifacts, and sessions panels initialize their runtimes inside the panel modules (sessions still exposes DOM bindings for keyboard navigation). Legacy layout controllers removed; toolbar toggles replaced by panel launcher. Server exposes plugin manifests (`GET /api/plugins`), client loads them into panel context, and `panel_event` is plumbed through shared protocol, panel host (`sendEvent`), and the `panels_event` tool. Session attributes are persisted in the session index, exposed via `POST /api/plugins/sessions/operations/update-attributes`, and surfaced to panels through `getSessionContext`/`subscribeSessionContext`. Capability gating now scopes built-in tools and panel availability; plugin dependencies and per-plugin data directories are enforced; a panel-only artifacts plugin manifest exists.
+- Progress: Chat, lists, notes, and sessions panels initialize their runtimes inside the panel modules (sessions still exposes DOM bindings for keyboard navigation). Legacy layout controllers removed; toolbar toggles replaced by panel launcher. Server exposes plugin manifests (`GET /api/plugins`), client loads them into panel context, and `panel_event` is plumbed through shared protocol, panel host (`sendEvent`), and the `panels_event` tool. Session attributes are persisted in the session index, exposed via `POST /api/plugins/sessions/operations/update-attributes`, and surfaced to panels through `getSessionContext`/`subscribeSessionContext`. Capability gating now scopes built-in tools and panel availability; plugin dependencies and per-plugin data directories are enforced.
+
+> Historical design note: Some detailed examples below predate the removal of the Artifacts, Diff, Files, and Terminal plugins. Those names describe proposed or historical architecture, not the current shipped plugin inventory; current panels are discovered from plugin manifests.
 
 ## Summary
 
-We want to split the app into a **core session/chat platform** plus **panel plugins** that can be arranged in arbitrary layouts. Panels are first-class plugin instances (chat, artifacts, diff, terminal, etc.) managed by a layout engine that supports splits, tab view, and multiple instances. The notes/tags/lists experience becomes a single plugin rather than a hard-coded mode of a fixed artifacts panel.
+We want to split the app into a **core session/chat platform** plus **panel plugins** that can be arranged in arbitrary layouts. Panels are first-class plugin instances (chat, sessions, lists, notes, and other installed plugins) managed by a layout engine that supports splits, tab view, and multiple instances. Lists and notes are separate plugins rather than a hard-coded mode of a shared Artifacts panel.
 
 This design aims to:
 
@@ -77,7 +79,7 @@ This design aims to:
 - `packages/web-client/src/controllers/panelRegistry.ts`
 - `packages/web-client/src/utils/layoutTree.ts`
 
-## Background: Current State
+## Background: Historical State
 
 ### Backend
 
@@ -98,7 +100,7 @@ This design aims to:
 - `docs/UI_SPEC.md` assumes a fixed three-panel layout and an artifacts panel with specific modes.
 - Plugins like the calendar are specified as content for the artifacts panel, not as independent panels.
 
-## Current Implementation Snapshot (v0.49)
+## Historical Implementation Snapshot (v0.49)
 
 - Panel workspace renders a persistent layout tree (splits with optional tab view), with per-panel state and metadata persisted via the host.
 - Panel launcher replaces fixed toggles; panels are registered through `PanelRegistry`.
@@ -115,7 +117,7 @@ This design aims to:
 - Artifacts panel endpoints (`/api/plugins/artifacts/panel`) and related tools (`artifacts_show`, `artifacts_panel_show`) now live under the artifacts plugin.
 - Artifact item endpoints (`/api/plugins/artifacts/items`, `/list`, `/note`, list item operations) are served by the artifacts plugin HTTP routes.
 
-## Problems with the Current Model
+## Problems with the Historical Model
 
 - Panel assumptions are hard-coded (exactly three panels, fixed positions).
 - Artifact logic is mixed with core chat/session logic and layout state.
@@ -309,7 +311,7 @@ Failure modes:
 
 Current:
 
-- Panel registry is statically wired in the web client build (chat, sessions, artifacts).
+- Core panel modules and manifest-backed plugin modules are registered by the current web-client panel system.
 - Plugin manifests are fetched from `/api/plugins` and used for capability gating; matching panel manifests update local panel metadata.
 - Plugin manifests can include `web.bundlePath`/`web.stylesPath`; the web client loads those assets and exposes `window.ASSISTANT_PANEL_REGISTRY.registerPanel` for dynamic panel registration.
 
