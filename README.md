@@ -6,7 +6,7 @@
 > Qustions and contributions are welcome, but don't expect stability or support.
 
 A personal AI assistant with a panel-based plugin system, multi-agent CLI integrations, and text/voice UI.
-Plugins define panels and operations so agents can collaborate on lists, notes, and diff reviews,
+Plugins define panels and operations so agents can collaborate on lists, notes, and other workflows,
 or extend the app with custom user-provided plugins.
 OpenAI-compatible sessions are limited in functionality today and will likely be replaced
 by an integration with the badlogic/pi-mono agent SDK.
@@ -37,7 +37,7 @@ by an integration with the badlogic/pi-mono agent SDK.
 - **Voice output** via OpenAI TTS or ElevenLabs streaming TTS (optional)
 - **CLI agent integrations** (Claude, Codex, Pi) alongside built-in providers
 - **Scheduled sessions** for cron-driven CLI runs
-- **Panel plugins** for lists, notes, diff review, and custom workflows
+- **Panel plugins** for lists, notes, and custom workflows
 - **Tool integration** via MCP (Model Context Protocol) over stdio
 - **Built-in session tools** – agent can list, search, create, switch, rename, and pin sessions
 - **Persistent sessions** with JSONL event logs and optional naming/pinning
@@ -125,7 +125,7 @@ export PATH="$PATH:$HOME/.pi/skills/notes:$HOME/.pi/skills/lists"
 | `Ctrl + H` | Toggle header panel navigation mode |
 | `Ctrl + Shift + S` | Split active panel (placement mode) |
 | `Ctrl + I` | Toggle text input focus |
-| `Ctrl + A/C/D/F/L/N/S/T` | Focus last-used artifacts/chat/diff/files/lists/notes/sessions/time tracker (opens modal if none) |
+| `Ctrl + C/L/N` | Focus last-used chat/lists/notes panel (opens modal if none) |
 | `Ctrl + R` | Toggle speech recording (if available) |
 | `Cmd + Shift + S` (macOS) | Toggle sessions sidebar |
 | `Cmd/Ctrl + Shift + C` | Toggle chat panel |
@@ -256,14 +256,6 @@ Track time against tasks with timers and manual entries. Use for:
 
 Commands: `task_create`, `task_list`, `timer_start`, `timer_stop`, `entry_create`, `entry_list`
 
-#### diff
-Review git diffs in the workspace. Use for:
-- Reviewing staged/unstaged changes
-- Adding review comments to hunks
-- Staging/unstaging files or patches
-
-Commands: `status`, `patch`, `hunk`, `stage`, `unstage`, `comment-add`, `comments-list`
-
 #### panels
 Panel inventory and layout management. Use for:
 - Listing open panels
@@ -301,7 +293,7 @@ Monorepo managed with npm workspaces:
 | `packages/web-client/`     | Browser client – chat UI, speech input, audio playback                 |
 | `packages/assistant-cli/`  | Internal runtime used to generate plugin CLIs                          |
 | `packages/shared/`         | Shared types, protocol definitions, audio frame helpers                |
-| `packages/plugins/`        | Plugin packages (core, official, examples)                             |
+| `packages/plugins/`        | Plugin packages (core, official)                                       |
 | `packages/coding-executor/`| Code execution tools (bash, read, write, edit, grep, find)             |
 | `packages/coding-sidecar/` | Container sidecar for sandboxed code execution                         |
 | `packages/desktop/`        | Canonical Electron desktop app wrapper                                 |
@@ -330,7 +322,6 @@ For the full documentation map, see [docs/index.md](docs/index.md).
 | [Agents](docs/design/agents.md)                   | Agent architecture and configuration. Covers agent definitions, sessions, tool allowlists, and the relationship between agents and conversations.           |
 | [Preferences](docs/design/preferences.md)         | Preferences storage architecture. Details server-side vs client-side storage, the `/preferences` API, per-list settings, and the optimistic update pattern. |
 | [External Agents](docs/design/external-agents.md) | Design for async external agent integration. Describes how to connect out-of-process agent systems to the assistant UI via HTTP callbacks.                  |
-| [Calendar Plugin](docs/design/calendar-plugin.md) | Calendar plugin design (proposed). Data model, MCP tools, REST API, and UI integration for calendar event management.                                       |
 | [Content Blocks](docs/design/content-blocks.md)   | Output format documentation for Claude CLI and Codex CLI. Reference for implementing structured content block rendering.                                    |
 
 ### Package Documentation

@@ -7,7 +7,6 @@
     "start": "node dist/agent-server/src/index.js"
   },
   "devDependencies": {
-    "@types/diff": "^7.0.0",
     "@types/jsdom": "^21.1.7",
     "@types/ws": "^8.5.12"
   },
@@ -21,7 +20,6 @@
     "cronstrue": "^2.50.0",
     "dotenv": "^16.4.5",
     "jsdom": "^27.2.0",
-    "node-pty": "^1.1.0",
     "openai": "^4.60.0",
     "ws": "^8.18.0",
     "yaml": "^2.7.0",

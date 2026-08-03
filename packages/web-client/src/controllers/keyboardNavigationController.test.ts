@@ -839,10 +839,7 @@ describe('KeyboardNavigationController chat shortcuts', () => {
   });
 
   it.each([
-    ['a', 'artifacts'],
     ['c', 'chat'],
-    ['d', 'diff'],
-    ['f', 'files'],
     ['l', 'lists'],
     ['n', 'notes'],
   ])('focuses the last %s panel on ctrl+%s', (key, panelType) => {

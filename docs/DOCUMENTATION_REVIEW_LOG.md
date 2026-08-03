@@ -26,7 +26,6 @@ This log tracks review status for all markdown docs in the repo. Update the stat
 | docs/TOOL_APPROVALS.md | docs | done | Added TOC and noted no current source files. | done |
 | docs/UI_SPEC.md | docs | done | Added TOC and source files section. Fixed keyboard shortcut docs (close/remove panel modifiers). | done |
 | docs/design/agents.md | design | done | Added TOC and source files. | done |
-| docs/design/calendar-plugin.md | design | done | Added TOC and source file references. | done |
 | docs/design/chat-message-handling.md | design | done | Added TOC and source files. | done |
 | docs/design/chat-renderer-ui-spec.md | design | done | Added TOC and source files. | done |
 | docs/design/content-blocks.md | design | done | Added TOC and source files. | done |
@@ -47,17 +46,10 @@ This log tracks review status for all markdown docs in the repo. Update the stat
 | packages/plugins/core/chat/README.md | package | done | New README created with panel details. | done |
 | packages/plugins/core/panels/README.md | package | done | Added TOC and source files. | done |
 | packages/plugins/core/sessions/README.md | package | done | New README created with operations and tools. | done |
-| packages/plugins/examples/hello/README.md | package | done | New README created with code example. | done |
-| packages/plugins/examples/session-info/README.md | package | done | New README created with operations and panel details. | done |
-| packages/plugins/examples/session-info/skill-extra.md | skill | done | No changes needed. | done |
-| packages/plugins/examples/ws-echo/README.md | package | done | Added TOC and source files. | done |
-| packages/plugins/official/diff/README.md | package | done | Added TOC and source files. | done |
-| packages/plugins/official/files/README.md | package | done | Added TOC and source files. | done |
 | packages/plugins/official/links/README.md | package | done | Added TOC and source files. | done |
 | packages/plugins/official/lists/README.md | package | done | Added TOC and source files. | done |
 | packages/plugins/official/notes/README.md | package | done | Added TOC and source files. | done |
 | packages/plugins/official/notes/skill-extra.md | skill | done | No changes needed. | done |
-| packages/plugins/official/terminal/README.md | package | done | Added TOC and source files. | done |
 | packages/plugins/official/time-tracker/README.md | package | done | Added TOC and source files. | done |
 | packages/plugins/official/time-tracker/SPEC.md | spec | done | Added TOC and source files. | done |
 | packages/plugins/official/url-fetch/README.md | package | done | Added TOC and source files. | done |

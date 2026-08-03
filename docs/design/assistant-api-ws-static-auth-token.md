@@ -126,7 +126,7 @@ Also update the TS global typings in that file to include `ASSISTANT_AUTH_TOKEN?
   - `--token <token>`
   - (optionally also `--url <baseUrl>`)
 - Ensure `httpRequest()` includes the header (already does when `config.token` is set).
-- Update any official plugin CLIs that implement their own HTTP client (e.g. `packages/plugins/official/artifacts/bin/cli.ts`) to:
+- Update any official plugin CLIs that implement their own HTTP client to:
   - read `ASSISTANT_TOKEN`
   - accept `--token` override
   - and set `Authorization: Bearer <token>`

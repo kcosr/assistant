@@ -1002,9 +1002,6 @@ function matchOverlayToolCall(
   const normalizedCommandMatch = (command: string, needle: string): boolean =>
     command.toLowerCase().includes(needle.toLowerCase());
 
-  const operationName =
-    toolName.startsWith('interactive_tools_') ? toolName.replace('interactive_tools_', '') : '';
-
   const filtered = candidates.filter((candidate) => {
     if (!candidate.command) {
       return false;
@@ -1012,10 +1009,6 @@ function matchOverlayToolCall(
     if (toolName === 'questions_ask') {
       return normalizedCommandMatch(candidate.command, 'questions-cli') &&
         normalizedCommandMatch(candidate.command, 'ask');
-    }
-    if (operationName) {
-      return normalizedCommandMatch(candidate.command, 'interactive-tools-cli') &&
-        normalizedCommandMatch(candidate.command, operationName);
     }
     return normalizedCommandMatch(candidate.command, toolName);
   });

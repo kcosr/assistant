@@ -62,7 +62,8 @@ Required elements:
 On first run:
 
 - Single empty placeholder panel
-- Panels (chat, sessions, lists, notes, artifacts) are available from the launcher
+- The launcher shows the core panels and panels from enabled plugins. Bundled panel types include
+  chat, sessions, lists, notes, notifications, scheduled sessions, and time tracker.
 
 Implementation notes (current):
 
@@ -156,7 +157,7 @@ Voice notification session behavior:
 - Cycle focus: `Ctrl/Cmd + ]` / `Ctrl/Cmd + [`
 - Split panel: `Ctrl + S` (active panel only; arrows/WASD choose region, `Enter` confirms, `Esc` cancels)
 - Move panel: `Ctrl + M` (active panel only; arrows/WASD first choose the target panel, `Enter` switches to placement, arrows/WASD or `C` choose `left/right/top/bottom/center`, `Enter` confirms, `Esc` backs out/cancels)
-- Focus last panel by type: `Ctrl + A` artifacts, `Ctrl + C` chat, `Ctrl + D` diff, `Ctrl + F` files, `Ctrl + L` lists, `Ctrl + N` notes
+- Focus last panel by type: `Ctrl + C` chat, `Ctrl + L` lists, `Ctrl + N` notes
 - Add tab to active pane: `Ctrl + T` (opens the compact in-pane picker)
 - Close panel: `Ctrl + Shift + Cmd + W` (macOS) / `Ctrl + Shift + Alt + W` (others) (panel-focused, replaces with an empty placeholder)
 - Remove panel: `Ctrl + Shift + Cmd + X` (macOS) / `Ctrl + Shift + Alt + X` (others) (removes panel from layout)
@@ -236,27 +237,6 @@ Panels can register additional shortcuts scoped to the focused panel.
 - Selecting a panel focuses it and closes the modal.
 - Modal uses the same split/tabs toggles and add/close actions as the navigator panel.
 - Escape or clicking the backdrop closes the modal.
-
-### Files Panel
-
-- Browses the configured workspace root (files plugin `workspaceRoot`).
-- Uses a collapsible tree browser and a read-only file preview pane.
-- Indicates binary files and truncation in the preview.
-- Emits selection context for file-focused actions.
-- Operates as a global panel (no session binding).
-
-### Diff Panel
-
-- Shows git diffs for the configured diff workspace root or repo target.
-- Supports working and staged comparisons (no range target).
-- Sidebar lists only files with changes (derived from diff status), not a workspace tree.
-- Repo picker navigates repositories under the workspace root; selection persists per panel.
-- Instance selector appears when multiple diff instances are configured; selection persists per panel.
-- Detached HEAD repositories are blocked from showing diffs.
-- Header shows the current branch for the selected repository.
-- When no file is selected, the main view shows a combined diff with per-file sections.
-- Clicking empty space in the file list clears the selection and returns to the combined view.
-- Operates as a global panel (no session binding).
 
 ## Persistence
 

@@ -2,7 +2,7 @@
 
 ## Overview
 
-Enhance the time-tracker XLSX export so each exported task row can include the task description as a leading summary paragraph, followed by entry-level notes when they exist. The export remains grouped by task and keeps the existing XLSX columns, totals, artifact upload, and reported-entry behavior.
+Enhance the time-tracker XLSX export so each exported task row can include the task description as a leading summary paragraph, followed by entry-level notes when they exist. The export remains grouped by task and keeps the existing XLSX columns, totals, direct-download delivery, and reported-entry behavior.
 
 ## Motivation
 
@@ -77,7 +77,7 @@ The time-tracker store already has `tasks.description` and `entries.note` fields
 | File | Responsibility | Existing tests |
 |---|---|---|
 | `packages/plugins/official/time-tracker/web/index.ts` | Defines `Task.description`, `Entry.note`, `ExportRow.description`; groups entries by task; currently builds row descriptions from entry notes only; forwards rows to `export_xlsx`; handles mark-reported updates. | `packages/plugins/official/time-tracker/web/index.test.ts` covers panel behavior and operation mocks; it can be extended, or export-row construction can be extracted for focused tests. |
-| `packages/plugins/official/time-tracker/server/index.ts` | Validates export rows, formats Description cell text, writes XLSX columns/formulas/wrapping/row heights, and returns the artifact payload. | `packages/plugins/official/time-tracker/server/index.test.ts` checks XLSX column widths and bullet formatting. |
+| `packages/plugins/official/time-tracker/server/index.ts` | Validates export rows, formats Description cell text, writes XLSX columns/formulas/wrapping/row heights, and returns the generated XLSX as a base64 payload for client download. | `packages/plugins/official/time-tracker/server/index.test.ts` checks XLSX column widths and bullet formatting. |
 | `packages/plugins/official/time-tracker/server/store.ts` | Persists task descriptions and entry notes; confirms no schema migration is required. | `packages/plugins/official/time-tracker/server/store.test.ts` covers task, entry, timer, and note persistence behavior. |
 
 ## Higher-Level Implementation Steps

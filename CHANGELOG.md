@@ -96,6 +96,8 @@
 
 ### Removed
 
+- Removed the artifacts, diff, files, terminal, hello, ws-echo, interactive-tools, and session-info plugins. Time-tracker XLSX export now downloads the generated file directly instead of uploading it to Artifacts. Full plugin builds clear generated plugin and skill output first so removed plugins cannot survive as stale bundles. ([#131](https://github.com/kcosr/assistant/pull/131))
+
 ## [0.18.2] - 2026-04-06
 
 ### Breaking Changes

@@ -5,7 +5,7 @@ import { DialogManager } from '../../../../web-client/src/controllers/dialogMana
 import { ContextMenuManager } from '../../../../web-client/src/controllers/contextMenu';
 import { PanelChromeController } from '../../../../web-client/src/controllers/panelChromeController';
 import { ListColumnPreferencesClient } from '../../../../web-client/src/utils/listColumnPreferences';
-import { apiFetch, getApiBaseUrl } from '../../../../web-client/src/utils/api';
+import { apiFetch } from '../../../../web-client/src/utils/api';
 import {
   isDesktopNative,
   saveDesktopArtifactFile,
@@ -302,9 +302,11 @@ type ExportRow = {
   description: string;
 };
 
-type ArtifactMetadata = {
-  id: string;
+type ExportFile = {
   filename: string;
+  mimeType: string;
+  content: string;
+  downloadUrl: string;
 };
 
 const DURATION_PRESETS = [15, 30, 45, 60, 90, 120];
@@ -380,78 +382,30 @@ async function callOperation<T>(operation: string, body: Record<string, unknown>
   return payload.result;
 }
 
-async function callArtifactsOperation<T>(
-  operation: string,
-  body: Record<string, unknown>,
-): Promise<T> {
-  const response = await apiFetch(`/api/plugins/artifacts/operations/${operation}`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify(body),
-  });
-
-  let payload: OperationResponse<T> | null = null;
-  try {
-    payload = (await response.json()) as OperationResponse<T>;
-  } catch {
-    // ignore json parsing failures
+function base64ToUint8Array(base64: string): Uint8Array {
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i += 1) {
+    bytes[i] = binary.charCodeAt(i);
   }
-
-  if (!response.ok || !payload || 'error' in payload) {
-    const message =
-      payload && 'error' in payload && payload.error
-        ? payload.error
-        : `Request failed (${response.status})`;
-    throw new Error(message);
-  }
-
-  return payload.result;
+  return bytes;
 }
 
-async function resolveArtifactsInstanceId(targetId: string): Promise<string> {
-  try {
-    const raw = await callArtifactsOperation<unknown>('instance_list', {});
-    const list = Array.isArray(raw) ? raw.map(parseInstance).filter(Boolean) : [];
-    const instances = list as Instance[];
-    if (instances.some((instance) => instance.id === targetId)) {
-      return targetId;
-    }
-  } catch {
-    // Ignore lookup errors and fall back to default.
-  }
-  return DEFAULT_INSTANCE_ID;
+function createDownloadObjectUrl(contentBase64: string, mimeType: string): string {
+  const bytes = base64ToUint8Array(contentBase64);
+  const blob = new Blob([bytes], { type: mimeType });
+  return URL.createObjectURL(blob);
 }
 
-function buildArtifactsDownloadUrl(options: { instanceId: string; artifactId: string }): string {
-  const base = getApiBaseUrl().replace(/\/+$/, '');
-  return `${base}/api/plugins/artifacts/files/${encodeURIComponent(
-    options.instanceId,
-  )}/${encodeURIComponent(options.artifactId)}?download=1`;
-}
-
-function arrayBufferToBase64(buffer: ArrayBuffer): string {
-  const bytes = new Uint8Array(buffer);
-  const chunkSize = 0x8000;
-  let binary = '';
-  for (let i = 0; i < bytes.length; i += chunkSize) {
-    binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
-  }
-  return btoa(binary);
-}
-
-async function saveDownloadWithDesktop(url: string, suggestedName: string): Promise<boolean> {
+async function saveBase64WithDesktop(
+  contentBase64: string,
+  suggestedName: string,
+): Promise<boolean> {
   const targetPath = await showDesktopSaveDialog(suggestedName);
   if (!targetPath) {
     return false;
   }
-
-  const response = await fetch(url);
-  if (!response.ok) {
-    throw new Error(`Failed to download XLSX: ${response.status}`);
-  }
-
-  const buffer = await response.arrayBuffer();
-  await saveDesktopArtifactFile(targetPath, arrayBufferToBase64(buffer));
+  await saveDesktopArtifactFile(targetPath, contentBase64);
   return true;
 }
 
@@ -1457,10 +1411,7 @@ if (!registry || typeof registry.registerPanel !== 'function') {
         };
       }
 
-      async function exportXlsx(
-        rows: ExportRow[],
-        markReported: boolean,
-      ): Promise<{ artifact: ArtifactMetadata; instanceId: string }> {
+      async function exportXlsx(rows: ExportRow[], markReported: boolean): Promise<ExportFile> {
         const raw = await callInstanceOperation<unknown>('export_xlsx', {
           rows,
           start_date: dateRange.start,
@@ -1475,14 +1426,6 @@ if (!registry || typeof registry.registerPanel !== 'function') {
         }
         const mimeType =
           payload.mimeType ?? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
-        const artifactsInstanceId = await resolveArtifactsInstanceId(selectedInstanceId);
-        const artifact = await callArtifactsOperation<ArtifactMetadata>('upload', {
-          instance_id: artifactsInstanceId,
-          title: payload.filename,
-          filename: payload.filename,
-          content: payload.content,
-          mimeType,
-        });
 
         if (markReported) {
           const toReport = entries.filter((entry) => !entry.reported);
@@ -1492,8 +1435,14 @@ if (!registry || typeof registry.registerPanel !== 'function') {
           void refreshEntries({ silent: true });
           void refreshTasks({ silent: true });
         }
-        setStatus('Exported XLSX to Artifacts.');
-        return { artifact, instanceId: artifactsInstanceId };
+        const downloadUrl = createDownloadObjectUrl(payload.content, mimeType);
+        setStatus('Exported XLSX.');
+        return {
+          filename: payload.filename,
+          mimeType,
+          content: payload.content,
+          downloadUrl,
+        };
       }
 
       function openExportDialog(): void {
@@ -1578,7 +1527,12 @@ if (!registry || typeof registry.registerPanel !== 'function') {
         services.dialogManager.hasOpenDialog = true;
 
         let escapeCleanup: (() => void) | null = null;
+        let exportDownloadUrl: string | null = null;
         const closeDialog = (): void => {
+          if (exportDownloadUrl) {
+            URL.revokeObjectURL(exportDownloadUrl);
+            exportDownloadUrl = null;
+          }
           overlay.remove();
           escapeCleanup?.();
           escapeCleanup = null;
@@ -1595,10 +1549,7 @@ if (!registry || typeof registry.registerPanel !== 'function') {
           exportBtn.disabled = true;
           try {
             const result = await exportXlsx(rows, checkbox.checked);
-            const downloadUrl = buildArtifactsDownloadUrl({
-              instanceId: result.instanceId,
-              artifactId: result.artifact.id,
-            });
+            exportDownloadUrl = result.downloadUrl;
 
             form.innerHTML = '';
             const success = document.createElement('div');
@@ -1613,14 +1564,14 @@ if (!registry || typeof registry.registerPanel !== 'function') {
             const downloadRow = document.createElement('div');
             downloadRow.textContent = 'Download: ';
             const link = document.createElement('a');
-            link.href = downloadUrl;
+            link.href = result.downloadUrl;
             link.rel = 'noopener';
-            link.download = result.artifact.filename;
-            link.textContent = result.artifact.filename;
+            link.download = result.filename;
+            link.textContent = result.filename;
             if (isDesktopNative()) {
               link.addEventListener('click', (clickEvent) => {
                 clickEvent.preventDefault();
-                void saveDownloadWithDesktop(downloadUrl, result.artifact.filename)
+                void saveBase64WithDesktop(result.content, result.filename)
                   .then((saved) => {
                     if (saved) {
                       setStatus('Downloaded XLSX.');
@@ -1628,7 +1579,10 @@ if (!registry || typeof registry.registerPanel !== 'function') {
                   })
                   .catch((downloadError) => {
                     setStatus('Failed to download XLSX.');
-                    console.warn('[time-tracker] Failed to save XLSX via desktop dialog:', downloadError);
+                    console.warn(
+                      '[time-tracker] Failed to save XLSX via desktop dialog:',
+                      downloadError,
+                    );
                   });
               });
             }

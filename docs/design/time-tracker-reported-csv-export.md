@@ -35,7 +35,7 @@ Add a `reported` boolean on time entries (editable in the entry editor and avail
 - Add an "Export XLSX" action in the Entries area (near range total or filter controls).
 - Export is scoped to the current date range filter in the panel and respects the "Show reported" toggle.
 - Export matches the current view scope: instance, selected task (if any), date range, and "Show reported".
-- Upload the generated XLSX to the Artifacts plugin for download.
+- Return the generated XLSX from `export_xlsx` as a base64 payload with its filename and MIME type. The panel turns that payload into a direct browser download (or uses the native save dialog in desktop builds).
 - Rows are grouped by task id; each row includes:
   - Item (task name)
   - Hours (integer, floor of total minutes / 60)

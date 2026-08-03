@@ -70,9 +70,18 @@
     }
   ],
   "profiles": [
-    { "id": "default", "label": "Default" },
-    { "id": "personal", "label": "Personal" },
-    { "id": "work", "label": "Work" }
+    {
+      "id": "default",
+      "label": "Default"
+    },
+    {
+      "id": "personal",
+      "label": "Personal"
+    },
+    {
+      "id": "work",
+      "label": "Work"
+    }
   ],
   "plugins": {
     "chat": {
@@ -125,32 +134,6 @@
         "personal",
         "work"
       ]
-    },
-    "files": {
-      "enabled": true,
-      "workspaceRoot": "~"
-    },
-    "diff": {
-      "enabled": true,
-      "gitVersioning": {
-        "enabled": true,
-        "intervalMinutes": 1
-      },
-      "instances": [
-        {
-          "id": "default",
-          "label": "Default",
-          "workspaceRoot": "${HOME}/worktrees"
-        },
-        {
-          "id": "work",
-          "label": "Work",
-          "workspaceRoot": "${HOME}/work"
-        }
-      ]
-    },
-    "terminal": {
-      "enabled": true
     },
     "links": {
       "enabled": true,

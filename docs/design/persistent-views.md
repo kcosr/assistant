@@ -1,6 +1,8 @@
 # Persistent Multiple Views
 
-> **Status: Planned** — This feature is not yet implemented.
+> **Status: Obsolete proposal — not implemented.** This design depends on the artifacts plugin,
+> which was removed in [PR #131](https://github.com/kcosr/assistant/pull/131). It is retained as
+> historical context; future persistent-view work needs a new approved design for surviving plugins.
 
 > Note: This document assumes the artifacts panel plugin; views are owned by the artifacts plugin in the panel architecture.
 

@@ -22,7 +22,7 @@ description: How keyboard shortcuts are wired globally and per-panel in this rep
 
 ## Focus history shortcuts
 - Focus history is tracked in `PanelWorkspaceController` and persisted in local storage (`aiAssistantPanelFocusHistory`).
-- `Ctrl+A/C/D/F/L/N/T` focus the last-used artifacts/chat/diff/files/lists/notes/time-tracker panel.
+- `Ctrl+C/L/N` focus the last-used chat/lists/notes panel.
 - If none exist, the shortcut opens a modal panel of that type.
 
 ## Panel/plugin shortcuts (panel-scoped)

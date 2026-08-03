@@ -123,46 +123,21 @@ The server validates all incoming preferences using Zod schemas. Invalid payload
 
 ### localStorage Keys
 
-Legacy naming note: keys containing `artifact` are retained from the previous architecture and now
-refer to artifacts UI state. They can be renamed in a later cleanup once migration support is
-defined.
-
 | Key                                       | Description                          | Structure                                 |
 | ----------------------------------------- | ------------------------------------ | ----------------------------------------- |
 | `aiAssistantPanelLayout`                  | Panel layout state (new)             | `LayoutPersistence`                       |
 | `aiAssistantPanelLayoutVersion`           | Layout schema version (new)          | `number`                                  |
 | `aiAssistantTheme`                        | Theme id (auto/light/dark/preset)    | `string`                                  |
 | `aiAssistantUIFont`                       | UI font stack                        | `string`                                  |
-| `aiAssistantCodeFont`                     | Code/terminal font stack             | `string`                                  |
+| `aiAssistantCodeFont`                     | Code font stack                      | `string`                                  |
 | `aiAssistantSelectedPanelOutlinesEnabled` | Show outlines around selected panels | `'true' \| 'false'`                       |
-| `aiAssistantArtifactSearchState`          | Artifacts search state (legacy key)  | `{ query: string, filters: TagFilter[] }` |
-| `aiAssistantSidebarViewMode`              | Sidebar view mode (legacy)           | `'sessions' \| 'artifacts'`               |
-| `artifactBrowserViewMode`                 | Artifacts browser mode (legacy)      | `'list' \| 'grid'`                        |
-| `artifactBrowserSortMode`                 | Artifacts sort mode (legacy)         | `'alpha' \| 'updated'`                    |
 | `sidebarVisible`                          | Sidebar visibility (legacy)          | `'true' \| 'false'`                       |
 | `chatVisible`                             | Chat visibility (legacy)             | `'true' \| 'false'`                       |
 | `inputBarVisible`                         | Input bar visibility (legacy)        | `'true' \| 'false'`                       |
 | `layoutMode`                              | Desktop layout mode (legacy)         | `'default' \| 'wide'`                     |
-| `paneOrder`                               | Pane arrangement (legacy)            | `'chat-first' \| 'artifact-first'`        |
+| `paneOrder`                               | Pane arrangement (legacy)            | `string[]`                                |
 | `mobileShowBoth`                          | Mobile dual-pane mode (legacy)       | `'true' \| 'false'`                       |
 | `sidebarWidth`                            | Sidebar width (legacy)               | `'<number>px'`                            |
-| `aiAssistantArtifactPanelOpen`            | Artifacts panel open (legacy)        | `'true' \| 'false'`                       |
-
-### Search State Structure
-
-```typescript
-interface ArtifactsSearchState {
-  query: string; // Text search query
-  filters: TagFilter[]; // Active tag filters in order
-}
-
-interface TagFilter {
-  mode: 'include' | 'exclude';
-  tag: string;
-}
-```
-
-**Note:** The artifacts search state is **global**, not per-list. The same search/filter state persists when switching between different lists/notes.
 
 ## Panel Layout State
 
@@ -249,9 +224,7 @@ class ListColumnPreferencesClient {
 | Layout state       | `aiAssistantPanelLayout`                 | ❌ No                   |
 | Theme              | `aiAssistantTheme`                       | ❌ No                   |
 | UI font            | `aiAssistantUIFont`                      | ❌ No                   |
-| Code/terminal font | `aiAssistantCodeFont`                    | ❌ No                   |
-| Search query       | `aiAssistantArtifactSearchState.query`   | ❌ No (legacy)          |
-| Tag filters        | `aiAssistantArtifactSearchState.filters` | ❌ No (legacy)          |
+| Code font          | `aiAssistantCodeFont`                    | ❌ No                   |
 | Sidebar visibility | `sidebarVisible`                         | ❌ No                   |
 | Legacy layout      | `layoutMode`, `paneOrder`                | ❌ No (legacy)          |
 
@@ -274,16 +247,6 @@ Both structures are supported:
 - `listColumns` is checked for backward compatibility
 - `listViewPrefs.columns` takes precedence if present
 - New writes go to the appropriate structure based on what's being updated
-
-### Legacy Layout → Panel Layout
-
-The new panel layout system persists its own layout tree. During migration:
-
-- Legacy layout keys (`layoutMode`, `paneOrder`, `chatVisible`, `aiAssistantArtifactPanelOpen`, etc.) are mapped into a `LayoutPersistence` payload.
-- The migrated payload is stored in `aiAssistantPanelLayout` with a version in `aiAssistantPanelLayoutVersion`.
-- After migration, legacy keys are considered deprecated and should no longer be updated.
-
-See `docs/design/panel-plugins.md` for the mapping table.
 
 ## Error Handling
 

@@ -284,7 +284,7 @@ describe('loadConfig', () => {
     const filePath = createTempFile('config-plugin-extras');
     const configJson = {
       plugins: {
-        terminal: {
+        'custom-plugin': {
           enabled: true,
           debug: true,
           shell: '/bin/bash',
@@ -295,12 +295,12 @@ describe('loadConfig', () => {
     await fs.writeFile(filePath, JSON.stringify(configJson), 'utf8');
 
     const config = loadConfig(filePath);
-    const terminalPlugin = config.plugins['terminal'] as Record<string, unknown> | undefined;
+    const customPlugin = config.plugins['custom-plugin'] as Record<string, unknown> | undefined;
 
-    expect(terminalPlugin).toBeDefined();
-    expect(terminalPlugin?.['enabled']).toBe(true);
-    expect(terminalPlugin?.['debug']).toBe(true);
-    expect(terminalPlugin?.['shell']).toBe('/bin/bash');
+    expect(customPlugin).toBeDefined();
+    expect(customPlugin?.['enabled']).toBe(true);
+    expect(customPlugin?.['debug']).toBe(true);
+    expect(customPlugin?.['shell']).toBe('/bin/bash');
   });
 
   it('returns empty arrays/objects for missing optional sections', async () => {
@@ -1062,7 +1062,7 @@ describe('loadConfig', () => {
     const configJson = {
       profiles: [{ id: 'default' }, { id: 'simple-instance' }, { id: 'custom' }],
       plugins: {
-        diff: {
+        'workspace-plugin': {
           enabled: true,
           workspaceRoot: '${HOME}/default-workspace',
           instances: [
@@ -1082,11 +1082,11 @@ describe('loadConfig', () => {
     await fs.writeFile(filePath, JSON.stringify(configJson), 'utf8');
 
     const config = loadConfig(filePath);
-    const diffPlugin = config.plugins['diff'];
+    const workspacePlugin = config.plugins['workspace-plugin'];
 
-    expect(diffPlugin?.workspaceRoot).toBe('/home/testuser/default-workspace');
-    expect(diffPlugin?.instances).toHaveLength(2);
-    const [simple, custom] = diffPlugin?.instances ?? [];
+    expect(workspacePlugin?.workspaceRoot).toBe('/home/testuser/default-workspace');
+    expect(workspacePlugin?.instances).toHaveLength(2);
+    const [simple, custom] = workspacePlugin?.instances ?? [];
     expect(simple).toBe('simple-instance');
     expect(custom).toEqual({
       id: 'custom',

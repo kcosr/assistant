@@ -1,5 +1,11 @@
 # Panel Plugins and Flexible Layout (Draft)
 
+> **Historical design record.** This draft captures the panel/plugin migration through its v0.50
+> and includes examples for the artifacts, diff, files, terminal, and demo plugins removed in
+> [PR #131](https://github.com/kcosr/assistant/pull/131). It is retained for architecture
+> rationale and migration history, not as the current plugin inventory. See
+> `docs/PLUGIN_SDK.md` and `docs/UI_SPEC.md` for current behavior.
+
 ## Table of Contents
 
 - [Status](#status)
@@ -1470,7 +1476,7 @@ Planned updates:
 - `docs/design/panel-layout-ui-spec.md`: new UI spec for panel layout and interactions. [done]
 - `packages/agent-server/README.md`: document plugin host and panel endpoints. [done]
 - `docs/design/*`: update artifacts-specific docs to reference artifacts plugin. [done]
-- `docs/design/calendar-plugin.md`: migrate artifact routes/messages to panel plugin terminology. [done]
+- Calendar proposal: removed with the obsolete artifacts-dependent design docs. [done]
 - `packages/shared/README.md`: document panel-scoped event types. [done]
 - `docs/PLUGIN_SDK.md`: describe panel plugin registration and bundle workflow. [done]
 
