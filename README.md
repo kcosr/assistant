@@ -322,7 +322,6 @@ For the full documentation map, see [docs/index.md](docs/index.md).
 | [Agents](docs/design/agents.md)                   | Agent architecture and configuration. Covers agent definitions, sessions, tool allowlists, and the relationship between agents and conversations.           |
 | [Preferences](docs/design/preferences.md)         | Preferences storage architecture. Details server-side vs client-side storage, the `/preferences` API, per-list settings, and the optimistic update pattern. |
 | [External Agents](docs/design/external-agents.md) | Design for async external agent integration. Describes how to connect out-of-process agent systems to the assistant UI via HTTP callbacks.                  |
-| [Calendar Plugin](docs/design/calendar-plugin.md) | Calendar plugin design (proposed). Data model, MCP tools, REST API, and UI integration for calendar event management.                                       |
 | [Content Blocks](docs/design/content-blocks.md)   | Output format documentation for Claude CLI and Codex CLI. Reference for implementing structured content block rendering.                                    |
 
 ### Package Documentation

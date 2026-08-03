@@ -26,7 +26,6 @@ This log tracks review status for all markdown docs in the repo. Update the stat
 | docs/TOOL_APPROVALS.md | docs | done | Added TOC and noted no current source files. | done |
 | docs/UI_SPEC.md | docs | done | Added TOC and source files section. Fixed keyboard shortcut docs (close/remove panel modifiers). | done |
 | docs/design/agents.md | design | done | Added TOC and source files. | done |
-| docs/design/calendar-plugin.md | design | done | Added TOC and source file references. | done |
 | docs/design/chat-message-handling.md | design | done | Added TOC and source files. | done |
 | docs/design/chat-renderer-ui-spec.md | design | done | Added TOC and source files. | done |
 | docs/design/content-blocks.md | design | done | Added TOC and source files. | done |

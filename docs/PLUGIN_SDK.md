@@ -133,8 +133,14 @@ by `npm run build:plugins`. Some core panels are still bundled from
 `packages/web-client/src/plugins/` into `packages/web-client/public/plugins/` by
 `npm run bundle` (which runs `npm run bundle:plugins`).
 
-This repo ships core plugins (`agents`, `sessions`, `panels`) and official plugins (
-`links`, `lists`, `notes`, `questions`, `time-tracker`, `url-fetch`).
+A complete `npm run build:plugins` replaces the generated `dist/plugins` and
+`dist/skills` trees so deleted plugins cannot survive as stale runtime bundles.
+A filtered `--skills` build is incremental and preserves unrelated generated
+output.
+
+This repo ships core plugins (`agents`, `chat`, `notifications`, `panels`,
+`sessions`) and official plugins (`links`, `lists`, `notes`, `questions`,
+`scheduled-sessions`, `search`, `time-tracker`, `url-fetch`).
 Enable them with:
 
 ```json
@@ -1202,6 +1208,6 @@ const allSettings = host.getContext('plugins.settings') as Record<string, unknow
 
 ## References
 
-- `docs/design/panel-plugins.md` for architecture and migration plan.
+- `docs/design/panel-plugins.md` for the historical architecture and migration rationale.
 - `packages/shared/src/panelProtocol.ts` for manifest and panel protocol types.
 - `packages/web-client/src/controllers/panelRegistry.ts` for panel module interfaces.

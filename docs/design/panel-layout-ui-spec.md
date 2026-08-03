@@ -79,10 +79,9 @@ Panels are plugin-defined. Core provides only the workspace and host API. Defaul
 - **Lists and Notes Panels** (plugins): list/item management and markdown notes.
 - **Notifications Panel** (plugin): durable notification browsing and actions.
 
-Other examples:
+Other bundled panels:
 
-- **Search Panel** (plugin)
-- **Questions Panel** (plugin)
+- **Scheduled Sessions Panel** (plugin)
 - **Time Tracker Panel** (plugin)
 
 ### Panel Chrome

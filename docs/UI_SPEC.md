@@ -62,7 +62,8 @@ Required elements:
 On first run:
 
 - Single empty placeholder panel
-- Panels (chat, sessions, lists, notes, time-tracker) are available from the launcher
+- The launcher shows the core panels and panels from enabled plugins. Bundled panel types include
+  chat, sessions, lists, notes, notifications, scheduled sessions, and time tracker.
 
 Implementation notes (current):
 

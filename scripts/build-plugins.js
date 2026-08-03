@@ -417,6 +417,17 @@ function shouldExportSkills(manifest, forceExport) {
   return autoExport !== false;
 }
 
+function shouldCleanGeneratedOutputs(skillsFilter) {
+  return skillsFilter === null;
+}
+
+async function cleanGeneratedOutputs() {
+  await Promise.all([
+    fs.rm(distRoot, { recursive: true, force: true }),
+    fs.rm(defaultSkillsRoot, { recursive: true, force: true }),
+  ]);
+}
+
 async function writeSkillsBundles({
   manifest,
   sourceDir,
@@ -650,6 +661,9 @@ async function main() {
   await assertServerRuntimeDependencies();
 
   const skillsFilter = parseSkillsFilter(process.argv.slice(2));
+  if (shouldCleanGeneratedOutputs(skillsFilter)) {
+    await cleanGeneratedOutputs();
+  }
   let pluginDirs = await findPluginDirectories(pluginsRoot);
   if (pluginDirs.length === 0) {
     console.warn('[plugins] No plugins found under packages/plugins');
@@ -685,5 +699,6 @@ module.exports = {
   formatSkillsDocument,
   normalizePackageAuthor,
   readSystemMetadata,
+  shouldCleanGeneratedOutputs,
   shouldExportSkills,
 };

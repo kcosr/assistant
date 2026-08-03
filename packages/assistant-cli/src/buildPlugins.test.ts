@@ -1,8 +1,10 @@
+/* eslint-disable @typescript-eslint/no-require-imports -- the build script is CommonJS and runs directly under Node */
 import { describe, expect, it } from 'vitest';
 
 const {
   assertServerRuntimeDependencies,
   formatSkillsDocument,
+  shouldCleanGeneratedOutputs,
   shouldExportSkills,
 } = require('../../../scripts/build-plugins.js');
 
@@ -42,5 +44,10 @@ describe('build-plugins skill helpers', () => {
     expect(shouldExportSkills({ skills: { autoExport: false } }, false)).toBe(false);
     expect(shouldExportSkills({ skills: { autoExport: false } }, true)).toBe(true);
     expect(shouldExportSkills({}, false)).toBe(true);
+  });
+
+  it('cleans generated plugin output only for complete builds', () => {
+    expect(shouldCleanGeneratedOutputs(null)).toBe(true);
+    expect(shouldCleanGeneratedOutputs(['notes'])).toBe(false);
   });
 });

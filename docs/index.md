@@ -31,7 +31,6 @@ This index maps the repository documentation into predictable categories so it i
 ## Design Documents
 
 - [Agents](design/agents.md)
-- [Calendar Plugin](design/calendar-plugin.md)
 - [Chat Message Handling](design/chat-message-handling.md)
 - [Chat Renderer UI Spec](design/chat-renderer-ui-spec.md)
 - [Content Blocks](design/content-blocks.md)
@@ -39,8 +38,8 @@ This index maps the repository documentation into predictable categories so it i
 - [Issue 586: Chat Rendering and Transcript Replay](design/issue-586-chat-rendering-and-transcript-replay.md)
 - [Panel Layout UI Spec](design/panel-layout-ui-spec.md)
 - [Panel Workspace Redesign](design/panel-workspace-redesign.md)
-- [Panel Plugins](design/panel-plugins.md)
-- [Persistent Views](design/persistent-views.md)
+- [Panel Plugins (historical design)](design/panel-plugins.md)
+- [Persistent Views (obsolete proposal)](design/persistent-views.md)
 - [Preferences](design/preferences.md)
 - [Unified Chat Event Architecture](design/unified-chat-event-architecture.md)
 

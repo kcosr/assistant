@@ -397,7 +397,10 @@ function createDownloadObjectUrl(contentBase64: string, mimeType: string): strin
   return URL.createObjectURL(blob);
 }
 
-async function saveBase64WithDesktop(contentBase64: string, suggestedName: string): Promise<boolean> {
+async function saveBase64WithDesktop(
+  contentBase64: string,
+  suggestedName: string,
+): Promise<boolean> {
   const targetPath = await showDesktopSaveDialog(suggestedName);
   if (!targetPath) {
     return false;
@@ -1423,7 +1426,6 @@ if (!registry || typeof registry.registerPanel !== 'function') {
         }
         const mimeType =
           payload.mimeType ?? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
-        const downloadUrl = createDownloadObjectUrl(payload.content, mimeType);
 
         if (markReported) {
           const toReport = entries.filter((entry) => !entry.reported);
@@ -1433,6 +1435,7 @@ if (!registry || typeof registry.registerPanel !== 'function') {
           void refreshEntries({ silent: true });
           void refreshTasks({ silent: true });
         }
+        const downloadUrl = createDownloadObjectUrl(payload.content, mimeType);
         setStatus('Exported XLSX.');
         return {
           filename: payload.filename,
@@ -1576,7 +1579,10 @@ if (!registry || typeof registry.registerPanel !== 'function') {
                   })
                   .catch((downloadError) => {
                     setStatus('Failed to download XLSX.');
-                    console.warn('[time-tracker] Failed to save XLSX via desktop dialog:', downloadError);
+                    console.warn(
+                      '[time-tracker] Failed to save XLSX via desktop dialog:',
+                      downloadError,
+                    );
                   });
               });
             }

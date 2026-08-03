@@ -1,4 +1,4 @@
-/* Artifacts panel styles (plugin-owned). */
+/* Lists panel styles (plugin-owned). */
 :root {
   --collection-panel-width: 300px;
 }
@@ -16,7 +16,7 @@
   flex-direction: column;
 }
 
-/* Artifacts panel body hosts a sticky shared search bar. */
+/* Lists panel body hosts a sticky shared search bar. */
 .collection-panel-body.panel-body {
   padding: 0;
   overflow-y: hidden;
@@ -280,7 +280,7 @@
   font-size: var(--font-size-xs);
 }
 
-/* ===== Artifacts Panel ===== */
+/* ===== Lists Panel ===== */
 .collection-panel {
   width: var(--collection-panel-width);
   min-width: 0;

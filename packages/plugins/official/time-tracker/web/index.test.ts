@@ -58,6 +58,8 @@ describe('time tracker range picker', () => {
   const originalRegistry = (globalThis as { ASSISTANT_PANEL_REGISTRY?: unknown })
     .ASSISTANT_PANEL_REGISTRY;
   const originalTz = process.env.TZ;
+  const originalCreateObjectURL = URL.createObjectURL;
+  const originalRevokeObjectURL = URL.revokeObjectURL;
   let panelFactory: PanelFactory | null = null;
   let operationCalls: OperationCall[] = [];
   let mockTasks: MockTask[] = [];
@@ -182,6 +184,16 @@ describe('time tracker range picker', () => {
       process.env.TZ = originalTz;
     }
     delete (window as { assistantDesktop?: unknown }).assistantDesktop;
+    Object.defineProperty(URL, 'createObjectURL', {
+      value: originalCreateObjectURL,
+      configurable: true,
+      writable: true,
+    });
+    Object.defineProperty(URL, 'revokeObjectURL', {
+      value: originalRevokeObjectURL,
+      configurable: true,
+      writable: true,
+    });
     document.body.innerHTML = '';
   });
 
@@ -531,6 +543,58 @@ describe('time tracker range picker', () => {
       expect(showSaveDialog).toHaveBeenCalledWith('time-report.xlsx');
       // export_xlsx mock returns base64("test") = "dGVzdA=="
       expect(saveArtifactFile).toHaveBeenCalledWith('/tmp/time-report.xlsx', 'dGVzdA==');
+    } finally {
+      handle.unmount();
+    }
+  });
+
+  it('releases the browser download URL when the export dialog closes', async () => {
+    const createObjectURL = vi.fn().mockReturnValue('blob:http://localhost/export');
+    const revokeObjectURL = vi.fn();
+    Object.defineProperty(URL, 'createObjectURL', {
+      value: createObjectURL,
+      configurable: true,
+      writable: true,
+    });
+    Object.defineProperty(URL, 'revokeObjectURL', {
+      value: revokeObjectURL,
+      configurable: true,
+      writable: true,
+    });
+    mockEntries = [
+      makeEntry({
+        id: 'entry-1',
+        task_id: 'task-1',
+        duration_minutes: 30,
+        note: 'Browser export',
+      }),
+    ];
+
+    const { container, handle } = await mountPanel();
+    try {
+      container.querySelector<HTMLButtonElement>('[data-role="export-xlsx"]')?.click();
+      await flushPromises();
+      document.body
+        .querySelector<HTMLButtonElement>(
+          '.time-tracker-export-dialog .confirm-dialog-button.primary',
+        )
+        ?.click();
+      await flushPromises();
+      await flushPromises();
+
+      const link = document.body.querySelector<HTMLAnchorElement>(
+        '.time-tracker-export-summary a[download]',
+      );
+      expect(createObjectURL).toHaveBeenCalledOnce();
+      expect(link?.href).toBe('blob:http://localhost/export');
+      expect(link?.download).toBe('time-report.xlsx');
+
+      document.body
+        .querySelector<HTMLButtonElement>(
+          '.time-tracker-export-summary + .confirm-dialog-buttons button',
+        )
+        ?.click();
+      expect(revokeObjectURL).toHaveBeenCalledWith('blob:http://localhost/export');
     } finally {
       handle.unmount();
     }
