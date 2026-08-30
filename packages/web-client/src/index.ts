@@ -567,6 +567,7 @@ async function main(): Promise<void> {
     listItemEditorModeSelect: listItemEditorModeSelectEl,
     autoFocusChatCheckbox: autoFocusChatCheckboxEl,
     keyboardShortcutsCheckbox: keyboardShortcutsCheckboxEl,
+    rightOptionFocusChatCheckbox: rightOptionFocusChatCheckboxEl,
     autoScrollCheckbox: autoScrollCheckboxEl,
     selectedPanelOutlinesCheckbox: selectedPanelOutlinesCheckboxEl,
     synthesizedPanelTitlesCheckbox: synthesizedPanelTitlesCheckboxEl,
@@ -651,6 +652,7 @@ async function main(): Promise<void> {
   const VOICE_SETTINGS_STORAGE_KEY = 'aiAssistantVoiceSettings';
   const KEYBOARD_SHORTCUTS_STORAGE_KEY = 'aiAssistantKeyboardShortcutsEnabled';
   const KEYBOARD_SHORTCUT_BINDINGS_STORAGE_KEY = 'aiAssistantKeyboardShortcutBindings';
+  const RIGHT_OPTION_FOCUS_CHAT_STORAGE_KEY = 'aiAssistantRightOptionFocusChatEnabled';
   const AUTO_FOCUS_CHAT_STORAGE_KEY = 'aiAssistantAutoFocusChatOnSessionReady';
   const AUTO_SCROLL_STORAGE_KEY = 'aiAssistantAutoScrollEnabled';
   const SELECTED_PANEL_OUTLINES_STORAGE_KEY = 'aiAssistantSelectedPanelOutlinesEnabled';
@@ -695,6 +697,7 @@ async function main(): Promise<void> {
     voiceStorageKey: VOICE_SETTINGS_STORAGE_KEY,
     keyboardShortcutsStorageKey: KEYBOARD_SHORTCUTS_STORAGE_KEY,
     keyboardShortcutsBindingsStorageKey: KEYBOARD_SHORTCUT_BINDINGS_STORAGE_KEY,
+    rightOptionFocusChatStorageKey: RIGHT_OPTION_FOCUS_CHAT_STORAGE_KEY,
     autoFocusChatStorageKey: AUTO_FOCUS_CHAT_STORAGE_KEY,
     autoScrollStorageKey: AUTO_SCROLL_STORAGE_KEY,
     selectedPanelOutlinesStorageKey: SELECTED_PANEL_OUTLINES_STORAGE_KEY,
@@ -706,6 +709,7 @@ async function main(): Promise<void> {
   let currentVoiceSettings = initialVoiceSettings;
   let keyboardShortcutsEnabled = initialPreferences.keyboardShortcutsEnabled;
   const keyboardShortcutBindings = initialPreferences.keyboardShortcutBindings;
+  let rightOptionFocusChatEnabled = initialPreferences.rightOptionFocusChatEnabled;
   let autoFocusChatOnSessionReady = initialPreferences.autoFocusChatOnSessionReady;
   let autoScrollEnabled = initialPreferences.autoScrollEnabled;
   const selectedPanelOutlinesEnabled = initialPreferences.selectedPanelOutlinesEnabled;
@@ -3933,16 +3937,19 @@ async function main(): Promise<void> {
   wirePreferencesCheckboxes({
     autoFocusChatCheckbox: autoFocusChatCheckboxEl,
     keyboardShortcutsCheckbox: keyboardShortcutsCheckboxEl,
+    rightOptionFocusChatCheckbox: rightOptionFocusChatCheckboxEl,
     autoScrollCheckbox: autoScrollCheckboxEl,
     selectedPanelOutlinesCheckbox: selectedPanelOutlinesCheckboxEl,
     synthesizedPanelTitlesCheckbox: synthesizedPanelTitlesCheckboxEl,
     initialAutoFocusChatOnSessionReady: autoFocusChatOnSessionReady,
     initialKeyboardShortcutsEnabled: keyboardShortcutsEnabled,
+    initialRightOptionFocusChatEnabled: rightOptionFocusChatEnabled,
     initialAutoScrollEnabled: autoScrollEnabled,
     initialSelectedPanelOutlinesEnabled: selectedPanelOutlinesEnabled,
     initialSynthesizedPanelTitlesEnabled: synthesizedPanelTitlesEnabled,
     autoFocusChatStorageKey: AUTO_FOCUS_CHAT_STORAGE_KEY,
     keyboardShortcutsStorageKey: KEYBOARD_SHORTCUTS_STORAGE_KEY,
+    rightOptionFocusChatStorageKey: RIGHT_OPTION_FOCUS_CHAT_STORAGE_KEY,
     autoScrollStorageKey: AUTO_SCROLL_STORAGE_KEY,
     selectedPanelOutlinesStorageKey: SELECTED_PANEL_OUTLINES_STORAGE_KEY,
     synthesizedPanelTitlesStorageKey: SYNTHESIZED_PANEL_TITLES_STORAGE_KEY,
@@ -3951,6 +3958,9 @@ async function main(): Promise<void> {
     },
     setKeyboardShortcutsEnabled: (enabled) => {
       keyboardShortcutsEnabled = enabled;
+    },
+    setRightOptionFocusChatEnabled: (enabled) => {
+      rightOptionFocusChatEnabled = enabled;
     },
     setAutoScrollEnabled: (enabled) => {
       autoScrollEnabled = enabled;
@@ -5639,6 +5649,7 @@ async function main(): Promise<void> {
       dialogManager,
       shortcutRegistry: keyboardShortcutRegistry,
       isKeyboardShortcutsEnabled: () => keyboardShortcutsEnabled,
+      isRightOptionFocusChatEnabled: () => rightOptionFocusChatEnabled,
       getSpeechAudioController: () => getActiveChatInputRuntime()?.speechAudioController ?? null,
       cancelAllActiveOperations,
       startPushToTalk,

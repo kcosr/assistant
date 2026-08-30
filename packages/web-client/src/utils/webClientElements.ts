@@ -40,6 +40,7 @@ export interface WebClientElements {
   listItemEditorModeSelect: HTMLSelectElement | null;
   autoFocusChatCheckbox: HTMLInputElement;
   keyboardShortcutsCheckbox: HTMLInputElement;
+  rightOptionFocusChatCheckbox: HTMLInputElement;
   autoScrollCheckbox: HTMLInputElement;
   selectedPanelOutlinesCheckbox: HTMLInputElement;
   synthesizedPanelTitlesCheckbox: HTMLInputElement;
@@ -154,6 +155,9 @@ export function getWebClientElements(): WebClientElements | null {
   const listItemEditorModeSelect = getElement<HTMLSelectElement>('list-item-editor-mode-select');
   const autoFocusChatCheckbox = getElement<HTMLInputElement>('autofocus-chat-checkbox');
   const keyboardShortcutsCheckbox = getElement<HTMLInputElement>('keyboard-shortcuts-checkbox');
+  const rightOptionFocusChatCheckbox = getElement<HTMLInputElement>(
+    'right-option-focus-chat-checkbox',
+  );
   const autoScrollCheckbox = getElement<HTMLInputElement>('auto-scroll-checkbox');
   const selectedPanelOutlinesCheckbox = getElement<HTMLInputElement>(
     'selected-panel-outlines-checkbox',
@@ -199,6 +203,7 @@ export function getWebClientElements(): WebClientElements | null {
     !voiceTtsGainValue ||
     !autoFocusChatCheckbox ||
     !keyboardShortcutsCheckbox ||
+    !rightOptionFocusChatCheckbox ||
     !autoScrollCheckbox ||
     !selectedPanelOutlinesCheckbox ||
     !synthesizedPanelTitlesCheckbox ||
@@ -250,6 +255,7 @@ export function getWebClientElements(): WebClientElements | null {
     listItemEditorModeSelect,
     autoFocusChatCheckbox,
     keyboardShortcutsCheckbox,
+    rightOptionFocusChatCheckbox,
     autoScrollCheckbox,
     selectedPanelOutlinesCheckbox,
     synthesizedPanelTitlesCheckbox,

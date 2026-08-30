@@ -68,6 +68,7 @@ function buildOptions(
       showTextInputDialog: vi.fn(),
     } as unknown as DialogManager,
     isKeyboardShortcutsEnabled: () => true,
+    isRightOptionFocusChatEnabled: () => false,
     getSpeechAudioController: () => null,
     cancelAllActiveOperations: () => false,
     startPushToTalk: async () => {},
@@ -107,6 +108,21 @@ function attachShortcutRegistry(
   registry.attach();
   return {
     detach: () => registry.detach(),
+  };
+}
+
+function setNavigatorPlatform(platform: string): () => void {
+  const descriptor = Object.getOwnPropertyDescriptor(window.navigator, 'platform');
+  Object.defineProperty(window.navigator, 'platform', {
+    configurable: true,
+    value: platform,
+  });
+  return () => {
+    if (descriptor) {
+      Object.defineProperty(window.navigator, 'platform', descriptor);
+    } else {
+      Reflect.deleteProperty(window.navigator, 'platform');
+    }
   };
 }
 
@@ -836,6 +852,125 @@ describe('KeyboardNavigationController chat shortcuts', () => {
     expect(document.activeElement).not.toBe(input);
 
     detach();
+  });
+
+  it('focuses the selected chat input on Right Option without consuming the event', () => {
+    const restorePlatform = setNavigatorPlatform('MacIntel');
+    try {
+      const panelFrame = document.createElement('div');
+      panelFrame.className = 'panel-frame is-active';
+      panelFrame.dataset['panelId'] = 'panel-1';
+      document.body.appendChild(panelFrame);
+
+      const otherInput = document.createElement('input');
+      const chatInput = document.createElement('textarea');
+      document.body.append(otherInput, chatInput);
+      otherInput.focus();
+
+      const options = buildOptions(panelFrame);
+      options.isRightOptionFocusChatEnabled = () => true;
+      options.getInputEl = () => chatInput;
+      options.focusInput = () => chatInput.focus();
+
+      const controller = new KeyboardNavigationController(options);
+      const event = new KeyboardEvent('keydown', {
+        key: 'Alt',
+        code: 'AltRight',
+        altKey: true,
+        cancelable: true,
+      });
+      const preventDefault = vi.spyOn(event, 'preventDefault');
+      const stopPropagation = vi.spyOn(event, 'stopPropagation');
+
+      (
+        controller as unknown as {
+          handleRightOptionFocus: (keyboardEvent: KeyboardEvent) => void;
+        }
+      ).handleRightOptionFocus(event);
+
+      expect(document.activeElement).toBe(chatInput);
+      expect(preventDefault).not.toHaveBeenCalled();
+      expect(stopPropagation).not.toHaveBeenCalled();
+    } finally {
+      restorePlatform();
+    }
+  });
+
+  it('keeps the selected chat input focused on repeated Right Option events', () => {
+    const restorePlatform = setNavigatorPlatform('MacIntel');
+    try {
+      const panelFrame = document.createElement('div');
+      panelFrame.className = 'panel-frame is-active';
+      panelFrame.dataset['panelId'] = 'panel-1';
+      document.body.appendChild(panelFrame);
+
+      const chatInput = document.createElement('textarea');
+      document.body.appendChild(chatInput);
+      chatInput.focus();
+
+      const options = buildOptions(panelFrame);
+      options.isRightOptionFocusChatEnabled = () => true;
+      options.getInputEl = () => chatInput;
+      options.focusInput = vi.fn(() => chatInput.focus());
+
+      const controller = new KeyboardNavigationController(options);
+      const event = new KeyboardEvent('keydown', {
+        key: 'Alt',
+        code: 'AltRight',
+        altKey: true,
+        repeat: true,
+      });
+
+      (
+        controller as unknown as {
+          handleRightOptionFocus: (keyboardEvent: KeyboardEvent) => void;
+        }
+      ).handleRightOptionFocus(event);
+
+      expect(document.activeElement).toBe(chatInput);
+      expect(options.focusInput).not.toHaveBeenCalled();
+    } finally {
+      restorePlatform();
+    }
+  });
+
+  it.each([
+    ['the preference is disabled', false, 'AltRight'],
+    ['Left Option is pressed', true, 'AltLeft'],
+  ])('does not focus the chat input when %s', (_case, enabled, code) => {
+    const restorePlatform = setNavigatorPlatform('MacIntel');
+    try {
+      const panelFrame = document.createElement('div');
+      panelFrame.className = 'panel-frame is-active';
+      panelFrame.dataset['panelId'] = 'panel-1';
+      document.body.appendChild(panelFrame);
+
+      const chatInput = document.createElement('textarea');
+      document.body.appendChild(chatInput);
+
+      const options = buildOptions(panelFrame);
+      options.isRightOptionFocusChatEnabled = () => enabled;
+      options.getInputEl = () => chatInput;
+      options.focusInput = vi.fn(() => chatInput.focus());
+
+      const controller = new KeyboardNavigationController(options);
+      const event = new KeyboardEvent('keydown', {
+        key: 'Alt',
+        code,
+        altKey: true,
+      });
+
+      (
+        controller as unknown as {
+          handleRightOptionFocus: (keyboardEvent: KeyboardEvent) => void;
+        }
+      ).handleRightOptionFocus(event);
+
+      expect(options.focusInput).not.toHaveBeenCalled();
+      expect(document.activeElement).not.toBe(chatInput);
+    } finally {
+      restorePlatform();
+    }
   });
 
   it.each([
