@@ -453,9 +453,9 @@ Plugins can opt into automatic git snapshots of their data directories using `gi
 
 ##### Execution Mode (Coding Plugins)
 
-Plugins that execute code (like the coding plugin) can run in `local` or `sidecar` mode.
-In `local` mode, `local.workspaceRoot` may use the session-scoped macro `${session.workingDir}` so
-relative file paths and `bash` commands anchor to the session picker’s working directory.
+Plugins that execute code (like the coding plugin) run locally. `local.workspaceRoot` may use the
+session-scoped macro `${session.workingDir}` so relative file paths and `bash` commands anchor to
+the session picker’s working directory.
 
 ```json
 {

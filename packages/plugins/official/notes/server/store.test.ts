@@ -264,31 +264,4 @@ describe('NotesStore (plugin)', () => {
     expect(() => internal.validateSlug('valid-slug')).not.toThrow();
     expect(internal.slugify('Hello World')).toBe('hello-world');
   });
-
-  it('previewWrite returns a unified diff without modifying files', async () => {
-    const baseDir = await createTempDir();
-    const store = createStore(baseDir);
-
-    const diff = await store.previewWrite('Preview Note', 'Preview content');
-    expect(diff).toContain('@@');
-    expect(diff).toContain('Preview content');
-
-    const files = await fs.readdir(baseDir);
-    expect(files).toHaveLength(0);
-  });
-
-  it('previewWrite shows differences for existing notes', async () => {
-    const baseDir = await createTempDir();
-    const store = createStore(baseDir);
-
-    await store.write({
-      title: 'Diff Note',
-      content: 'Old content',
-      tags: ['tag'],
-    });
-
-    const diff = await store.previewWrite('Diff Note', 'New content');
-    expect(diff).toContain('-Old content');
-    expect(diff).toContain('+New content');
-  });
 });

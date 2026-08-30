@@ -7,8 +7,6 @@
     "node": ">=20.18.1"
   },
   "workspaces": [
-    "packages/coding-executor",
-    "packages/coding-sidecar",
     "packages/notify-proxy",
     "packages/assistant-cli",
     "packages/agent-server",
@@ -20,7 +18,7 @@
   ],
   "scripts": {
     "clean": "rimraf node_modules \"packages/**/node_modules\" \"packages/**/dist\" \"packages/**/build\" \"packages/desktop/release\" \"packages/desktop-tauri/src-tauri/target\" \"packages/mobile-web/android/.gradle\" \"packages/mobile-web/android/.kotlin\" \"packages/mobile-web/android/.cxx\" \"packages/mobile-web/android/app/.cxx\" \"packages/desktop-tauri/src-tauri/gen/android\"",
-    "build": "npm run build -w @assistant/shared && npm run build -w @assistant/coding-executor && npm run build -w @assistant/agent-server && npm run build -w @assistant/web-client && npm run build:plugins && npm run build -w @assistant/assistant-cli && npm run build -w @assistant/coding-sidecar && npm run build -w @assistant/notify-proxy",
+    "build": "npm run build -w @assistant/shared && npm run build -w @assistant/agent-server && npm run build -w @assistant/web-client && npm run build:plugins && npm run build -w @assistant/assistant-cli && npm run build -w @assistant/notify-proxy",
     "build:clean": "npm run clean && npm ci && npm run build",
     "build:parallel": "node scripts/build-parallel.mjs",
     "build:remote": "node scripts/build-remote.mjs",
@@ -52,7 +50,6 @@
     "@earendil-works/pi-ai": "^0.82.1",
     "@earendil-works/pi-coding-agent": "^0.82.1",
     "better-sqlite3": "^11.10.0",
-    "diff": "^7.0.0",
     "exceljs": "^4.4.0",
     "file-uri-to-path": "^1.0.0"
   }

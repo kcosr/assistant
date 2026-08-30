@@ -38,8 +38,6 @@ This log tracks review status for all markdown docs in the repo. Update the stat
 | docs/design/unified-chat-event-architecture.md | design | done | Added TOC and source files. Fixed missing tool_input_chunk and tool_output_chunk event types in table. | done |
 | packages/agent-server/README.md | package | done | Added TOC. Fixed coding plugin tool lists (added missing ls, find, grep tools in multiple sections). Note: file still has duplicate "Coding Plugin" section headers that could be consolidated. | done |
 | packages/assistant-cli/README.md | package | done | No changes needed. | done |
-| packages/coding-executor/README.md | package | done | New README with ToolExecutor interface, operations, and truncation docs. | done |
-| packages/coding-sidecar/README.md | package | done | New README with Docker, configuration, and API documentation. | done |
 | packages/mobile-web/README.md | package | done | Added TOC and source files. | done |
 | packages/notify-proxy/README.md | package | done | Added TOC and source files. | done |
 | packages/plugins/core/agents/README.md | package | done | New README created with operations and tools. | done |

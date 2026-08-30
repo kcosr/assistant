@@ -295,8 +295,6 @@ Monorepo managed with npm workspaces:
 | `packages/assistant-cli/`  | Internal runtime used to generate plugin CLIs                          |
 | `packages/shared/`         | Shared types, protocol definitions, audio frame helpers                |
 | `packages/plugins/`        | Plugin packages (core, official)                                       |
-| `packages/coding-executor/`| Code execution tools (bash, read, write, edit, grep, find)             |
-| `packages/coding-sidecar/` | Container sidecar for sandboxed code execution                         |
 | `packages/desktop/`        | Canonical Electron desktop app wrapper                                 |
 | `packages/desktop-tauri/`  | Transitional Tauri desktop app wrapper                                 |
 | `packages/mobile-web/`     | Capacitor mobile app wrapper                                           |

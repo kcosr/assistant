@@ -11,7 +11,6 @@ export default defineConfig({
     environment: 'node',
     include: [
       'packages/shared/src/**/*.test.ts',
-      'packages/coding-executor/src/**/*.test.ts',
       'packages/agent-server/src/**/*.test.ts',
       'packages/plugins/**/server/**/*.test.ts',
       'packages/plugins/**/web/**/*.test.ts',
@@ -22,7 +21,6 @@ export default defineConfig({
       'packages/web-client/scripts/**/*.test.mjs',
       'packages/mobile-web/scripts/**/*.test.mjs',
       'packages/assistant-cli/src/**/*.test.ts',
-      'packages/coding-sidecar/src/**/*.test.ts',
     ],
     environmentMatchGlobs: [
       // Use jsdom for web-client tests that need DOM APIs
