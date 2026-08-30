@@ -30,16 +30,12 @@ const main = async () => {
     console.log(`[build] ${logTime()}s: build @assistant/shared`);
     await run(['run', 'build', '-w', '@assistant/shared'], 'shared');
 
-    console.log(`[build] ${logTime()}s: build @assistant/coding-executor`);
-    await run(['run', 'build', '-w', '@assistant/coding-executor'], 'coding-executor');
-
     console.log(`[build] ${logTime()}s: build remaining workspaces in parallel`);
     await Promise.all([
       run(['run', 'build', '-w', '@assistant/agent-server'], 'agent-server'),
       run(['run', 'build', '-w', '@assistant/web-client'], 'web-client'),
       run(['run', 'build:plugins'], 'build:plugins'),
       run(['run', 'build', '-w', '@assistant/assistant-cli'], 'assistant-cli'),
-      run(['run', 'build', '-w', '@assistant/coding-sidecar'], 'coding-sidecar'),
       run(['run', 'build', '-w', '@assistant/notify-proxy'], 'notify-proxy'),
     ]);
 

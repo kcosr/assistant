@@ -1,8 +1,6 @@
 import { mkdir, readdir, readFile, stat, unlink, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
-import { createTwoFilesPatch } from 'diff';
-
 import type { Note, NoteMetadata, NoteSearchResult } from './types';
 import { parseFrontmatter, serializeFrontmatter } from './frontmatter';
 import { NotePathResolver } from './notePaths';
@@ -493,25 +491,5 @@ export class NotesStore {
     }
 
     return results;
-  }
-
-  async previewWrite(title: string, content: string): Promise<string> {
-    const { filePath, slug } = this.paths.resolvePath(title);
-
-    let oldBodyContent = '';
-    try {
-      const fileContent = await readFile(filePath, 'utf-8');
-      const parsed = parseFrontmatter(fileContent);
-      oldBodyContent = parsed.content;
-    } catch (err) {
-      const error = err as NodeJS.ErrnoException;
-      if (error.code !== 'ENOENT') {
-        throw err;
-      }
-      // File doesn't exist - old content is empty
-    }
-
-    // Diff only the body content, not the frontmatter
-    return createTwoFilesPatch(`${slug}.md`, `${slug}.md`, oldBodyContent, content);
   }
 }

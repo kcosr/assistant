@@ -43,7 +43,7 @@ The interaction system uses a three-part key for correlation:
 - Submit response and verify it returns to HTTP caller
 
 ### 2. Concurrent Interactions from Multiple CLIs
-- Two CLIs (e.g., `assistant-cli`, `coding-executor`) both call interactive tools
+- Two generated plugin CLIs both call interactive tools
 - Verify each response routes to the correct caller
 - No cross-talk between sessions or tool calls
 
@@ -65,7 +65,7 @@ The interaction system uses a three-part key for correlation:
 
 ## Open Questions
 
-1. **Which CLIs specifically?** The assistant app has multiple CLIs (assistant-cli, coding-executor, coding-sidecar). Which need testing?
+1. **Which CLIs specifically?** Which generated plugin CLIs need testing?
 
 2. **Integration vs Unit?** Should this be automated integration tests (spinning up real HTTP/WS) or mock-based unit tests?
 

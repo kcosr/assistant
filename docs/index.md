@@ -47,8 +47,6 @@ This index maps the repository documentation into predictable categories so it i
 
 - [Agent Server](../packages/agent-server/README.md)
 - [Assistant CLI](../packages/assistant-cli/README.md)
-- [Coding Executor](../packages/coding-executor/README.md)
-- [Coding Sidecar](../packages/coding-sidecar/README.md)
 - [Mobile Web](../packages/mobile-web/README.md)
 - [Notify Proxy](../packages/notify-proxy/README.md)
 - [Push CLI](../packages/push-cli/README.md)
