@@ -125,6 +125,7 @@ export PATH="$PATH:$HOME/.pi/skills/notes:$HOME/.pi/skills/lists"
 | `Ctrl + H` | Toggle header panel navigation mode |
 | `Ctrl + Shift + S` | Split active panel (placement mode) |
 | `Ctrl + I` | Toggle text input focus |
+| `Right Option` (macOS, opt-in) | Focus the selected chat input without consuming the key event |
 | `Ctrl + C/L/N` | Focus last-used chat/lists/notes panel (opens modal if none) |
 | `Ctrl + R` | Toggle speech recording (if available) |
 | `Cmd + Shift + S` (macOS) | Toggle sessions sidebar |

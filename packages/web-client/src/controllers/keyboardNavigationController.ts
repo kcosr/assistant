@@ -20,6 +20,7 @@ export interface KeyboardNavigationControllerOptions {
   dialogManager: DialogManager;
   shortcutRegistry?: KeyboardShortcutRegistry;
   isKeyboardShortcutsEnabled: () => boolean;
+  isRightOptionFocusChatEnabled: () => boolean;
   getSpeechAudioController: () => SpeechAudioController | null;
   cancelAllActiveOperations: () => boolean;
   startPushToTalk: () => Promise<void>;
@@ -116,6 +117,7 @@ export class KeyboardNavigationController {
     this.hasAttached = true;
 
     this.registerShortcuts();
+    this.attachRightOptionFocus();
     this.attachTabNavigation();
     this.attachHeaderPanelSelection();
     this.attachPanelNavigation();
@@ -2160,6 +2162,37 @@ export class KeyboardNavigationController {
         }
       }
     });
+  }
+
+  private attachRightOptionFocus(): void {
+    document.addEventListener(
+      'keydown',
+      (event: KeyboardEvent) => this.handleRightOptionFocus(event),
+      true,
+    );
+  }
+
+  private handleRightOptionFocus(event: KeyboardEvent): void {
+    if (!isMacPlatform() || !this.options.isRightOptionFocusChatEnabled()) {
+      return;
+    }
+    if (!this.options.isKeyboardShortcutsEnabled() || this.options.dialogManager.hasOpenDialog) {
+      return;
+    }
+    if (areKeyboardShortcutsBlockedByOverlay()) {
+      return;
+    }
+    const isRightOption =
+      event.code === 'AltRight' ||
+      (event.key === 'Alt' && event.location === KeyboardEvent.DOM_KEY_LOCATION_RIGHT);
+    if (!isRightOption || event.ctrlKey || event.metaKey || event.shiftKey) {
+      return;
+    }
+    const inputEl = this.options.getInputEl();
+    if (!inputEl || document.activeElement === inputEl) {
+      return;
+    }
+    this.focusZone('input');
   }
 
   private attachSidebarNavigation(): void {

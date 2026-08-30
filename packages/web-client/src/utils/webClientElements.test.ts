@@ -71,6 +71,7 @@ describe('getWebClientElements', () => {
     expect(elements?.voiceTtsGainSlider.id).toBe('voice-tts-gain-slider');
     expect(elements?.voiceTtsGainValue.id).toBe('voice-tts-gain-value');
     expect(elements?.selectedPanelOutlinesCheckbox.id).toBe('selected-panel-outlines-checkbox');
+    expect(elements?.rightOptionFocusChatCheckbox.id).toBe('right-option-focus-chat-checkbox');
   });
 
   it('keeps the voice settings modal hidden in the static document', () => {

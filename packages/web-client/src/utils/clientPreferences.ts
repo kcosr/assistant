@@ -10,6 +10,7 @@ export interface ClientPreferencesState {
   voice: VoiceSettings;
   keyboardShortcutsEnabled: boolean;
   keyboardShortcutBindings: ShortcutBindingOverrides | null;
+  rightOptionFocusChatEnabled: boolean;
   autoFocusChatOnSessionReady: boolean;
   autoScrollEnabled: boolean;
   selectedPanelOutlinesEnabled: boolean;
@@ -21,6 +22,7 @@ export function loadClientPreferences(options: {
   voiceStorageKey: string;
   keyboardShortcutsStorageKey: string;
   keyboardShortcutsBindingsStorageKey: string;
+  rightOptionFocusChatStorageKey: string;
   autoFocusChatStorageKey: string;
   autoScrollStorageKey: string;
   selectedPanelOutlinesStorageKey: string;
@@ -32,6 +34,7 @@ export function loadClientPreferences(options: {
   });
   let keyboardShortcutsEnabled = true;
   let keyboardShortcutBindings: ShortcutBindingOverrides | null = null;
+  let rightOptionFocusChatEnabled = false;
   let autoFocusChatOnSessionReady = true;
   let autoScrollEnabled = true;
   let selectedPanelOutlinesEnabled = true;
@@ -55,6 +58,10 @@ export function loadClientPreferences(options: {
       if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
         keyboardShortcutBindings = parsed as ShortcutBindingOverrides;
       }
+    }
+    const rightOptionFocusStored = localStorage.getItem(options.rightOptionFocusChatStorageKey);
+    if (rightOptionFocusStored === 'true') {
+      rightOptionFocusChatEnabled = true;
     }
     const autoFocusStored = localStorage.getItem(options.autoFocusChatStorageKey);
     if (autoFocusStored === 'false') {
@@ -88,6 +95,7 @@ export function loadClientPreferences(options: {
     voice,
     keyboardShortcutsEnabled,
     keyboardShortcutBindings,
+    rightOptionFocusChatEnabled,
     autoFocusChatOnSessionReady,
     autoScrollEnabled,
     selectedPanelOutlinesEnabled,
@@ -99,21 +107,25 @@ export function loadClientPreferences(options: {
 export function wirePreferencesCheckboxes(options: {
   autoFocusChatCheckbox: HTMLInputElement;
   keyboardShortcutsCheckbox: HTMLInputElement;
+  rightOptionFocusChatCheckbox: HTMLInputElement;
   autoScrollCheckbox: HTMLInputElement;
   selectedPanelOutlinesCheckbox: HTMLInputElement;
   synthesizedPanelTitlesCheckbox: HTMLInputElement;
   initialAutoFocusChatOnSessionReady: boolean;
   initialKeyboardShortcutsEnabled: boolean;
+  initialRightOptionFocusChatEnabled: boolean;
   initialAutoScrollEnabled: boolean;
   initialSelectedPanelOutlinesEnabled: boolean;
   initialSynthesizedPanelTitlesEnabled: boolean;
   autoFocusChatStorageKey: string;
   keyboardShortcutsStorageKey: string;
+  rightOptionFocusChatStorageKey: string;
   autoScrollStorageKey: string;
   selectedPanelOutlinesStorageKey: string;
   synthesizedPanelTitlesStorageKey: string;
   setAutoFocusChatOnSessionReady: (enabled: boolean) => void;
   setKeyboardShortcutsEnabled: (enabled: boolean) => void;
+  setRightOptionFocusChatEnabled: (enabled: boolean) => void;
   setAutoScrollEnabled: (enabled: boolean) => void;
   setSelectedPanelOutlinesEnabled: (enabled: boolean) => void;
   setSynthesizedPanelTitlesEnabled: (enabled: boolean) => void;
@@ -135,6 +147,17 @@ export function wirePreferencesCheckboxes(options: {
     options.setKeyboardShortcutsEnabled(enabled);
     try {
       localStorage.setItem(options.keyboardShortcutsStorageKey, enabled ? 'true' : 'false');
+    } catch {
+      // Ignore localStorage errors
+    }
+  });
+
+  options.rightOptionFocusChatCheckbox.checked = options.initialRightOptionFocusChatEnabled;
+  options.rightOptionFocusChatCheckbox.addEventListener('change', () => {
+    const enabled = options.rightOptionFocusChatCheckbox.checked;
+    options.setRightOptionFocusChatEnabled(enabled);
+    try {
+      localStorage.setItem(options.rightOptionFocusChatStorageKey, enabled ? 'true' : 'false');
     } catch {
       // Ignore localStorage errors
     }

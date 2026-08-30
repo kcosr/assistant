@@ -15,6 +15,7 @@ const defaultOptions = {
   voiceStorageKey: 'voice',
   keyboardShortcutsStorageKey: 'shortcuts',
   keyboardShortcutsBindingsStorageKey: 'shortcut-bindings',
+  rightOptionFocusChatStorageKey: 'right-option-focus-chat',
   autoFocusChatStorageKey: 'autofocus',
   autoScrollStorageKey: 'autoscroll',
   selectedPanelOutlinesStorageKey: 'selected-panel-outlines',
@@ -49,6 +50,7 @@ describe('loadClientPreferences', () => {
     expect(preferences.voice.startupPreRollMs).toBe(512);
     expect(preferences.synthesizedPanelTitlesEnabled).toBe(false);
     expect(preferences.selectedPanelOutlinesEnabled).toBe(true);
+    expect(preferences.rightOptionFocusChatEnabled).toBe(false);
   });
 
   it('defaults tool audio mode on in Capacitor Android when unset', () => {
@@ -146,5 +148,13 @@ describe('loadClientPreferences', () => {
     const preferences = loadClientPreferences(defaultOptions);
 
     expect(preferences.selectedPanelOutlinesEnabled).toBe(false);
+  });
+
+  it('loads the right Option chat focus preference when enabled', () => {
+    localStorage.setItem(defaultOptions.rightOptionFocusChatStorageKey, 'true');
+
+    const preferences = loadClientPreferences(defaultOptions);
+
+    expect(preferences.rightOptionFocusChatEnabled).toBe(true);
   });
 });
