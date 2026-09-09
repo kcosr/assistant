@@ -112,7 +112,12 @@ describe('startSessionMessage', () => {
     expect(capturedSignal?.reason).toBe('timeout');
   });
 
-  it('passes scheduled session and search services into agent tool exposure for headless messages', async () => {
+  const turnMetadataCases = [
+    { turnOriginId: 'android-process-1' },
+    { turnSource: 'scheduled_wakeup' as const },
+  ];
+
+  it.each(turnMetadataCases)('passes headless context and metadata %j', async (turnMetadata) => {
     const summary: SessionSummary = {
       sessionId: 'session-1',
       name: 'Session 1',
@@ -176,7 +181,7 @@ describe('startSessionMessage', () => {
         content: 'hello',
         mode: 'sync',
         timeoutSeconds: 1,
-        turnOriginId: 'android-process-1',
+        ...turnMetadata,
       },
       sessionIndex,
       sessionHub,
@@ -210,8 +215,6 @@ describe('startSessionMessage', () => {
     });
 
     expect(resolveAgentToolExposureForHost).toHaveBeenCalledTimes(1);
-    expect(processUserMessage).toHaveBeenCalledWith(
-      expect.objectContaining({ turnOriginId: 'android-process-1' }),
-    );
+    expect(processUserMessage).toHaveBeenCalledWith(expect.objectContaining(turnMetadata));
   });
 });

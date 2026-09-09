@@ -408,7 +408,7 @@ describe('external agents HTTP endpoints', () => {
       method: 'POST',
       hostname: '127.0.0.1',
       port,
-      path: '/external/sessions/EXTERNAL-REUSE/messages?turnOriginId=android-process-1',
+      path: '/external/sessions/EXTERNAL-REUSE/messages?turnOriginId=android-process-1&turnSource=scheduled_wakeup',
       headers: { 'Content-Type': 'text/plain' },
       body: 'Hello *world*',
     });
@@ -421,7 +421,7 @@ describe('external agents HTTP endpoints', () => {
         event.type === 'assistant_done' &&
         (event as { payload?: { text?: string } }).payload?.text === 'Hello *world*',
     );
-    expect(assistantDone).toBeTruthy();
+    expect(assistantDone).toMatchObject({ payload: { turnSource: 'scheduled_wakeup' } });
     expect(
       assistantDone?.type === 'assistant_done' ? assistantDone.payload.turnOriginId : undefined,
     ).toBe('android-process-1');
@@ -433,6 +433,7 @@ describe('external agents HTTP endpoints', () => {
       source: 'system',
       sourceEventId: expect.any(String),
       turnOriginId: 'android-process-1',
+      turnSource: 'scheduled_wakeup',
     });
 
     const broadcastMessages = sessionHub.broadcasts

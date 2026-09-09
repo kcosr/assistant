@@ -54,6 +54,9 @@ Shared durable notification fields needed by Android:
 - optional `ttsText`
 - optional `sourceEventId`
 - optional `sessionActivitySeq` for stale ask validation before auto-listen
+- optional `turnSource = scheduled_wakeup` on final-response notifications for one-shot wakes;
+  the same `turnSource` accompanies assistant completion payloads and `turn_settled` messages so
+  Android can apply Auto Listen without inventing a device origin
 
 The durable record and the live broadcast mutation are related but distinct shapes. Android may
 consume the mutation stream over `panel_event` and recover by listing durable notifications over the

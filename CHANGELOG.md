@@ -66,6 +66,8 @@
 
 ### Fixed
 
+- Fixed Android one-shot scheduled wake replies ignoring Auto Listen in Response and Manual modes, while preserving recognition suppression for other server-origin replies.
+
 - Fixed voice-first Pi sessions failing before an initial typed message by making native ESM runtime dependencies resolvable from bundled plugin servers. ([#127](https://github.com/kcosr/assistant/pull/127))
 - Fixed Android packaging and layout drift by exactly pinning and verifying the native Capacitor dependency stack. ([#124](https://github.com/kcosr/assistant/pull/124))
 - Fixed the Android in-app floating speaking control to use the same Skip transition as the headset control, preserving a pending Auto Listen follow-up instead of suppressing it. ([#123](https://github.com/kcosr/assistant/pull/123))

@@ -17,6 +17,7 @@ export async function publishFinalResponseNotification(options: {
   sessionIndex?: ToolContext['sessionIndex'];
   summary?: Pick<SessionSummary, 'revision'> | null;
   turnOriginId?: string;
+  turnSource?: 'scheduled_wakeup';
 }): Promise<void> {
   if (!options.text.trim()) {
     return;
@@ -41,6 +42,7 @@ export async function publishFinalResponseNotification(options: {
           ? { sessionActivitySeq: getSessionActivitySeq(options.summary) }
           : {}),
         ...(options.turnOriginId ? { turnOriginId: options.turnOriginId } : {}),
+        ...(options.turnSource ? { turnSource: options.turnSource } : {}),
       },
       source: 'system',
       ...(options.sessionHub ? { sessionHub: options.sessionHub } : {}),

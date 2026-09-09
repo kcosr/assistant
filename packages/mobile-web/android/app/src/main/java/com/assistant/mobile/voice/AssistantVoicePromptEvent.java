@@ -8,6 +8,7 @@ final class AssistantVoicePromptEvent {
     final String toolName;
     final String text;
     final String turnOriginId;
+    final String turnSource;
 
     AssistantVoicePromptEvent(
         String eventId,
@@ -15,9 +16,10 @@ final class AssistantVoicePromptEvent {
         String toolCallId,
         String toolName,
         String text,
-        String turnOriginId
+        String turnOriginId,
+        String turnSource
     ) {
-        this(eventId, sessionId, "", toolCallId, toolName, text, turnOriginId);
+        this(eventId, sessionId, "", toolCallId, toolName, text, turnOriginId, turnSource);
     }
 
     AssistantVoicePromptEvent(
@@ -27,7 +29,8 @@ final class AssistantVoicePromptEvent {
         String toolCallId,
         String toolName,
         String text,
-        String turnOriginId
+        String turnOriginId,
+        String turnSource
     ) {
         this.eventId = eventId;
         this.sessionId = sessionId;
@@ -36,6 +39,7 @@ final class AssistantVoicePromptEvent {
         this.toolName = toolName;
         this.text = text;
         this.turnOriginId = trim(turnOriginId);
+        this.turnSource = trim(turnSource);
     }
 
     boolean isToolPrompt() {

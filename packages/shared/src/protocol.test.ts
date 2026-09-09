@@ -313,6 +313,7 @@ describe('server message validation', () => {
       status: 'completed',
       hasSpeakableOutput: false,
       turnOriginId: 'android-process-1',
+      turnSource: 'scheduled_wakeup',
     };
 
     expect(validateServerMessage(message)).toEqual(message);
@@ -419,6 +420,7 @@ describe('server message validation', () => {
         sourceEventId: 'response-1',
         sessionActivitySeq: 12,
         turnOriginId: 'android-process-1',
+        turnSource: 'scheduled_wakeup',
       },
     };
 

@@ -113,7 +113,8 @@ final class AssistantVoiceNotificationEventParser {
             optTrimmedString(object, "ttsText", ""),
             optTrimmedString(object, "sourceEventId", ""),
             sessionActivitySeq,
-            optTrimmedString(object, "turnOriginId", "")
+            optTrimmedString(object, "turnOriginId", ""),
+            optTrimmedString(object, "turnSource", "")
         );
     }
 

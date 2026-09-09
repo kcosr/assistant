@@ -37,8 +37,11 @@ final class AssistantVoiceInteractionRules {
         return response.isEmpty() || (!local.isEmpty() && local.equals(response));
     }
 
-    static boolean shouldSuppressAutoListenForAutomaticResponse(String responseTurnOriginId) {
-        return trim(responseTurnOriginId).isEmpty();
+    static boolean shouldSuppressAutoListenForAutomaticResponse(
+        String responseTurnOriginId,
+        String turnSource
+    ) {
+        return trim(responseTurnOriginId).isEmpty() && !"scheduled_wakeup".equals(trim(turnSource));
     }
 
     static boolean shouldAutoListenForSettledTurn(
@@ -55,7 +58,7 @@ final class AssistantVoiceInteractionRules {
             && !event.hasSpeakableOutput
             && !interactionEnded
             && !voiceAskStarted
-            && !shouldSuppressAutoListenForAutomaticResponse(event.turnOriginId)
+            && !shouldSuppressAutoListenForAutomaticResponse(event.turnOriginId, event.turnSource)
             && shouldAdmitAutomaticResponse(
                 localResponseVoiceOnlyEnabled,
                 localTurnOriginId,

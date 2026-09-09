@@ -4,8 +4,9 @@ export function buildExternalCallbackUrl(options: {
   callbackBaseUrl: string;
   sessionId: string;
   turnOriginId?: string;
+  turnSource?: 'scheduled_wakeup';
 }): string {
-  const { callbackBaseUrl, sessionId, turnOriginId } = options;
+  const { callbackBaseUrl, sessionId, turnOriginId, turnSource } = options;
   const url = new URL(callbackBaseUrl);
 
   const basePath = url.pathname.endsWith('/') ? url.pathname : `${url.pathname}/`;
@@ -15,6 +16,9 @@ export function buildExternalCallbackUrl(options: {
   url.pathname = joined;
   if (turnOriginId) {
     url.searchParams.set('turnOriginId', turnOriginId);
+  }
+  if (turnSource) {
+    url.searchParams.set('turnSource', turnSource);
   }
   return url.toString();
 }

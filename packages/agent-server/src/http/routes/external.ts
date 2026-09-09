@@ -57,6 +57,10 @@ export const handleExternalRoutes: HttpRouteHandler = async (
 
     const responseId = createExternalResponseId();
     const turnOriginId = url.searchParams.get('turnOriginId')?.trim() || undefined;
+    const turnSource =
+      url.searchParams.get('turnSource') === 'scheduled_wakeup'
+        ? ('scheduled_wakeup' as const)
+        : undefined;
 
     let notificationSummary = summary;
     try {
@@ -91,7 +95,11 @@ export const handleExternalRoutes: HttpRouteHandler = async (
           responseId,
         }),
         type: 'assistant_done',
-        payload: { text, ...(turnOriginId ? { turnOriginId } : {}) },
+        payload: {
+          text,
+          ...(turnOriginId ? { turnOriginId } : {}),
+          ...(turnSource ? { turnSource } : {}),
+        },
       },
     ];
     await appendAndBroadcastChatEvents(
@@ -109,6 +117,7 @@ export const handleExternalRoutes: HttpRouteHandler = async (
       sessionHub: context.sessionHub,
       summary: notificationSummary,
       ...(turnOriginId ? { turnOriginId } : {}),
+      ...(turnSource ? { turnSource } : {}),
     });
 
     res.statusCode = 200;

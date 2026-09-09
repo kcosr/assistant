@@ -1321,6 +1321,7 @@ export class ScheduledSessionService {
         sessionId: wakeup.sessionId,
         content: wakeup.message,
         mode: 'sync',
+        turnSource: 'scheduled_wakeup',
         timeoutSeconds,
       },
       sessionIndex,

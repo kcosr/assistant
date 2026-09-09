@@ -38,16 +38,17 @@ public final class AssistantVoiceInteractionRulesTest {
     }
 
     @Test
-    public void unownedResponsesAlwaysSuppressAutoListen() {
+    public void ordinaryUnownedResponsesSuppressAutoListen() {
         assertTrue(
-            AssistantVoiceInteractionRules.shouldSuppressAutoListenForAutomaticResponse("")
+            AssistantVoiceInteractionRules.shouldSuppressAutoListenForAutomaticResponse("", "")
         );
         assertTrue(
-            AssistantVoiceInteractionRules.shouldSuppressAutoListenForAutomaticResponse("   ")
+            AssistantVoiceInteractionRules.shouldSuppressAutoListenForAutomaticResponse("   ", "")
         );
         assertFalse(
             AssistantVoiceInteractionRules.shouldSuppressAutoListenForAutomaticResponse(
-                "web-process-1"
+                "web-process-1",
+                ""
             )
         );
     }
@@ -60,7 +61,8 @@ public final class AssistantVoiceInteractionRulesTest {
             "response-1",
             "completed",
             false,
-            "android-process-1"
+            "android-process-1",
+            ""
         );
 
         assertTrue(AssistantVoiceInteractionRules.shouldAutoListenForSettledTurn(
@@ -81,7 +83,8 @@ public final class AssistantVoiceInteractionRulesTest {
             "response-1",
             "completed",
             true,
-            "android-process-1"
+            "android-process-1",
+            ""
         );
         AssistantVoiceTurnSettledEvent server = new AssistantVoiceTurnSettledEvent(
             "session-1",
@@ -89,6 +92,7 @@ public final class AssistantVoiceInteractionRulesTest {
             "response-2",
             "completed",
             false,
+            "",
             ""
         );
         AssistantVoiceTurnSettledEvent toolOnly = new AssistantVoiceTurnSettledEvent(
@@ -97,7 +101,8 @@ public final class AssistantVoiceInteractionRulesTest {
             "response-3",
             "completed",
             false,
-            "android-process-1"
+            "android-process-1",
+            ""
         );
 
         assertFalse(AssistantVoiceInteractionRules.shouldAutoListenForSettledTurn(
@@ -130,7 +135,8 @@ public final class AssistantVoiceInteractionRulesTest {
                 "",
                 "event-1",
                 1,
-                "android-process-1"
+                "android-process-1",
+                ""
             );
         AssistantVoiceNotificationRecord externalNotification =
             new AssistantVoiceNotificationRecord(
@@ -146,6 +152,7 @@ public final class AssistantVoiceInteractionRulesTest {
                 "",
                 "",
                 null,
+                "",
                 ""
             );
         AssistantVoiceNotificationRecord toolSessionAttention =
@@ -162,6 +169,7 @@ public final class AssistantVoiceInteractionRulesTest {
                 "",
                 "event-2",
                 2,
+                "",
                 ""
             );
         AssistantVoiceNotificationRecord serverResponseNotification =
@@ -178,6 +186,7 @@ public final class AssistantVoiceInteractionRulesTest {
                 "",
                 "event-3",
                 3,
+                "",
                 ""
             );
 
@@ -219,6 +228,7 @@ public final class AssistantVoiceInteractionRulesTest {
             "call-1",
             "voice_ask",
             "Question?",
+            "",
             ""
         );
         AssistantVoicePromptEvent assistantResponse = new AssistantVoicePromptEvent(
@@ -227,6 +237,7 @@ public final class AssistantVoiceInteractionRulesTest {
             "",
             "assistant_response",
             "Answer",
+            "",
             ""
         );
 
@@ -260,6 +271,7 @@ public final class AssistantVoiceInteractionRulesTest {
             "call-1",
             "voice_ask",
             "Question?",
+            "",
             ""
         );
         AssistantVoicePromptEvent assistantResponse = new AssistantVoicePromptEvent(
@@ -268,6 +280,7 @@ public final class AssistantVoiceInteractionRulesTest {
             "",
             "assistant_response",
             "Answer",
+            "",
             ""
         );
 
@@ -298,6 +311,7 @@ public final class AssistantVoiceInteractionRulesTest {
             "",
             "event-1",
             4,
+            "",
             ""
         );
         AssistantVoiceNotificationRecord toolNotification = new AssistantVoiceNotificationRecord(
@@ -313,6 +327,7 @@ public final class AssistantVoiceInteractionRulesTest {
             "",
             "event-2",
             5,
+            "",
             ""
         );
 
@@ -397,6 +412,7 @@ public final class AssistantVoiceInteractionRulesTest {
             "response-1",
             "assistant_response",
             "Answer",
+            "",
             ""
         );
         AssistantVoicePromptEvent toolPrompt = new AssistantVoicePromptEvent(
@@ -405,6 +421,7 @@ public final class AssistantVoiceInteractionRulesTest {
             "call-1",
             "voice_ask",
             "Question?",
+            "",
             ""
         );
 
@@ -455,6 +472,7 @@ public final class AssistantVoiceInteractionRulesTest {
             "",
             "event-1",
             4,
+            "",
             ""
         );
         AssistantVoiceNotificationRecord readResponseNotification = new AssistantVoiceNotificationRecord(
@@ -470,6 +488,7 @@ public final class AssistantVoiceInteractionRulesTest {
             "",
             "event-2",
             5,
+            "",
             ""
         );
         AssistantVoiceNotificationRecord sessionlessNotification = new AssistantVoiceNotificationRecord(
@@ -485,6 +504,7 @@ public final class AssistantVoiceInteractionRulesTest {
             "",
             "event-3",
             null,
+            "",
             ""
         );
 
@@ -530,6 +550,7 @@ public final class AssistantVoiceInteractionRulesTest {
             "",
             "event-1",
             4,
+            "",
             ""
         );
         AssistantVoiceNotificationRecord toolNotification = new AssistantVoiceNotificationRecord(
@@ -545,6 +566,7 @@ public final class AssistantVoiceInteractionRulesTest {
             "",
             "event-2",
             5,
+            "",
             ""
         );
         AssistantVoiceNotificationRecord readToolNotification = new AssistantVoiceNotificationRecord(
@@ -560,6 +582,7 @@ public final class AssistantVoiceInteractionRulesTest {
             "",
             "event-3",
             6,
+            "",
             ""
         );
 

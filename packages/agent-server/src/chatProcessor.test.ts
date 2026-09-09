@@ -371,7 +371,12 @@ describe('processUserMessage stream event emission', () => {
     });
   });
 
-  it('emits assistant_chunk and assistant_done events for pi runs', async () => {
+  const turnMetadataCases = [
+    { turnOriginId: 'android-process-1' },
+    { turnSource: 'scheduled_wakeup' as const },
+  ];
+
+  it.each(turnMetadataCases)('propagates Pi turn metadata %j', async (turnMetadata) => {
     vi.mocked(resolvePiSdkModel).mockResolvedValue({
       model: { id: 'gpt-4o-mini', provider: 'openai', api: 'openai' } as never,
       providerId: 'openai',
@@ -452,7 +457,7 @@ describe('processUserMessage stream event emission', () => {
       sessionId: 's1',
       state,
       text: 'hi',
-      turnOriginId: 'android-process-1',
+      ...turnMetadata,
       sessionHub,
       envConfig: {
         apiKey: 'test-api-key',
@@ -491,8 +496,12 @@ describe('processUserMessage stream event emission', () => {
     expect(chunkTexts).toEqual(['Hello', ' world']);
     const doneEvent = events.find((event) => event.type === 'assistant_done');
     expect(doneEvent?.payload?.text).toBe('Hello world');
-    expect(doneEvent?.type === 'assistant_done' ? doneEvent.payload.turnOriginId : undefined).toBe(
-      'android-process-1',
+    expect(doneEvent?.payload).toMatchObject(turnMetadata);
+    if ('turnSource' in turnMetadata) {
+      expect(doneEvent?.payload).not.toHaveProperty('turnOriginId');
+    }
+    expect(publishFinalResponseNotification).toHaveBeenCalledWith(
+      expect.objectContaining(turnMetadata),
     );
 
     expect(broadcast.some((message) => message.type === 'text_done')).toBe(true);
@@ -503,7 +512,7 @@ describe('processUserMessage stream event emission', () => {
           sessionId: 's1',
           status: 'completed',
           hasSpeakableOutput: true,
-          turnOriginId: 'android-process-1',
+          ...turnMetadata,
         }),
       ]),
     );

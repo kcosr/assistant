@@ -581,7 +581,8 @@ public final class AssistantVoicePlugin extends Plugin {
             optTrimmedString(notification, "ttsText", null),
             optTrimmedString(notification, "sourceEventId", null),
             sessionActivitySeq,
-            optTrimmedString(notification, "turnOriginId", null)
+            optTrimmedString(notification, "turnOriginId", null),
+            optTrimmedString(notification, "turnSource", null)
         );
     }
 

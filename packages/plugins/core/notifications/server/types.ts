@@ -18,6 +18,7 @@ export interface NotificationRecord {
   sourceEventId: string | null;
   sessionActivitySeq: number | null;
   turnOriginId: string | null;
+  turnSource?: 'scheduled_wakeup';
 }
 
 export interface CreateNotificationInput {
@@ -32,6 +33,7 @@ export interface CreateNotificationInput {
   sourceEventId?: string | null;
   sessionActivitySeq?: number | null;
   turnOriginId?: string | null;
+  turnSource?: 'scheduled_wakeup';
 }
 
 export interface NotificationListOptions {

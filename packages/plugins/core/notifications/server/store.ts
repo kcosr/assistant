@@ -88,6 +88,7 @@ function normalizeStoredNotification(value: NotificationRecord): NotificationRec
     sessionActivitySeq: normalizeNullableNumber(
       (value as NotificationRecord & { sessionActivitySeq?: unknown }).sessionActivitySeq,
     ),
+    ...(value.turnSource === 'scheduled_wakeup' ? { turnSource: value.turnSource } : {}),
     turnOriginId: normalizeNullableString(
       (value as NotificationRecord & { turnOriginId?: unknown }).turnOriginId,
     ),
@@ -195,6 +196,7 @@ export class NotificationsStore {
       sourceEventId?: string | null;
       sessionActivitySeq?: number | null;
       turnOriginId?: string | null;
+      turnSource?: 'scheduled_wakeup';
     },
     source: NotificationSource,
   ): Promise<NotificationRecord> {
@@ -215,6 +217,7 @@ export class NotificationsStore {
       sourceEventId?: string | null;
       sessionActivitySeq?: number | null;
       turnOriginId?: string | null;
+      turnSource?: 'scheduled_wakeup';
     },
     source: NotificationSource,
   ): Promise<NotificationMutationResult<NotificationRecord>> {
@@ -238,6 +241,7 @@ export class NotificationsStore {
         sourceEventId: input.sourceEventId ?? null,
         sessionActivitySeq: input.sessionActivitySeq ?? null,
         turnOriginId: input.turnOriginId ?? null,
+        ...(input.turnSource ? { turnSource: input.turnSource } : {}),
       };
 
       this.data.notifications.unshift(record);
@@ -261,6 +265,7 @@ export class NotificationsStore {
       sourceEventId?: string | null;
       sessionActivitySeq?: number | null;
       turnOriginId?: string | null;
+      turnSource?: 'scheduled_wakeup';
     },
     source: NotificationSource,
   ): Promise<NotificationRecord> {
@@ -280,6 +285,7 @@ export class NotificationsStore {
       sourceEventId?: string | null;
       sessionActivitySeq?: number | null;
       turnOriginId?: string | null;
+      turnSource?: 'scheduled_wakeup';
     },
     source: NotificationSource,
   ): Promise<NotificationMutationResult<NotificationRecord>> {
@@ -315,6 +321,7 @@ export class NotificationsStore {
               sourceEventId: input.sourceEventId ?? null,
               sessionActivitySeq: input.sessionActivitySeq ?? null,
               turnOriginId: input.turnOriginId ?? null,
+              ...(input.turnSource ? { turnSource: input.turnSource } : {}),
             }
           : {
               id: crypto.randomUUID(),
@@ -332,7 +339,12 @@ export class NotificationsStore {
               sourceEventId: input.sourceEventId ?? null,
               sessionActivitySeq: input.sessionActivitySeq ?? null,
               turnOriginId: input.turnOriginId ?? null,
+              ...(input.turnSource ? { turnSource: input.turnSource } : {}),
             };
+
+      if (!input.turnSource) {
+        delete record.turnSource;
+      }
 
       if (existingIndex >= 0) {
         this.data.notifications.splice(existingIndex, 1);

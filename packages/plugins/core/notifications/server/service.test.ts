@@ -33,6 +33,7 @@ describe('notifications service', () => {
           ttsText: 'Final answer',
           sourceEventId: 'response-1',
           turnOriginId: 'android-process-1',
+          turnSource: 'scheduled_wakeup',
         },
         source: 'system',
       });
@@ -44,6 +45,7 @@ describe('notifications service', () => {
         sessionId: 'sess-1',
         sourceEventId: 'response-1',
         turnOriginId: 'android-process-1',
+        turnSource: 'scheduled_wakeup',
       });
 
       sourceB.shutdownNotificationsService();

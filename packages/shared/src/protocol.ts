@@ -746,6 +746,7 @@ export const ServerTurnSettledMessageSchema = z.object({
   status: TurnSettlementStatusSchema,
   hasSpeakableOutput: z.boolean(),
   turnOriginId: z.string().trim().min(1).max(128).optional(),
+  turnSource: z.literal('scheduled_wakeup').optional(),
 });
 
 export const ServerAgentCallbackResultMessageSchema = z.object({
@@ -906,6 +907,7 @@ export const NotificationRecordSchema = z.object({
   sourceEventId: z.string().nullable(),
   sessionActivitySeq: z.number().int().nonnegative().nullable(),
   turnOriginId: z.string().nullable(),
+  turnSource: z.literal('scheduled_wakeup').optional(),
 });
 export type NotificationRecord = z.infer<typeof NotificationRecordSchema>;
 

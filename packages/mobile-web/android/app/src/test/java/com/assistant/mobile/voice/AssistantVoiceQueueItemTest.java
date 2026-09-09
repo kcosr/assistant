@@ -16,6 +16,7 @@ public final class AssistantVoiceQueueItemTest {
             "call-1",
             "voice_ask",
             "Question?",
+            "",
             ""
         );
 
@@ -41,6 +42,7 @@ public final class AssistantVoiceQueueItemTest {
             "response-2",
             "assistant_response",
             "Answer",
+            "",
             ""
         );
 
@@ -60,7 +62,7 @@ public final class AssistantVoiceQueueItemTest {
     public void fromPromptReturnsNullWithoutSessionOrSpeech() {
         assertNull(
             AssistantVoiceQueueItem.fromPrompt(
-                new AssistantVoicePromptEvent("event-3", "", "", "voice_speak", "Hello", ""),
+                new AssistantVoicePromptEvent("event-3", "", "", "voice_speak", "Hello", "", ""),
                 true,
                 false,
                 ""
@@ -68,7 +70,7 @@ public final class AssistantVoiceQueueItemTest {
         );
         assertNull(
             AssistantVoiceQueueItem.fromPrompt(
-                new AssistantVoicePromptEvent("event-4", "session-4", "", "voice_speak", " ", ""),
+                new AssistantVoicePromptEvent("event-4", "session-4", "", "voice_speak", " ", "", ""),
                 true,
                 false,
                 ""
@@ -84,6 +86,7 @@ public final class AssistantVoiceQueueItemTest {
             "response-5",
             "assistant_response",
             "Answer",
+            "",
             ""
         );
 
@@ -107,6 +110,7 @@ public final class AssistantVoiceQueueItemTest {
             "call-6",
             "voice_ask",
             "Question?",
+            "",
             ""
         );
 
@@ -129,6 +133,7 @@ public final class AssistantVoiceQueueItemTest {
             "response-7",
             "assistant_response",
             "Answer",
+            "",
             ""
         );
 
@@ -158,6 +163,7 @@ public final class AssistantVoiceQueueItemTest {
                 "call-8",
                 "voice_ask",
                 "Question?",
+                "",
                 ""
             ),
             "Session 8"
@@ -173,7 +179,8 @@ public final class AssistantVoiceQueueItemTest {
                 "response-1",
                 "completed",
                 false,
-                "android-process-1"
+                "android-process-1",
+                ""
             ),
             "Session 1"
         );
@@ -194,7 +201,8 @@ public final class AssistantVoiceQueueItemTest {
                 "response-1",
                 "completed",
                 true,
-                "android-process-1"
+                "android-process-1",
+                ""
             ),
             "Session 1"
         ));
@@ -215,6 +223,7 @@ public final class AssistantVoiceQueueItemTest {
             "Reply body",
             "event-1",
             Integer.valueOf(7),
+            "",
             ""
         );
 
@@ -242,6 +251,7 @@ public final class AssistantVoiceQueueItemTest {
             "Reply body",
             "response-auto",
             Integer.valueOf(9),
+            "",
             ""
         );
 
@@ -274,6 +284,7 @@ public final class AssistantVoiceQueueItemTest {
             "Alternate speech",
             "event-tool",
             null,
+            "",
             ""
         );
 
@@ -304,6 +315,7 @@ public final class AssistantVoiceQueueItemTest {
             "Speak me",
             "event-2",
             Integer.valueOf(3),
+            "",
             ""
         );
 

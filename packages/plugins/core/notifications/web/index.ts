@@ -29,6 +29,7 @@ interface NotificationRecord {
   sourceEventId: string | null;
   sessionActivitySeq: number | null;
   turnOriginId: string | null;
+  turnSource?: 'scheduled_wakeup';
 }
 
 type SessionSummary = SessionLabelSummary & {

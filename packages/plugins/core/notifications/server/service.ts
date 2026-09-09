@@ -201,6 +201,7 @@ export async function createNotificationRecord(options: {
         ...(options.input.sessionActivitySeq !== undefined
           ? { sessionActivitySeq: options.input.sessionActivitySeq }
           : {}),
+        ...(options.input.turnSource ? { turnSource: options.input.turnSource } : {}),
         ...(options.input.turnOriginId !== undefined
           ? { turnOriginId: options.input.turnOriginId }
           : {}),
