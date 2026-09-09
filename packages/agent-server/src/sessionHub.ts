@@ -83,6 +83,7 @@ export interface LogicalSessionState {
          * Used by that client to admit only its own automatic voice responses.
          */
         turnOriginId?: string;
+        turnSource?: 'scheduled_wakeup';
         responseId: string;
         abortController: AbortController;
         ttsSession?: TtsStreamingSession;

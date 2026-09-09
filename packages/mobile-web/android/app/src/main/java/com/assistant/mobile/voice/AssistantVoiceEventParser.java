@@ -30,6 +30,7 @@ final class AssistantVoiceEventParser {
                 "",
                 "turn_start",
                 "",
+                "",
                 ""
             );
         }
@@ -44,6 +45,7 @@ final class AssistantVoiceEventParser {
                     requestId,
                     toolCallId,
                     toolName,
+                    "",
                     "",
                     ""
                 );
@@ -64,6 +66,7 @@ final class AssistantVoiceEventParser {
                 toolCallId,
                 toolName,
                 text,
+                "",
                 ""
             );
         }
@@ -81,7 +84,8 @@ final class AssistantVoiceEventParser {
                     responseId,
                     "assistant_response",
                     text,
-                    turnOriginId
+                    turnOriginId,
+                    trim(findStringField(payloadJson, "turnSource", 0))
                 );
             }
         }

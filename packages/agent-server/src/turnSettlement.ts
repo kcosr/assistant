@@ -8,6 +8,7 @@ export interface TurnSettlementCandidate {
   status: TurnSettlementStatus;
   hasSpeakableOutput: boolean;
   turnOriginId?: string;
+  turnSource?: 'scheduled_wakeup';
 }
 
 export function hasSpeakableAssistantOutput(events: readonly ChatEvent[]): boolean {
@@ -45,6 +46,7 @@ export function broadcastTurnSettledIfIdle(options: {
     status: candidate.status,
     hasSpeakableOutput: candidate.hasSpeakableOutput,
     ...(candidate.turnOriginId ? { turnOriginId: candidate.turnOriginId } : {}),
+    ...(candidate.turnSource ? { turnSource: candidate.turnSource } : {}),
   };
   sessionHub.broadcastToSession(sessionId, message);
   return true;

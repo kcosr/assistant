@@ -37,6 +37,48 @@ import static org.junit.Assert.assertFalse;
 public final class AssistantVoiceRuntimeServiceTest {
     @Test
     @Config(sdk = Build.VERSION_CODES.N)
+    public void scheduledWakeDurableQueueHonorsAudioModeAutoListenAndSessionFilter() throws Exception {
+        for (String mode : new String[] {"response", "manual"}) {
+            for (boolean enabled : new boolean[] {false, true}) {
+                for (boolean preferredSessionOnly : new boolean[] {false, true}) {
+                    AssistantVoiceRuntimeService service = new AssistantVoiceRuntimeService();
+                    setRuntimeConfig(service, createConfig(mode, Collections.emptyMap()).withVoiceSettings(
+                        new org.json.JSONObject()
+                            .put("autoListenEnabled", enabled)
+                            .put("ttsPreferredSessionOnly", preferredSessionOnly)
+                            .put("preferredVoiceSessionId", "other-session")
+                    ));
+                    setPrivateField(service, "adapterSocketConnected", true);
+                    setPrivateField(service, "assistantSocketConnected", true);
+                    // Keep admitted items queued so this test doesn't start actual audio/recognition.
+                    setPrivateField(service, "pendingRecognitionSubmitSessionId", "busy-session");
+                    AssistantVoiceNotificationRecord notification = new AssistantVoiceNotificationRecord(
+                        "wake-1", "session_attention", "system", "Wake", "Time to check in",
+                        "", "session-1", "", "speak_then_listen", "", "response-1",
+                        null, "", "scheduled_wakeup"
+                    );
+                    Method enqueue = AssistantVoiceRuntimeService.class.getDeclaredMethod(
+                        "enqueueAutomaticNotification", AssistantVoiceNotificationRecord.class
+                    );
+                    enqueue.setAccessible(true);
+                    enqueue.invoke(service, notification);
+                    List<AssistantVoiceQueueItem> queue = getQueuedVoiceItems(service);
+                    if (preferredSessionOnly || ("manual".equals(mode) && !enabled)) {
+                        assertTrue(queue.isEmpty());
+                    } else {
+                        assertEquals(1, queue.size());
+                        assertEquals("manual".equals(mode), queue.get(0).isListenOnly());
+                        if ("response".equals(mode)) {
+                            assertEquals(enabled, queue.get(0).startsListeningAfterPlayback());
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    @Test
+    @Config(sdk = Build.VERSION_CODES.N)
     public void foreignResponseConsumesInteractionEndBeforeOriginRejection() {
         AssistantVoiceRequestTracker tracker = new AssistantVoiceRequestTracker(4);
         tracker.remember("session-1", "request-1");
@@ -47,7 +89,8 @@ public final class AssistantVoiceRuntimeServiceTest {
             "response-1",
             "assistant_response",
             "Answer",
-            "other-device"
+            "other-device",
+            ""
         );
 
         AssistantVoiceRuntimeService.AssistantResponseAdmission admission =
@@ -74,6 +117,7 @@ public final class AssistantVoiceRuntimeServiceTest {
             "response-1",
             "assistant_response",
             "Scheduled reminder",
+            "",
             ""
         );
 
@@ -102,7 +146,8 @@ public final class AssistantVoiceRuntimeServiceTest {
             "response-1",
             "assistant_response",
             "Answer",
-            "this-device"
+            "this-device",
+            ""
         );
 
         AssistantVoiceRuntimeService.AssistantResponseAdmission admission =
@@ -129,6 +174,7 @@ public final class AssistantVoiceRuntimeServiceTest {
                 "response-prompt",
                 "assistant_response",
                 "Answer",
+                "",
                 ""
             ),
             "Session 1"
@@ -146,6 +192,7 @@ public final class AssistantVoiceRuntimeServiceTest {
             "Answer",
             "different-source-event",
             Integer.valueOf(7),
+            "",
             ""
         ).toManualAutoListenQueueItem("Session 1");
         AssistantVoiceQueueItem otherSessionItem = AssistantVoiceQueueItem.fromManualAutoListenPrompt(
@@ -155,6 +202,7 @@ public final class AssistantVoiceRuntimeServiceTest {
                 "response-other",
                 "assistant_response",
                 "Answer",
+                "",
                 ""
             ),
             "Session 2"
@@ -172,6 +220,7 @@ public final class AssistantVoiceRuntimeServiceTest {
             "Answer",
             "response-2",
             Integer.valueOf(8),
+            "",
             ""
         ).toManualMicQueueItem();
 
@@ -209,6 +258,7 @@ public final class AssistantVoiceRuntimeServiceTest {
             "Answer",
             "response-1",
             Integer.valueOf(7),
+            "",
             ""
         ).toManualAutoListenQueueItem("Session 1");
 
@@ -531,6 +581,7 @@ public final class AssistantVoiceRuntimeServiceTest {
             "Alternate speech",
             "event-tool",
             null,
+            "",
             ""
         );
 
@@ -578,6 +629,7 @@ public final class AssistantVoiceRuntimeServiceTest {
             "Reply body",
             "event-1",
             Integer.valueOf(4),
+            "",
             ""
         );
 
@@ -617,6 +669,7 @@ public final class AssistantVoiceRuntimeServiceTest {
             "Reply body",
             "event-1",
             Integer.valueOf(4),
+            "",
             ""
         );
 
@@ -648,6 +701,7 @@ public final class AssistantVoiceRuntimeServiceTest {
             "Reply body",
             "event-1",
             Integer.valueOf(4),
+            "",
             ""
         );
 

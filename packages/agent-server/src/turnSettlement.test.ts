@@ -19,7 +19,12 @@ function createState(overrides: Partial<LogicalSessionState> = {}): LogicalSessi
 }
 
 describe('turn settlement', () => {
-  it('broadcasts a completed tool-only settlement after the run is released', () => {
+  const turnMetadataCases = [
+    { turnOriginId: 'android-process-1' },
+    { turnSource: 'scheduled_wakeup' as const },
+  ];
+
+  it.each(turnMetadataCases)('broadcasts tool-only settlement metadata %j', (turnMetadata) => {
     const broadcast: ServerMessage[] = [];
     const sessionHub = {
       broadcastToSession: (_sessionId: string, message: ServerMessage) => {
@@ -37,7 +42,7 @@ describe('turn settlement', () => {
           responseId: 'response-1',
           status: 'completed',
           hasSpeakableOutput: false,
-          turnOriginId: 'android-process-1',
+          ...turnMetadata,
         },
       }),
     ).toBe(true);
@@ -49,7 +54,7 @@ describe('turn settlement', () => {
         responseId: 'response-1',
         status: 'completed',
         hasSpeakableOutput: false,
-        turnOriginId: 'android-process-1',
+        ...turnMetadata,
       },
     ]);
   });

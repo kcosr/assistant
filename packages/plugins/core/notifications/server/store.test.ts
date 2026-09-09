@@ -125,6 +125,32 @@ describe('NotificationsStore', () => {
     });
   });
 
+  it('persists scheduled wake metadata and clears it when an ordinary reply replaces the wake', async () => {
+    const input = { title: 'Wake', body: 'Ready?', sessionId: 'sess-1' };
+    const wake = await store.upsertSessionAttention(
+      { ...input, turnSource: 'scheduled_wakeup' },
+      'system',
+    );
+    const recovered = new NotificationsStore(tempDir);
+    const { notifications } = await recovered.list();
+    expect(notifications[0]).toMatchObject({ id: wake.id, turnSource: 'scheduled_wakeup' });
+
+    const reply = await recovered.upsertSessionAttention(
+      { ...input, body: 'Ordinary reply' },
+      'system',
+    );
+    expect(reply.id).toBe(wake.id);
+    expect(reply.turnSource).toBeUndefined();
+    const reloaded = await new NotificationsStore(tempDir).list();
+    expect(reloaded.notifications[0]?.turnSource).toBeUndefined();
+
+    const nextWake = await recovered.upsertSessionAttention(
+      { ...input, turnSource: 'scheduled_wakeup' },
+      'system',
+    );
+    expect(nextWake).toMatchObject({ id: wake.id, turnSource: 'scheduled_wakeup' });
+  });
+
   it('serializes concurrent session attention upserts for the same session', async () => {
     const [first, second] = await Promise.all([
       store.upsertSessionAttentionWithRevision(

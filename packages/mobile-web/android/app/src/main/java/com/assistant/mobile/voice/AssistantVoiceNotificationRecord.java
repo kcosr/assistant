@@ -14,6 +14,7 @@ final class AssistantVoiceNotificationRecord {
     final String sourceEventId;
     final Integer sessionActivitySeq;
     final String turnOriginId;
+    final String turnSource;
 
     AssistantVoiceNotificationRecord(
         String id,
@@ -28,7 +29,8 @@ final class AssistantVoiceNotificationRecord {
         String ttsText,
         String sourceEventId,
         Integer sessionActivitySeq,
-        String turnOriginId
+        String turnOriginId,
+        String turnSource
     ) {
         this.id = trim(id);
         this.kind = trim(kind);
@@ -43,6 +45,7 @@ final class AssistantVoiceNotificationRecord {
         this.sourceEventId = trim(sourceEventId);
         this.sessionActivitySeq = sessionActivitySeq;
         this.turnOriginId = trim(turnOriginId);
+        this.turnSource = trim(turnSource);
     }
 
     boolean isUnread() {

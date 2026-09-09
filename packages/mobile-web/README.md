@@ -215,9 +215,9 @@ is still the fastest first pass.
   behind the active local interaction instead of being dropped solely because the runtime was busy.
 - Completed turns also publish an ephemeral `turn_settled` websocket message after the active run
   is released and only when no queued continuation remains. In Response and Manual modes, Android
-  uses a successful local-origin settlement with no final speakable text to start Auto Listen
+  uses a successful local-origin or scheduled wake settlement with no final speakable text to start Auto Listen
   without manufacturing an empty assistant response. A same-request `voice_ask` or
-  `interaction_end`, a server-origin turn, an interrupted/error result, or a subsequent
+  `interaction_end`, a server-origin turn other than a scheduled wake, an interrupted/error result, or a subsequent
   `turn_start` suppresses that automatic listen.
 - Final assistant replies are persisted as one durable `session_attention` item per session, while
   `voice_speak` and `voice_ask` remain append-only notifications with explicit `voiceMode`
@@ -227,8 +227,13 @@ is still the fastest first pass.
   Typed and spoken turns submitted from first-party Android and browser clients carry an ephemeral
   origin identifier. Automatic final-response TTS and Auto Listen run for matching Android-origin
   replies, while replies with another client origin are ignored. Server-initiated replies without
-  an origin, including scheduled wake responses, may play on every eligible Android device but
-  never start recognition afterward. Restarting the app intentionally invalidates in-flight
+  an origin may play on every eligible Android device. One-shot scheduled wake responses respect
+  Auto Listen: Response mode speaks then listens, while Manual mode listens without automatic
+  speech. With Auto Listen off, scheduled wakes do not start recognition. Other originless replies,
+  including recurring cron sessions, never start recognition afterward. Scheduled wakes have no
+  device ownership, so every connected eligible Android device applies its own settings, including
+  the notification-session filter. This behavior requires the updated backend and Android app;
+  no separate wake setting or voice tool is needed. Restarting the app intentionally invalidates in-flight
   ownership. This filter does not affect external notifications, `voice_speak`, `voice_ask`, or
   manual `Play` / microphone actions, and it can be disabled to restore response behavior for turns
   started elsewhere.

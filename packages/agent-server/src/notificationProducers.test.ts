@@ -35,7 +35,12 @@ describe('notification producers', () => {
     await rm(tempDir, { recursive: true, force: true });
   });
 
-  it('publishes final responses as session attention singleton notifications', async () => {
+  const turnMetadataCases = [
+    { turnOriginId: 'android-process-1' },
+    { turnSource: 'scheduled_wakeup' as const },
+  ];
+
+  it.each(turnMetadataCases)('publishes final notification metadata %j', async (turnMetadata) => {
     const sessionHub = {
       broadcastToAll: vi.fn(),
     } as any;
@@ -47,7 +52,7 @@ describe('notification producers', () => {
       sessionHub,
       sessionIndex,
       summary: { revision: 6 } as any,
-      turnOriginId: 'android-process-1',
+      ...turnMetadata,
     });
 
     const { notifications } = await getNotificationsStore().list();
@@ -61,7 +66,7 @@ describe('notification producers', () => {
       sourceEventId: 'response-1',
       sessionActivitySeq: 6,
       sessionTitle: 'Demo session',
-      turnOriginId: 'android-process-1',
+      ...turnMetadata,
     });
     expect(sessionHub.broadcastToAll).toHaveBeenCalledWith(
       expect.objectContaining({

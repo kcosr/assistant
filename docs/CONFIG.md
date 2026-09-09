@@ -813,6 +813,13 @@ read-only other-session wake-ups with only safe summary fields: `kind`, `scope`,
 scheduled-sessions panel uses the same plugin operation without a session context to show all
 wake-ups for administration.
 
+On Android, one-shot wake replies follow the existing Thread audio mode and Auto-listen settings:
+Response mode speaks then listens when Auto-listen is on, and Manual mode listens without automatic
+speech. Disabling Auto-listen prevents automatic recognition. No voice tool or separate wake setting
+is required. Each eligible connected Android device applies its own settings and notification-session
+filter; wakes are not tied to the device that scheduled them. This requires the updated Android app
+and backend. Recurring cron sessions do not receive this wake-specific recognition behavior.
+
 Reminder tools:
 
 - `scheduled_sessions_reminder_create`

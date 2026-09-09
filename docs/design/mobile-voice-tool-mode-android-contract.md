@@ -129,11 +129,11 @@ For any item that could transition into recognition:
   queued item still passes pre-listen validation
 - if the user manually interrupts playback, start recognition immediately only when
   `Auto-listen` is enabled
-- when a successful local-origin turn produces no final speakable response, admit the server's
+- when a successful local-origin or scheduled wake turn produces no final speakable response, admit the server's
   ephemeral `turn_settled` signal as a `listen_only` queue item after the run is released and only
   if no queued continuation remains
 - suppress settlement-driven Auto Listen after a same-request `voice_ask` or `interaction_end`,
-  for server-origin/interrupted/error turns, and when a newer `turn_start` makes a pending
+  for other server-origin turns, interrupted/error turns, and when a newer `turn_start` makes a pending
   settlement stale
 - while listening, manual stop cancels recognition
 
@@ -145,8 +145,13 @@ For any item that could transition into recognition:
   turns
 - when `localResponseVoiceOnlyEnabled` is enabled, reject automatic response behavior for replies
   carrying another client's `turnOriginId`
-- admit replies without a `turnOriginId` as server-initiated broadcasts, but always suppress Auto
-  Listen so one scheduled or server-generated turn cannot arm recognition on multiple devices
+- admit replies without a `turnOriginId` as server-initiated broadcasts; suppress Auto Listen unless
+  the response carries `turnSource = scheduled_wakeup`
+- one-shot scheduled wakes use the existing Auto Listen setting in Response and Manual modes,
+  including successful settlement without speakable output; there is no additional wake toggle
+- scheduled wakes have no device ownership and can arm every eligible connected device according
+  to its own Auto Listen setting and notification-session filter; recurring cron turns remain
+  ordinary server-origin turns
 - this origin filter does not apply to `voice_speak`, `voice_ask`, external notifications, manual
   notification playback, or explicit microphone starts
 - Android does not persist its locally generated process identifier; a process restart intentionally

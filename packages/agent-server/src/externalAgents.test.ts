@@ -64,6 +64,18 @@ describe('externalAgents helpers', () => {
   });
 });
 
+it('carries scheduled wake source without fabricating a device origin', () => {
+  const url = new URL(
+    buildExternalCallbackUrl({
+      callbackBaseUrl: 'http://example.test/api',
+      sessionId: 'EXTERNAL-1',
+      turnSource: 'scheduled_wakeup',
+    }),
+  );
+  expect(url.searchParams.get('turnSource')).toBe('scheduled_wakeup');
+  expect(url.searchParams.has('turnOriginId')).toBe(false);
+});
+
 describe('ws external forwarding', () => {
   it('forwards user text to external inputUrl with callbackUrl', async () => {
     const response = new Response('ok', { status: 200 });

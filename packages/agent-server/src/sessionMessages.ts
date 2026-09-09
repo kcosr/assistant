@@ -31,6 +31,7 @@ export type SessionMessageInput = {
   inputType?: SessionMessageInputType;
   durationMs?: number;
   turnOriginId?: string;
+  turnSource?: 'scheduled_wakeup';
   webhook?: SessionMessageWebhook;
 };
 
@@ -366,6 +367,7 @@ export async function startSessionMessage(options: {
         state,
         text: content,
         ...(input.turnOriginId ? { turnOriginId: input.turnOriginId } : {}),
+        ...(input.turnSource ? { turnSource: input.turnSource } : {}),
         sessionHub,
         envConfig,
         chatCompletionTools: chatTools,
@@ -448,6 +450,7 @@ export async function startSessionMessage(options: {
         text: content,
         responseId,
         ...(input.turnOriginId ? { turnOriginId: input.turnOriginId } : {}),
+        ...(input.turnSource ? { turnSource: input.turnSource } : {}),
         sessionHub,
         envConfig,
         chatCompletionTools: chatTools,

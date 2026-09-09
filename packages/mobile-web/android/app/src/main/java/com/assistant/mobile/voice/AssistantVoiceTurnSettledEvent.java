@@ -9,6 +9,7 @@ final class AssistantVoiceTurnSettledEvent {
     final String status;
     final boolean hasSpeakableOutput;
     final String turnOriginId;
+    final String turnSource;
 
     AssistantVoiceTurnSettledEvent(
         String sessionId,
@@ -16,7 +17,8 @@ final class AssistantVoiceTurnSettledEvent {
         String responseId,
         String status,
         boolean hasSpeakableOutput,
-        String turnOriginId
+        String turnOriginId,
+        String turnSource
     ) {
         this.sessionId = trim(sessionId);
         this.requestId = trim(requestId);
@@ -24,6 +26,7 @@ final class AssistantVoiceTurnSettledEvent {
         this.status = trim(status);
         this.hasSpeakableOutput = hasSpeakableOutput;
         this.turnOriginId = trim(turnOriginId);
+        this.turnSource = trim(turnSource);
     }
 
     static AssistantVoiceTurnSettledEvent parse(String rawMessage) {
@@ -41,7 +44,8 @@ final class AssistantVoiceTurnSettledEvent {
                 message.optString("responseId"),
                 message.optString("status"),
                 message.optBoolean("hasSpeakableOutput", false),
-                message.optString("turnOriginId")
+                message.optString("turnOriginId"),
+                message.optString("turnSource")
             );
             if (
                 event.sessionId.isEmpty()

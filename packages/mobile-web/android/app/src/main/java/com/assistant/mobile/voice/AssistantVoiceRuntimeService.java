@@ -101,6 +101,7 @@ public final class AssistantVoiceRuntimeService extends Service {
     static final String EXTRA_NOTIFICATION_TTS_TEXT = "notificationTtsText";
     static final String EXTRA_NOTIFICATION_SOURCE_EVENT_ID = "notificationSourceEventId";
     static final String EXTRA_NOTIFICATION_SESSION_ACTIVITY_SEQ = "notificationSessionActivitySeq";
+    static final String EXTRA_NOTIFICATION_TURN_SOURCE = "notificationTurnSource";
     static final String EXTRA_NOTIFICATION_TURN_ORIGIN_ID = "notificationTurnOriginId";
 
     static final String BROADCAST_STATE_CHANGED = "com.assistant.mobile.voice.STATE_CHANGED";
@@ -335,6 +336,7 @@ public final class AssistantVoiceRuntimeService extends Service {
         intent.putExtra(EXTRA_NOTIFICATION_TTS_TEXT, notification.ttsText);
         intent.putExtra(EXTRA_NOTIFICATION_SOURCE_EVENT_ID, notification.sourceEventId);
         intent.putExtra(EXTRA_NOTIFICATION_TURN_ORIGIN_ID, notification.turnOriginId);
+        intent.putExtra(EXTRA_NOTIFICATION_TURN_SOURCE, notification.turnSource);
         if (notification.sessionActivitySeq != null) {
             intent.putExtra(EXTRA_NOTIFICATION_SESSION_ACTIVITY_SEQ, notification.sessionActivitySeq);
         }
@@ -2028,7 +2030,8 @@ public final class AssistantVoiceRuntimeService extends Service {
             interactionEnded
                 || voiceAskStarted
                 || AssistantVoiceInteractionRules.shouldSuppressAutoListenForAutomaticResponse(
-                    prompt.turnOriginId
+                    prompt.turnOriginId,
+                    prompt.turnSource
                 );
         boolean admitted = AssistantVoiceInteractionRules.shouldAdmitAutomaticResponse(
             localResponseVoiceOnlyEnabled,
@@ -2273,7 +2276,8 @@ public final class AssistantVoiceRuntimeService extends Service {
             notification != null
                 && notification.isAssistantResponseNotification()
                 && AssistantVoiceInteractionRules.shouldSuppressAutoListenForAutomaticResponse(
-                    notification.turnOriginId
+                    notification.turnOriginId,
+                    notification.turnSource
                 );
         boolean autoListenForNotification = config.autoListenEnabled && !suppressAutoListen;
         boolean shouldAutoplayNotification =
@@ -4128,7 +4132,8 @@ public final class AssistantVoiceRuntimeService extends Service {
             intent.getStringExtra(EXTRA_NOTIFICATION_TTS_TEXT),
             intent.getStringExtra(EXTRA_NOTIFICATION_SOURCE_EVENT_ID),
             sessionActivitySeq,
-            intent.getStringExtra(EXTRA_NOTIFICATION_TURN_ORIGIN_ID)
+            intent.getStringExtra(EXTRA_NOTIFICATION_TURN_ORIGIN_ID),
+            intent.getStringExtra(EXTRA_NOTIFICATION_TURN_SOURCE)
         );
     }
 

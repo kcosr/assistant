@@ -136,6 +136,7 @@ export function handleChatOutputCancel(options: HandleChatOutputCancelOptions): 
         text: partialText,
         interrupted: true,
         ...(run.turnOriginId ? { turnOriginId: run.turnOriginId } : {}),
+        ...(run.turnSource ? { turnSource: run.turnSource } : {}),
       },
     });
   }

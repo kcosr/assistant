@@ -1261,6 +1261,7 @@ describe('ScheduledSessionService', () => {
         input: expect.objectContaining({
           sessionId: 'session-1',
           content: 'Check the issue',
+          turnSource: 'scheduled_wakeup',
           mode: 'sync',
         }),
       }),
@@ -1374,6 +1375,7 @@ describe('ScheduledSessionService', () => {
         input: expect.objectContaining({
           sessionId: 'session-1',
           content: 'Check the issue',
+          turnSource: 'scheduled_wakeup',
         }),
       }),
     );
