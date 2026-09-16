@@ -60,6 +60,7 @@ operations.
 - On touch devices, a short hold still supports drag when you start moving, while a longer hold without movement enters multi-select mode; once active, taps add/remove selected rows until the selection is cleared.
 - Capacitor Android builds and narrow viewports show floating add/search buttons in list view; search opens the command palette.
 - Custom fields can be reordered in the list metadata dialog.
+- Create and edit item dialogs start with custom fields collapsed in both Quick and Review modes. Tap or activate the Custom fields header to expand them; collapsing preserves values.
 - List item editor supports Edit and Review modes; Review shows a report-style view with markdown previews and inline edit buttons, and the default mode is configurable in settings.
 
 All operations accept an optional `instance_id` (defaults to `default`), and `instance_list` reports

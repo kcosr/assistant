@@ -107,10 +107,10 @@ export class ListItemEditorDialog {
       };
     }
 
-    const section = document.createElement('div');
+    const section = document.createElement('details');
     section.className = 'list-item-custom-fields-section';
 
-    const title = document.createElement('h4');
+    const title = document.createElement('summary');
     title.className = 'list-item-custom-fields-title';
     title.textContent = 'Custom fields';
     section.appendChild(title);
@@ -1090,7 +1090,7 @@ export class ListItemEditorDialog {
     const reviewMain = document.createElement('div');
     reviewMain.className = 'list-item-review-section';
 
-    const reviewCustomFields = document.createElement('div');
+    const reviewCustomFields = document.createElement('details');
     reviewCustomFields.className = 'list-item-review-section list-item-review-custom-fields';
 
     reviewContainer.appendChild(reviewHeader);
@@ -1194,8 +1194,8 @@ export class ListItemEditorDialog {
     );
 
     if (customFieldsSection.fields.length > 0) {
-      const customTitle = document.createElement('h4');
-      customTitle.className = 'list-item-review-section-title';
+      const customTitle = document.createElement('summary');
+      customTitle.className = 'list-item-review-section-title list-item-custom-fields-title';
       customTitle.textContent = 'Custom fields';
       reviewCustomFields.appendChild(customTitle);
 

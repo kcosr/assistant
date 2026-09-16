@@ -85,6 +85,48 @@ describe('ListItemEditorDialog tag chips', () => {
     expect(chipsAfter.sort()).toEqual(['alpha', 'beta'].sort());
   });
 
+  it.each(['add', 'edit'] as const)('collapses custom fields by default in %s dialogs and preserves values', async (mode) => {
+    const createListItem = vi.fn(async () => true);
+    const updateListItem = vi.fn(async () => true);
+    const dialog = new ListItemEditorDialog({
+      dialogManager: createDialogManager(),
+      setStatus: vi.fn(),
+      recentUserItemUpdates: new Set<string>(),
+      userUpdateTimeoutMs: 1000,
+      createListItem,
+      updateListItem,
+    });
+    dialog.open(mode, 'list1', mode === 'edit' ? { id: 'item1', title: 'Task', tags: [] } : undefined, {
+      customFields: [{ key: 'priority', label: 'Priority', type: 'text' }],
+      initialCustomFieldValues: { priority: 'High' },
+    });
+    const section = document.querySelector<HTMLDetailsElement>('details.list-item-custom-fields-section')!;
+    const summary = section.querySelector<HTMLElement>('summary')!;
+    expect(summary.textContent).toBe('Custom fields');
+    expect(section.open).toBe(false);
+    summary.click();
+    expect(section.open).toBe(true);
+    const input = section.querySelector<HTMLInputElement>('input')!;
+    expect(input.value).toBe('High');
+    input.value = 'Low';
+    summary.click();
+    expect(section.open).toBe(false);
+    expect(input.value).toBe('Low');
+    const reviewSection = document.querySelector<HTMLDetailsElement>('details.list-item-review-custom-fields')!;
+    expect(reviewSection.open).toBe(false);
+    reviewSection.querySelector<HTMLElement>('summary')!.click();
+    expect(reviewSection.open).toBe(true);
+
+    document.querySelector<HTMLInputElement>('.list-item-form input.list-item-form-input')!.value = 'Task';
+    document.querySelector('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    await Promise.resolve();
+    if (mode === 'add') {
+      expect(createListItem).toHaveBeenCalledWith('list1', expect.objectContaining({ customFields: { priority: 'Low' } }));
+    } else {
+      expect(updateListItem).toHaveBeenCalledWith('list1', 'item1', expect.objectContaining({ customFields: { priority: 'Low' } }));
+    }
+  });
+
   it('renders custom field inputs and submits values', async () => {
     const createListItem = vi.fn<ListItemEditorDialogOptions['createListItem']>(
       async () => true,

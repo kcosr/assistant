@@ -46,6 +46,7 @@
 
 ### Changed
 
+- Collapsed custom fields by default in create/edit task dialogs, with a touch- and keyboard-accessible header in Quick and Review modes that preserves field values. ([#137](https://github.com/kcosr/assistant/pull/137))
 - Changed the Android persistent voice notification to show thread-aware status and compact Start, response-mode, and Rearm controls, while sanitizing notification response text. ([#127](https://github.com/kcosr/assistant/pull/127))
 - Changed Android response-origin handling so server-initiated turns without a client origin play on all devices while suppressing Auto Listen. ([#124](https://github.com/kcosr/assistant/pull/124))
 - Changed the chat composer to grow with wrapped or multiline text up to a compact height limit, with Enter to send and Shift+Enter to add a newline. ([#119](https://github.com/kcosr/assistant/pull/119))
