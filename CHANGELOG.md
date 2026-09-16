@@ -8,6 +8,7 @@
 
 ### Added
 
+- Added per-agent Bash command-prefix and write/edit directory exceptions to native tool approvals, including intentional support for trailing shell pipes and chains. ([#136](https://github.com/kcosr/assistant/pull/136))
 - Added an opt-in macOS setting that focuses the selected chat input when Right Option is pressed without consuming the key event. ([#132](https://github.com/kcosr/assistant/pull/132))
 - Added Move to list on global search list-item results so items can be reassigned from the command palette without opening them first. ([#130](https://github.com/kcosr/assistant/pull/130))
 - Added a Herdr-inspired dark theme with coordinated prominent-action styling and a persistent preference for showing or hiding selected panel outlines. ([#129](https://github.com/kcosr/assistant/pull/129))
