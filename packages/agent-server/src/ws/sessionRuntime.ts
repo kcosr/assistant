@@ -1153,6 +1153,8 @@ export class SessionRuntime {
       const agentTools = applyToolApprovalPolicy({
         tools: allAgentTools.filter((tool) => visibleToolNames.has(tool.name)),
         required: agent?.toolApprovals?.required,
+        bashAllowPrefixes: agent?.toolApprovals?.bashAllowPrefixes,
+        writeAllowDirectories: agent?.toolApprovals?.writeAllowDirectories,
         context: toolContext,
       });
       if (visibleTools.length > 0 || (selectedSkills && selectedSkills.length > 0)) {

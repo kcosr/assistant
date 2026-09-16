@@ -1,3 +1,7 @@
+import path from 'node:path';
+import { homedir } from 'node:os';
+import { fileURLToPath } from 'node:url';
+
 import type { AgentTool, ToolContext } from './tools/types';
 import { ToolError } from './tools/errors';
 import { matchesGlobPattern } from './tools/scoping';
@@ -51,12 +55,57 @@ export function toolRequiresApproval(toolName: string, required: string[] | unde
   return Boolean(required?.some((pattern) => matchesGlobPattern(toolName, pattern)));
 }
 
+function writeIsAllowed(
+  tool: AgentTool,
+  params: unknown,
+  directories: string[] | undefined,
+): boolean {
+  if (
+    (tool.name !== 'write' && tool.name !== 'edit') ||
+    !directories?.length ||
+    !params ||
+    typeof params !== 'object'
+  ) {
+    return false;
+  }
+  const value = (params as Record<string, unknown>)['path'];
+  if (typeof value !== 'string' || !value) {
+    return false;
+  }
+  // Mirrors pi-coding-agent utils/paths.ts normalizePath via resolveToCwd.
+  // Real write/edit parity tests in codingToolHost.test.ts guard dependency drift.
+  let target = value.replace(/[\u00A0\u2000-\u200A\u202F\u205F\u3000]/g, ' ').replace(/^@/, '');
+  if (target === '~' || target.startsWith('~/')) {
+    target = path.join(homedir(), target.slice(2));
+  }
+  if (target.startsWith('file://')) {
+    try {
+      target = fileURLToPath(target);
+    } catch {
+      return false;
+    }
+  }
+  if (!path.isAbsolute(target) && !tool.workingDirectory) {
+    return false;
+  }
+  const resolved = path.resolve(tool.workingDirectory ?? '/', target);
+  return directories.some((directory) => {
+    const relative = path.relative(directory, resolved);
+    return (
+      relative === '' ||
+      (relative !== '..' && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative))
+    );
+  });
+}
+
 export function applyToolApprovalPolicy(options: {
   tools: AgentTool[];
   required: string[] | undefined;
   context: ToolContext;
+  bashAllowPrefixes?: string[] | undefined;
+  writeAllowDirectories?: string[] | undefined;
 }): AgentTool[] {
-  const { tools, required, context } = options;
+  const { tools, required, context, bashAllowPrefixes, writeAllowDirectories } = options;
   if (!required || required.length === 0) {
     return tools;
   }
@@ -69,6 +118,28 @@ export function applyToolApprovalPolicy(options: {
     return {
       ...tool,
       execute: async (toolCallId, params, signal, onUpdate) => {
+        if (writeIsAllowed(tool, params, writeAllowDirectories)) {
+          return tool.execute(toolCallId, params, signal, onUpdate);
+        }
+        // This is a workflow exception: a matching prefix permits the entire shell command.
+        const command =
+          tool.name === 'bash' && params && typeof params === 'object'
+            ? (params as Record<string, unknown>)['command']
+            : undefined;
+        if (
+          typeof command === 'string' &&
+          bashAllowPrefixes?.some((prefix) => {
+            const start = command.trimStart();
+            return (
+              prefix.length > 0 &&
+              start.startsWith(prefix) &&
+              (start.length === prefix.length || /[\s;&|<>]/.test(start[prefix.length]!))
+            );
+          })
+        ) {
+          return tool.execute(toolCallId, params, signal, onUpdate);
+        }
+
         const sessionHub = context.sessionHub;
         const sessionId = context.sessionId.trim();
         if (!sessionHub || !sessionId) {

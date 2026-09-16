@@ -28,11 +28,19 @@ const GlobPatternListSchema = z
 const ToolApprovalsConfigSchema = z
   .object({
     required: GlobPatternListSchema,
+    bashAllowPrefixes: z.array(NonEmptyTrimmedStringSchema).optional(),
+    writeAllowDirectories: z.array(AbsolutePathSchema).optional(),
   })
   .optional()
   .nullable()
   .transform((value) =>
-    value?.required && value.required.length > 0 ? { required: value.required } : undefined,
+    value?.required && value.required.length > 0
+      ? {
+          required: value.required,
+          ...(value.bashAllowPrefixes ? { bashAllowPrefixes: value.bashAllowPrefixes } : {}),
+          ...(value.writeAllowDirectories ? { writeAllowDirectories: value.writeAllowDirectories } : {}),
+        }
+      : undefined,
   );
 
 const ExtraArgsSchema = z

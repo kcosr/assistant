@@ -106,7 +106,11 @@ describe('loadConfig', () => {
             displayName: 'Approval Agent',
             description: 'Requires approval for selected tools.',
             chat: { provider: 'pi' },
-            toolApprovals: { required: ['bash', 'write', '*_delete'] },
+            toolApprovals: {
+              required: ['bash', 'write', '*_delete'],
+              bashAllowPrefixes: [' sedes-wrapper ', 'date'],
+              writeAllowDirectories: ['/tmp'],
+            },
           },
         ],
       }),
@@ -116,6 +120,8 @@ describe('loadConfig', () => {
     const config = loadConfig(filePath);
     expect(config.agents[0]?.toolApprovals).toEqual({
       required: ['bash', 'write', '*_delete'],
+      bashAllowPrefixes: ['sedes-wrapper', 'date'],
+      writeAllowDirectories: ['/tmp'],
     });
   });
 
