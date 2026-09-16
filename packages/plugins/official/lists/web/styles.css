@@ -3722,6 +3722,28 @@ button.list-item-menu-checkbox {
   margin: 0;
 }
 
+/* Native disclosure keeps task editors compact without discarding field values. */
+details.list-item-custom-fields-section,
+details.list-item-review-custom-fields {
+  display: block;
+}
+
+summary.list-item-custom-fields-title {
+  cursor: pointer;
+  padding: var(--spacing-xs) 0;
+  user-select: none;
+}
+
+summary.list-item-custom-fields-title:focus-visible {
+  outline: 2px solid var(--color-accent-primary);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+details[open] > .list-item-custom-fields-title {
+  margin-bottom: var(--spacing-sm);
+}
+
 .list-item-custom-fields {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
