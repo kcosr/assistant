@@ -9,7 +9,15 @@ import {
   toolRequiresApproval,
 } from './toolApprovalPolicy';
 
-function createHarness(options: { available?: boolean } = {}) {
+function createHarness(
+  options: {
+    available?: boolean;
+    bashAllowPrefixes?: string[];
+    toolName?: string;
+    writeAllowDirectories?: string[];
+    workingDirectory?: string;
+  } = {},
+) {
   const registry = new InteractionRegistry();
   const broadcastToSession = vi.fn();
   const sessionHub = {
@@ -40,7 +48,8 @@ function createHarness(options: { available?: boolean } = {}) {
     details: { ok: true },
   }));
   const tool: AgentTool = {
-    name: 'bash',
+    name: options.toolName ?? 'bash',
+    ...(options.workingDirectory ? { workingDirectory: options.workingDirectory } : {}),
     label: 'Bash',
     description: 'Run a command',
     parameters: { type: 'object' },
@@ -48,7 +57,9 @@ function createHarness(options: { available?: boolean } = {}) {
   };
   const [wrapped] = applyToolApprovalPolicy({
     tools: [tool],
-    required: ['bash'],
+    required: ['*'],
+    bashAllowPrefixes: options.bashAllowPrefixes,
+    writeAllowDirectories: options.writeAllowDirectories,
     context,
   });
   if (!wrapped) {
@@ -79,6 +90,129 @@ function getInteractionRequest(broadcastToSession: ReturnType<typeof vi.fn>): {
 }
 
 describe('tool approval policy', () => {
+  it.each([
+    'date',
+    '  date -Iseconds',
+    'date|cat',
+    'date&&echo done',
+    'date;echo done',
+    'date>out.txt',
+    'date $(echo +%s)',
+    'sedes-wrapper list | jq .',
+    'sedes-wrapper list && date',
+  ])('allows the entire matching Bash invocation: %s', async (command) => {
+    const { execute, wrapped, broadcastToSession } = createHarness({
+      available: false,
+      bashAllowPrefixes: ['sedes-wrapper', 'date'],
+    });
+    await expect(wrapped.execute('allowed', { command })).resolves.toMatchObject({
+      details: { ok: true },
+    });
+    expect(execute).toHaveBeenCalledTimes(1);
+    expect(broadcastToSession).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { command: 'datefoo' },
+    { command: 'sedes-wrapper-other list' },
+    { command: 'env TZ=UTC date' },
+    { command: 'echo date' },
+    { command: 'DATE' },
+    { command: '' },
+    { command: 123 },
+    {},
+  ])('requires approval for a nonmatching command: %j', async (params) => {
+    const { execute, wrapped } = createHarness({
+      available: false,
+      bashAllowPrefixes: ['sedes-wrapper', 'date'],
+    });
+    await expect(wrapped.execute('blocked', params)).rejects.toMatchObject({
+      code: 'interaction_unavailable',
+    });
+    expect(execute).not.toHaveBeenCalled();
+  });
+
+  it('does not exempt other tools with matching command arguments', async () => {
+    const { execute, wrapped } = createHarness({
+      available: false,
+      toolName: 'write',
+      bashAllowPrefixes: ['date'],
+    });
+    await expect(wrapped.execute('blocked', { command: 'date' })).rejects.toMatchObject({
+      code: 'interaction_unavailable',
+    });
+    expect(execute).not.toHaveBeenCalled();
+  });
+
+  it.each(['write', 'edit'])('allows %s within configured directories', async (toolName) => {
+    for (const target of [
+      '/tmp/new/nested.txt',
+      '/tmp',
+      'nested/file.txt',
+      '../file.txt',
+      '@/tmp/file.txt',
+      'file:///tmp/file.txt',
+    ]) {
+      const { wrapped, execute } = createHarness({
+        toolName,
+        available: false,
+        writeAllowDirectories: ['/tmp'],
+        workingDirectory: '/tmp/work',
+      });
+      await expect(wrapped.execute('allowed', { path: target })).resolves.toMatchObject({
+        details: { ok: true },
+      });
+      expect(execute).toHaveBeenCalledTimes(1);
+    }
+  });
+
+  it.each(['write', 'edit'])(
+    'requires approval for %s outside configured directories',
+    async (toolName) => {
+      for (const target of [
+        '/tmp-other/file',
+        '/tmp/../etc/file',
+        '../../etc/file',
+        '/etc/file',
+        '',
+        42,
+      ]) {
+        const { wrapped, execute } = createHarness({
+          toolName,
+          available: false,
+          writeAllowDirectories: ['/tmp'],
+          workingDirectory: '/tmp/work',
+        });
+        await expect(wrapped.execute('blocked', { path: target })).rejects.toMatchObject({
+          code: 'interaction_unavailable',
+        });
+        expect(execute).not.toHaveBeenCalled();
+      }
+    },
+  );
+
+  it('does not guess a relative file path when the tool working directory is unknown', async () => {
+    const { wrapped } = createHarness({
+      toolName: 'write',
+      available: false,
+      writeAllowDirectories: ['/tmp'],
+    });
+    await expect(wrapped.execute('blocked', { path: 'file.txt' })).rejects.toMatchObject({
+      code: 'interaction_unavailable',
+    });
+  });
+
+  it('does not exempt reads under writable directories', async () => {
+    const { wrapped } = createHarness({
+      toolName: 'read',
+      available: false,
+      writeAllowDirectories: ['/tmp'],
+    });
+    await expect(wrapped.execute('blocked', { path: '/tmp/file.txt' })).rejects.toMatchObject({
+      code: 'interaction_unavailable',
+    });
+  });
+
   it('matches exact names and globs', () => {
     expect(toolRequiresApproval('read', ['read'])).toBe(true);
     expect(toolRequiresApproval('notes_write', ['*_write'])).toBe(true);

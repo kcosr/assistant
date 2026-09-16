@@ -208,7 +208,10 @@ export class CodingToolHost implements ToolHost {
   async listAgentTools(ctx: ToolContext): Promise<AgentTool[]> {
     const cwd = await this.resolveToolCwd(ctx);
     const module = await this.loadModule();
-    return Object.values(createNativeTools(module, cwd));
+    return Object.values(createNativeTools(module, cwd)).map((tool) => ({
+      ...tool,
+      workingDirectory: cwd,
+    }));
   }
 
   async callTool(name: string, argsJson: string, ctx: ToolContext): Promise<unknown> {

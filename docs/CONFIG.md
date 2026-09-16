@@ -585,6 +585,52 @@ writes as well as shell commands:
 }
 ```
 
+The exception settings below only skip approvals already required by `required`; they
+do not restrict which tools or commands may run. Include `bash` in `required` (or a
+matching glob) for `bashAllowPrefixes` to have an effect, and include `write` and/or
+`edit` for `writeAllowDirectories` to affect those tools. Unmatched tools run without
+approval regardless of these settings. If `required` is omitted or empty, the entire
+approval policy, including its exceptions, is ignored.
+
+To skip Bash approval for selected command prefixes, add `bashAllowPrefixes`:
+
+```json
+{
+  "toolApprovals": {
+    "required": ["bash", "find", "edit", "write"],
+    "bashAllowPrefixes": ["sedes-wrapper", "date"]
+  }
+}
+```
+
+Prefixes are literal, case-sensitive strings (not globs), trimmed when loading config.
+Leading command whitespace is ignored. A prefix must end at the end of the command or
+before whitespace or a shell operator (`;`, `&`, `|`, `<`, `>`), so `date`
+matches `date -Iseconds` and `date|cat`, but not `datefoo`.
+A match permits the **entire invocation**, including trailing pipes, chains, redirections,
+and substitutions. This is a workflow guardrail, not a security boundary.
+Commands with other beginnings (such as `env TZ=UTC date`) still require approval.
+Exceptions apply only to the `bash` tool; other tools retain their approval policy.
+
+Use `writeAllowDirectories` to skip approval for native `write` and `edit` calls:
+
+```json
+{
+  "toolApprovals": {
+    "required": ["bash", "find", "edit", "write"],
+    "bashAllowPrefixes": ["sedes-wrapper", "date"],
+    "writeAllowDirectories": ["/tmp"]
+  }
+}
+```
+
+Directory entries must be absolute paths. Matching includes nested files, resolves
+`..` segments, and checks directory boundaries (`/tmp-other` does not match `/tmp`).
+Relative file paths resolve against the native tool's configured working directory.
+Native path forms such as `~/file`, `@/tmp/file`, and `file:///tmp/file` are supported.
+This is a lexical path check: symlinks are not resolved. Like Bash prefix exceptions,
+it is a workflow guardrail. It does not exempt reads or Bash commands that write files.
+
 The policy is enforced only for the native `pi` provider, whose tools execute through the
 Assistant tool host. Configuration is rejected for CLI providers because their internal tool
 execution cannot be intercepted by Assistant. Approval fails closed: if no connected client has

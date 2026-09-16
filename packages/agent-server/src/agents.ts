@@ -136,6 +136,10 @@ export interface AgentDefinition {
    */
   toolApprovals?: {
     required: string[];
+    /** Literal Bash prefixes that bypass approval for the entire command. */
+    bashAllowPrefixes?: string[];
+    /** Directories where native write/edit calls bypass approval. */
+    writeAllowDirectories?: string[];
   };
   /**
    * Optional tool exposure mode:

@@ -43,6 +43,8 @@ export interface AgentToolResult {
 export type AgentToolUpdateCallback = (partialResult: AgentToolResult) => void;
 
 export interface AgentTool extends ToolDescriptor {
+  /** Working directory used by native filesystem tools for relative paths. */
+  workingDirectory?: string;
   /**
    * Human-facing label shown by native pi runtime consumers.
    * Defaults to the tool description when omitted.

@@ -40,6 +40,8 @@ export async function resolveAgentToolExposureForHost(options: {
       agentTools = applyToolApprovalPolicy({
         tools: allAgentTools.filter((tool) => visibleToolNames.has(tool.name)),
         required: agent?.toolApprovals?.required,
+        bashAllowPrefixes: agent?.toolApprovals?.bashAllowPrefixes,
+        writeAllowDirectories: agent?.toolApprovals?.writeAllowDirectories,
         context: toolContext,
       });
     } catch {

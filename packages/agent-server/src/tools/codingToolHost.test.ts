@@ -1,6 +1,8 @@
+import { applyToolApprovalPolicy } from '../toolApprovalPolicy';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
 import type {
@@ -35,6 +37,74 @@ function createTempDir(prefix: string): string {
 }
 
 describe('CodingToolHost', () => {
+  it('keeps approval path normalization aligned with native write and edit tools', async () => {
+    const dataDir = await fs.mkdtemp(path.join(os.tmpdir(), 'coding-approval-parity-'));
+    try {
+      const workspaceRoot = path.join(dataDir, 'workspace');
+      const host = new CodingToolHost({
+        dataDir,
+        pluginConfig: { enabled: true, mode: 'local', local: { workspaceRoot } },
+        loadCodingAgentModule,
+      });
+      const ctx: ToolContext = {
+        sessionId: 'path-parity',
+        signal: new AbortController().signal,
+      };
+      const tools = await host.listAgentTools(ctx);
+      const nativeWrite = tools.find((tool) => tool.name === 'write')!;
+      const nativeEdit = tools.find((tool) => tool.name === 'edit')!;
+      const [allowedWrite, allowedEdit] = applyToolApprovalPolicy({
+        tools: [nativeWrite, nativeEdit],
+        required: ['write', 'edit'],
+        writeAllowDirectories: [workspaceRoot],
+        context: ctx,
+      });
+      const forms: Array<(target: string) => string> = [
+        (target) => target,
+        (target) => path.relative(workspaceRoot, target),
+        (target) => `~/${path.relative(os.homedir(), target)}`,
+        (target) => `@${target}`,
+        (target) => pathToFileURL(target).href,
+        (target) => target.replace('file name', 'file\u202fname'),
+        (target) => `unused/../${path.basename(target)}`,
+      ];
+
+      for (const [index, form] of forms.entries()) {
+        const target = path.join(workspaceRoot, `file name-${index}.txt`);
+        const args = { path: form(target), content: 'before' };
+        // Establish the real native tool's destination, then verify the same call
+        // bypasses approval and edits that file without an interactive session.
+        await nativeWrite.execute(`native-${index}`, args, ctx.signal);
+        expect(await fs.readFile(target, 'utf8')).toBe('before');
+        await allowedWrite!.execute(`allowed-write-${index}`, args, ctx.signal);
+        await allowedEdit!.execute(
+          `allowed-edit-${index}`,
+          { path: args.path, edits: [{ oldText: 'before', newText: 'after' }] },
+          ctx.signal,
+        );
+        expect(await fs.readFile(target, 'utf8')).toBe('after');
+      }
+
+      // A traversing relative path still points outside the allowed directory
+      // for both the native tool and the approval policy.
+      const outside = { path: '../outside.txt', content: 'outside' };
+      await nativeWrite.execute('native-outside', outside, ctx.signal);
+      expect(await fs.readFile(path.join(dataDir, 'outside.txt'), 'utf8')).toBe('outside');
+      await expect(allowedWrite!.execute('blocked-write', outside)).rejects.toMatchObject({
+        code: 'interaction_unavailable',
+      });
+      await expect(
+        allowedEdit!.execute('blocked-edit', {
+          path: outside.path,
+          edits: [{ oldText: 'outside', newText: 'changed' }],
+        }),
+      ).rejects.toMatchObject({ code: 'interaction_unavailable' });
+      expect(await fs.readFile(path.join(dataDir, 'outside.txt'), 'utf8')).toBe('outside');
+    } finally {
+      await fs.rm(dataDir, { recursive: true, force: true });
+    }
+  }, 15_000);
+
   it('wires write and read tools through the host', async () => {
     const dataDir = createTempDir('coding-tool-host-tools');
 
@@ -212,7 +282,13 @@ describe('CodingToolHost', () => {
       throw new Error('Expected write, read, and bash tools to be registered');
     }
 
-    await writeTool.execute(
+    const [approvedWriteTool] = applyToolApprovalPolicy({
+      tools: [writeTool],
+      required: ['write'],
+      writeAllowDirectories: [sessionWorkingDir],
+      context: ctx,
+    });
+    await approvedWriteTool!.execute(
       'relative-write',
       { path: 'relative.txt', content: 'relative file' },
       ctx.signal,
