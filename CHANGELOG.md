@@ -5,6 +5,7 @@
 ### Breaking Changes
 
 - Removed `loadAgentDefinitionsFromFile()` from `agents.ts` — all agent loading now goes through `loadConfig()` in `config.ts`. ([#93](https://github.com/kcosr/assistant/pull/93))
+- Replaced inline Pi provider definitions and per-agent model menus with registry-backed models and named chat profiles; shared request overrides now own sampling defaults. ([#138](https://github.com/kcosr/assistant/pull/138))
 
 ### Added
 
@@ -98,6 +99,7 @@
 - Fixed thinking/text segment boundaries around streamed tool input so repeated reasoning no longer appears before and after a tool call in the same turn. ([#93](https://github.com/kcosr/assistant/pull/93))
 - Fixed `agents_message` tool rendering so sync results show the returned `response` text and async callbacks surface a clearer completion indicator in the tool block UI. ([#93](https://github.com/kcosr/assistant/pull/93))
 - Fixed Pi replay around questionnaire submissions so the hidden follow-up turn indicator no longer renders an empty turn before the questionnaire submission marker. ([#93](https://github.com/kcosr/assistant/pull/93))
+- Preserved provider-specific authentication, model limits, and reasoning settings across model switches, tool/history round trips, and compaction. ([#138](https://github.com/kcosr/assistant/pull/138))
 
 ### Removed
 
