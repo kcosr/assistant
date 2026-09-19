@@ -69,6 +69,8 @@
 
 ### Fixed
 
+- Use the selected profile model’s reasoning default when creating sessions through the sessions tool or API. ([#138](https://github.com/kcosr/assistant/pull/138))
+
 - Fixed Android one-shot scheduled wake replies ignoring Auto Listen in Response and Manual modes, while preserving recognition suppression for other server-origin replies. ([#134](https://github.com/kcosr/assistant/pull/134))
 
 - Fixed voice-first Pi sessions failing before an initial typed message by making native ESM runtime dependencies resolvable from bundled plugin servers. ([#127](https://github.com/kcosr/assistant/pull/127))
