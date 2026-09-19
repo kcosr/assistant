@@ -1,3 +1,4 @@
+import type { ThinkingLevel } from '@earendil-works/pi-ai';
 import type { AgentDefinition } from './agents';
 import type { SessionSummary } from './sessionIndex';
 
@@ -56,7 +57,16 @@ export function getAgentAvailableModels(agent: AgentDefinition | undefined): str
   return normaliseModels(models);
 }
 
-export function getAgentAvailableThinkingLevels(agent: AgentDefinition | undefined): string[] {
+export function getAgentModelSettings(agent: AgentDefinition | undefined, model?: string) {
+  return agent?.chat?.modelSettings?.find(
+    (entry) => entry.id === (model ?? getDefaultModelForNewSession(agent)),
+  );
+}
+
+export function getAgentAvailableThinkingLevels(
+  agent: AgentDefinition | undefined,
+  model?: string,
+): string[] {
   if (!agent || !agent.chat) {
     return [];
   }
@@ -71,7 +81,10 @@ export function getAgentAvailableThinkingLevels(agent: AgentDefinition | undefin
     return [];
   }
 
-  const thinking = (agent.chat as { thinking?: unknown }).thinking;
+  const thinking =
+    agent.chat.provider === 'pi'
+      ? getAgentModelSettings(agent, model)?.thinking
+      : (agent.chat as { thinking?: unknown }).thinking;
   return normaliseThinkingLevels(thinking);
 }
 
@@ -84,8 +97,9 @@ export function getDefaultModelForNewSession(
 
 export function getDefaultThinkingForNewSession(
   agent: AgentDefinition | undefined,
+  model?: string,
 ): string | undefined {
-  const thinkingLevels = getAgentAvailableThinkingLevels(agent);
+  const thinkingLevels = getAgentAvailableThinkingLevels(agent, model);
   return thinkingLevels.length > 0 ? thinkingLevels[0] : undefined;
 }
 
@@ -118,7 +132,10 @@ export function resolveSessionThinkingForRun(options: {
   summary: SessionSummary;
 }): string | undefined {
   const { agent, summary } = options;
-  const availableThinking = getAgentAvailableThinkingLevels(agent);
+  const availableThinking = getAgentAvailableThinkingLevels(
+    agent,
+    resolveSessionModelForRun(options),
+  );
   if (availableThinking.length === 0) {
     return undefined;
   }
@@ -157,4 +174,16 @@ export function resolveCliModelForRun(options: {
   }
 
   return availableModels[0];
+}
+
+/** Pi represents disabled reasoning by omitting the request reasoning option. */
+export function isPiReasoningLevel(value: string): value is ThinkingLevel {
+  return (
+    value === 'minimal' ||
+    value === 'low' ||
+    value === 'medium' ||
+    value === 'high' ||
+    value === 'xhigh' ||
+    value === 'max'
+  );
 }

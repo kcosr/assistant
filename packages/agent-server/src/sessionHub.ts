@@ -46,7 +46,11 @@ import {
   type CliToolCallMatchOptions,
   type CliToolCallRecord,
 } from './ws/cliToolCallRendezvous';
-import { resolveSessionModelForRun } from './sessionModel';
+import {
+  getAgentAvailableThinkingLevels,
+  resolveSessionModelForRun,
+  resolveSessionThinkingForRun,
+} from './sessionModel';
 import { resolvePiSdkRuntimeModel } from './llm/piSdkProvider';
 import type { PiSdkChatConfig } from './agents';
 
@@ -56,12 +60,6 @@ export interface LogicalSessionState {
   piAgentRuntime?:
     | {
         agent: PiAgent;
-        requestConfig: {
-          apiKey?: string;
-          temperature?: number;
-          maxTokens?: number;
-          headers?: Record<string, string>;
-        };
         onPayload?: ((payload: unknown, model: unknown) => unknown | Promise<unknown>) | undefined;
       }
     | undefined;
@@ -356,8 +354,18 @@ export class SessionHub {
       includePinnedAtNull = false,
       contextUsage = summary.contextUsage ?? null,
     } = options;
+    const agent = summary.agentId ? this.agentRegistry.getAgent(summary.agentId) : undefined;
+    const model = resolveSessionModelForRun({ agent, summary });
+    const thinking = resolveSessionThinkingForRun({ agent, summary });
     return {
       type: 'session_updated',
+      ...(agent?.chat?.provider === 'pi'
+        ? {
+            availableThinking: getAgentAvailableThinkingLevels(agent, model),
+            ...(model ? { currentModel: model } : {}),
+            ...(thinking ? { currentThinking: thinking } : {}),
+          }
+        : {}),
       sessionId: summary.sessionId,
       updatedAt: summary.updatedAt,
       ...(typeof summary.name === 'string' ? { name: summary.name } : {}),
@@ -419,9 +427,16 @@ export class SessionHub {
     sessionId: string,
     model: string | null,
   ): Promise<SessionSummary | undefined> {
-    const summary = await this.sessionIndex.setSessionModel(sessionId, model);
+    let summary = await this.sessionIndex.setSessionModel(sessionId, model);
     if (!summary) {
       return undefined;
+    }
+    const agent = summary.agentId ? this.agentRegistry.getAgent(summary.agentId) : undefined;
+    if (agent?.chat?.provider === 'pi') {
+      const thinking = resolveSessionThinkingForRun({ agent, summary }) ?? null;
+      if (thinking !== (summary.thinking ?? null)) {
+        summary = (await this.sessionIndex.setSessionThinking(sessionId, thinking)) ?? summary;
+      }
     }
 
     const state = this.sessions.get(sessionId);
@@ -741,15 +756,15 @@ export class SessionHub {
     }
     const resolvedRuntime = await resolvePiSdkRuntimeModel({
       modelSpec,
-      ...(piConfig ? { config: piConfig } : {}),
-      log: (...args) => console.warn('[sessionHub]', ...args),
     });
     const compactSignal = signal ?? state?.activeChatRun?.abortController.signal;
     const result = await this.piSessionWriter.compact({
       summary: existing,
       settings: this.resolvePiCompactionSettings(piConfig),
       model: resolvedRuntime.runtimeModel,
-      ...(resolvedRuntime.apiKey ? { apiKey: resolvedRuntime.apiKey } : {}),
+      ...(resolveSessionThinkingForRun({ agent, summary: existing })
+        ? { thinkingLevel: resolveSessionThinkingForRun({ agent, summary: existing })! }
+        : {}),
       ...(compactSignal ? { signal: compactSignal } : {}),
       updateAttributes: (patch) => this.updateSessionAttributes(sessionId, patch),
     });

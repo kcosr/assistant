@@ -296,6 +296,59 @@ describe('sessions plugin operations', () => {
     );
   });
 
+  it.each([
+    [undefined, undefined, 'local/model-a', 'low'],
+    ['remote/model-b', undefined, 'remote/model-b', 'high'],
+    ['remote/model-b', 'low', 'remote/model-b', 'low'],
+  ])(
+    'uses the selected model default unless thinking is explicit (%s, %s)',
+    async (model, thinking, expectedModel, expectedThinking) => {
+      const sessionIndex = new SessionIndex(createTempFile('sessions-plugin-profile'));
+      const agentRegistry = new AgentRegistry([
+        {
+          agentId: 'general',
+          displayName: 'General',
+          description: 'General agent',
+          chatProfile: 'test',
+          chat: {
+            provider: 'pi',
+            models: ['local/model-a', 'remote/model-b'],
+            modelSettings: [
+              { id: 'local/model-a', thinking: ['low', 'high'] },
+              { id: 'remote/model-b', thinking: ['high', 'low'] },
+            ],
+          },
+        },
+      ]);
+      const sessionHub = new SessionHub({ sessionIndex, agentRegistry });
+      const plugin = createPlugin({ manifest: manifestJson as CombinedPluginManifest });
+      const ctx: ToolContext = {
+        sessionId: 'calling-session',
+        signal: new AbortController().signal,
+        sessionHub,
+        sessionIndex,
+        agentRegistry,
+      };
+
+      const result = (await plugin.operations?.create(
+        {
+          agentId: 'general',
+          sessionConfig: {
+            ...(model ? { model } : {}),
+            ...(thinking ? { thinking } : {}),
+          },
+        },
+        ctx,
+      )) as SessionSummary;
+
+      expect(result).toMatchObject({ model: expectedModel, thinking: expectedThinking });
+      expect(await sessionIndex.getSession(result.sessionId)).toMatchObject({
+        model: expectedModel,
+        thinking: expectedThinking,
+      });
+    },
+  );
+
   it('replaces editable session config fields on update', async () => {
     const sessionIndex = new SessionIndex(createTempFile('sessions-plugin-update-config'));
     const agentRegistry = new AgentRegistry([

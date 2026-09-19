@@ -475,8 +475,7 @@ export class ServerMessageHandler {
             currentThinking?: string;
           } = {
             sessionId: message.sessionId,
-            ...(Array.isArray(anyMessage.availableThinking) &&
-            anyMessage.availableThinking.length > 0
+            ...(Array.isArray(anyMessage.availableThinking)
               ? { availableThinking: anyMessage.availableThinking }
               : {}),
             ...(typeof anyMessage.currentThinking === 'string' &&
@@ -617,6 +616,23 @@ export class ServerMessageHandler {
         break;
       }
       case 'session_updated': {
+        if (message.currentModel !== undefined) {
+          this.options.updateSessionModelForSession?.({
+            sessionId: message.sessionId,
+            currentModel: message.currentModel,
+          });
+        }
+        if (message.availableThinking !== undefined || message.currentThinking !== undefined) {
+          this.options.updateSessionThinkingForSession?.({
+            sessionId: message.sessionId,
+            ...(message.availableThinking !== undefined
+              ? { availableThinking: message.availableThinking }
+              : {}),
+            ...(message.currentThinking !== undefined
+              ? { currentThinking: message.currentThinking }
+              : {}),
+          });
+        }
         const session = this.options
           .getSessionSummaries()
           .find((summary) => summary.sessionId === message.sessionId);

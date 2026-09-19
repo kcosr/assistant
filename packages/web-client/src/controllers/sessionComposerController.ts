@@ -17,6 +17,7 @@ export interface SessionComposerAgentSummary {
   sessionConfigCapabilities?: {
     availableModels?: string[];
     availableThinking?: string[];
+    thinkingByModel?: Record<string, string[]>;
     availableSkills?: Array<{
       id: string;
       name: string;
@@ -199,9 +200,7 @@ export class SessionComposerController {
       return ordered.length === availableSkills.length ? undefined : ordered;
     };
 
-    const normalizeExpandedSkillDescriptions = (
-      availableSkills: Array<{ id: string }>,
-    ): void => {
+    const normalizeExpandedSkillDescriptions = (availableSkills: Array<{ id: string }>): void => {
       const availableSkillIds = new Set(availableSkills.map((skill) => skill.id));
       expandedSkillDescriptions = new Set(
         [...expandedSkillDescriptions].filter((skillId) => availableSkillIds.has(skillId)),
@@ -223,6 +222,16 @@ export class SessionComposerController {
       return undefined;
     };
 
+    const getAvailableThinking = (): string[] => {
+      const capabilities = getSelectedAgent()?.sessionConfigCapabilities;
+      const model = selectedModel || capabilities?.availableModels?.[0];
+      return capabilities?.thinkingByModel
+        ? model
+          ? (capabilities.thinkingByModel[model] ?? [])
+          : []
+        : (capabilities?.availableThinking ?? []);
+    };
+
     const normalizeForAgent = (): void => {
       const agent = getSelectedAgent();
       if (!agent) {
@@ -238,7 +247,7 @@ export class SessionComposerController {
         selectedModel = '';
       }
 
-      const thinking = new Set(agent.sessionConfigCapabilities?.availableThinking ?? []);
+      const thinking = new Set(getAvailableThinking());
       if (selectedThinking && !thinking.has(selectedThinking)) {
         selectedThinking = '';
       }
@@ -443,7 +452,9 @@ export class SessionComposerController {
     const renderSkills = (): void => {
       const agent = getSelectedAgent();
       const availableSkills = agent?.sessionConfigCapabilities?.availableSkills ?? [];
-      const previousList = skillsSection.querySelector<HTMLDivElement>('.session-composer-skill-list');
+      const previousList = skillsSection.querySelector<HTMLDivElement>(
+        '.session-composer-skill-list',
+      );
       const preservedScrollTop = previousList?.scrollTop ?? 0;
       skillsSection.innerHTML = '';
       if (availableSkills.length === 0) {
@@ -730,13 +741,14 @@ export class SessionComposerController {
       );
       modelLabel.hidden = (capabilities?.availableModels?.length ?? 0) === 0;
 
+      const availableThinking = getAvailableThinking();
       selectedThinking = renderSelect(
         thinkingSelect,
-        capabilities?.availableThinking,
+        availableThinking,
         selectedThinking,
-        'Agent default',
+        'Model default',
       );
-      thinkingLabel.hidden = (capabilities?.availableThinking?.length ?? 0) === 0;
+      thinkingLabel.hidden = availableThinking.length === 0;
 
       renderSkills();
       renderWorkingDirSection();
@@ -907,6 +919,7 @@ export class SessionComposerController {
     });
     modelSelect.addEventListener('change', () => {
       selectedModel = modelSelect.value.trim();
+      updateCapabilityUi();
     });
     thinkingSelect.addEventListener('change', () => {
       selectedThinking = thinkingSelect.value.trim();
@@ -981,8 +994,8 @@ export class SessionComposerController {
       const data = (await response.json()) as unknown;
       const roots =
         data && typeof data === 'object'
-          ? (data as { roots?: unknown }).roots ??
-            (data as { result?: { roots?: unknown } }).result?.roots
+          ? ((data as { roots?: unknown }).roots ??
+            (data as { result?: { roots?: unknown } }).result?.roots)
           : undefined;
       if (!Array.isArray(roots)) {
         return [];

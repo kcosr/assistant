@@ -857,30 +857,28 @@ When `sessions.maxCached` is omitted, the server defaults to caching up to `100`
 Agents are configured in `config.json` under `agents`. Each agent supports:
 
 - `agentId`, `displayName`, `description`, optional `systemPrompt`
+- `chatProfile`: named root `chatProfiles` entry for in-process Pi agents. Profiles contain ordered
+  `models: [{ id: "provider/model", thinking: ["none", "medium"] }]`.
+  The first model and its first thinking level are defaults. Pi's registry supplies connection
+  details, authentication, capabilities, and model limits. Sampling comes from the shared
+  `@kcosr/pi-request-overrides` hook and Pi agent directory's `request-overrides.json` file.
+  See [configuration and migration](../../docs/CONFIG.md#pi-provider).
 - `type` (default `"chat"`) to select agent runtime
   - `"chat"`: in-process chat completions (default behavior)
   - `"external"`: forwards user messages to `external.inputUrl` and accepts assistant messages via callback
   - `chat` (only for `type: "chat"` or when `type` is omitted)
   - `provider` (default `"pi"`): `"pi"`, `"claude-cli"`, `"codex-cli"`, or `"pi-cli"`
-  - `models` (optional array): allowed model ids for `"pi"` and CLI providers; first is default. For `"pi"` and `"pi-cli"`, entries may be `provider/model` and are split into `--provider` + `--model` (Pi CLI only).
-  - `thinking` (optional array): allowed thinking levels for `"pi"`, `"pi-cli"`, `"codex-cli"`, and `"claude-cli"`; first is default (Pi passes through to SDK reasoning; Codex maps to `model_reasoning_effort`; Claude maps to `--effort`, translating `none`/`off` to no flag and `xhigh` to `max`)
+  - `models` (optional array, CLI providers only): allowed model IDs; first is default.
+  - `thinking` (optional array, CLI providers only): allowed thinking levels; first is default.
+    Pi CLI passes these through; Codex maps them to `model_reasoning_effort`; Claude maps them
+    to `--effort`, translating `none`/`off` to no flag and `xhigh` to `max`.
   - `config`:
     - for `provider: "pi"`:
-      - `provider` (optional): default provider used when a model omits a prefix (required if any model omits a prefix)
-      - `api` (optional): API implementation for synthesized custom models, such as `openai-completions` for OpenAI-compatible Chat Completions endpoints. Defaults to `openai-responses`; must be one of the Pi SDK built-in API implementations.
-      - `apiKey` (optional): API key override for the configured provider
-      - `authHeader` (optional): when `true`, also sends `Authorization: Bearer <apiKey>` in request headers, matching Pi `models.json` behavior
-      - `baseUrl` (optional): base URL override for the configured provider
-        - when `baseUrl` is set and the resolved provider has no built-in Pi model list, the server synthesizes a model for the configured `provider/model` id so custom endpoints can be targeted without adding new config fields
-      - `headers` (optional): custom HTTP headers to send with each request
-      - `compat` (optional): validated Pi model compatibility overrides such as `supportsDeveloperRole`, `supportsReasoningEffort`, `supportsUsageInStreaming`, `maxTokensField`, and `thinkingFormat`
-      - connection overrides apply only when the resolved provider matches `config.provider`
-      - `timeoutMs` (optional): request timeout in milliseconds
-      - `maxTokens` (optional): positive integer completion limit
-      - `contextWindow` (optional): context-window override for resolved Pi models, including synthesized custom models
-      - `reasoning`, `input`, and `cost` (optional): model metadata overrides for resolved Pi models, including synthesized custom models
-      - `temperature` (optional): temperature to use for generation
-      - `maxToolIterations` (optional): max consecutive tool iterations before aborting with an error (default 100)
+      - `maxToolIterations` (optional): maximum consecutive tool iterations (default 100)
+      - `compaction` (optional): `enabled`, `reserveTokens`, and `keepRecentTokens`
+      - `timeoutMs` (optional): retained execution setting
+      - Provider definitions and model metadata belong exclusively in Pi's registry. Inline
+        connection, capability, limit, and temperature overrides are rejected.
     - for `provider: "claude-cli"`:
       - `workdir` (optional): working directory for the Claude CLI
       - `extraArgs` (optional array): additional CLI args (reserved flags are managed by the server and must not be included: `--output-format`, `--session-id`, `--resume`, `-p`, `--include-partial-messages`, `--verbose`; when `chat.models` is set, `--model` is also managed by the server; when `chat.thinking` is set, `--effort` is also managed by the server)
@@ -914,9 +912,21 @@ Example:
 
 ```json
 {
+  "chatProfiles": {
+    "default": {
+      "models": [
+        {
+          "id": "anthropic/claude-sonnet-4-5",
+          "thinking": ["none", "low", "medium", "high"]
+        },
+        { "id": "openai-codex/gpt-5.2-codex", "thinking": ["none", "medium", "xhigh"] }
+      ]
+    }
+  },
   "agents": [
     {
       "agentId": "reading-list",
+      "chatProfile": "default",
       "displayName": "Reading List Manager",
       "description": "Manages reading lists.",
       "toolAllowlist": ["lists_*"],
@@ -932,16 +942,10 @@ Example:
       "displayName": "Pi",
       "description": "Pi SDK chat provider.",
       "type": "chat",
+      "chatProfile": "default",
       "chat": {
         "provider": "pi",
-        "models": ["anthropic/claude-sonnet-4-5", "openai-codex/gpt-5.2-codex"],
-        "thinking": ["off", "low", "medium", "high", "xhigh"],
-        "config": {
-          "provider": "anthropic",
-          "apiKey": "${ANTHROPIC_API_KEY}",
-          "maxTokens": 4096,
-          "temperature": 0.7
-        }
+        "config": { "maxToolIterations": 100 }
       }
     },
     {

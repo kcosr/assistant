@@ -15,6 +15,7 @@
     "@earendil-works/pi-agent-core": "^0.82.1",
     "@earendil-works/pi-ai": "^0.82.1",
     "@earendil-works/pi-coding-agent": "^0.82.1",
+    "@kcosr/pi-request-overrides": "github:kcosr/pi-request-overrides#4ce8bd181f6943a9863e3c1b626108c2e234cb97",
     "@mozilla/readability": "^0.5.0",
     "cron-parser": "^4.9.0",
     "cronstrue": "^2.50.0",

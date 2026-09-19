@@ -1706,7 +1706,8 @@ export class ScheduledSessionService {
     const agent = this.options.agentRegistry.getAgent(agentId);
     const resolvedConfig = await this.resolveRuntimeSessionConfig(agentId, schedule);
     const model = resolvedConfig.model ?? getDefaultModelForNewSession(agent);
-    const thinking = resolvedConfig.thinking ?? getDefaultThinkingForNewSession(agent);
+    const thinking =
+      resolvedConfig.thinking ?? getDefaultThinkingForNewSession(agent, resolvedConfig.model);
     const configAttributes = buildSessionAttributesPatchFromConfig(resolvedConfig);
     const attributes = {
       ...(configAttributes ?? {}),
@@ -2058,7 +2059,9 @@ export class ScheduledSessionService {
     const resolvedConfig = await this.resolveRuntimeSessionConfig(agentId, schedule);
     const targetModel = resolvedConfig.model ?? getDefaultModelForNewSession(agent) ?? null;
     const targetThinking =
-      resolvedConfig.thinking ?? getDefaultThinkingForNewSession(agent) ?? null;
+      resolvedConfig.thinking ??
+      getDefaultThinkingForNewSession(agent, resolvedConfig.model) ??
+      null;
     let current = summary;
 
     if ((current.model ?? null) !== targetModel) {

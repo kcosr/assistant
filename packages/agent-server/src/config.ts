@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 import { z } from 'zod';
-import type { AgentDefinition, PiSdkChatConfig } from './agents';
+import type { AgentDefinition } from './agents';
 import { DEFAULT_ATTACHMENT_PREVIEW_SNIPPET_CHARS } from './attachments/constants';
 import { normalizeContextFileSourcesForConfigDir } from './contextFiles';
 import { normalizeInstructionSkillSourcesForConfigDir } from './instructionSkills';
@@ -38,7 +38,9 @@ const ToolApprovalsConfigSchema = z
       ? {
           required: value.required,
           ...(value.bashAllowPrefixes ? { bashAllowPrefixes: value.bashAllowPrefixes } : {}),
-          ...(value.writeAllowDirectories ? { writeAllowDirectories: value.writeAllowDirectories } : {}),
+          ...(value.writeAllowDirectories
+            ? { writeAllowDirectories: value.writeAllowDirectories }
+            : {}),
         }
       : undefined,
   );
@@ -228,78 +230,51 @@ const PiCliChatConfigSchema = z.object({
   wrapper: CliWrapperConfigSchema.optional(),
 });
 
-const PiSdkApiSchema = z.enum([
-  'openai-completions',
-  'mistral-conversations',
-  'openai-responses',
-  'azure-openai-responses',
-  'openai-codex-responses',
-  'anthropic-messages',
-  'bedrock-converse-stream',
-  'google-generative-ai',
-  'google-vertex',
-]);
-
-const PiSdkCompatSchema = z
+const ChatProfileModelSchema = z
   .object({
-    supportsStore: z.boolean().optional(),
-    supportsDeveloperRole: z.boolean().optional(),
-    supportsReasoningEffort: z.boolean().optional(),
-    supportsUsageInStreaming: z.boolean().optional(),
-    maxTokensField: z.enum(['max_completion_tokens', 'max_tokens']).optional(),
-    requiresToolResultName: z.boolean().optional(),
-    requiresAssistantAfterToolResult: z.boolean().optional(),
-    requiresThinkingAsText: z.boolean().optional(),
-    requiresReasoningContentOnAssistantMessages: z.boolean().optional(),
-    thinkingFormat: z
-      .enum(['openai', 'openrouter', 'deepseek', 'zai', 'qwen', 'qwen-chat-template'])
+    id: NonEmptyTrimmedStringSchema.refine(
+      (value) => /^[^/\s]+\/[^\s]+$/.test(value),
+      'Pi models must use provider/model format',
+    ),
+    thinking: z
+      .array(z.enum(['none', 'off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']))
+      .min(1)
+      .refine((levels) => new Set(levels).size === levels.length, 'Thinking levels must be unique')
       .optional(),
-    openRouterRouting: z.record(z.string(), z.unknown()).optional(),
-    vercelGatewayRouting: z.record(z.string(), z.unknown()).optional(),
-    zaiToolStream: z.boolean().optional(),
-    supportsStrictMode: z.boolean().optional(),
-    cacheControlFormat: z.literal('anthropic').optional(),
-    sendSessionAffinityHeaders: z.boolean().optional(),
-    supportsLongCacheRetention: z.boolean().optional(),
-    sendSessionIdHeader: z.boolean().optional(),
-    supportsEagerToolInputStreaming: z.boolean().optional(),
+    sampling: z
+      .never({
+        invalid_type_error:
+          'Profile sampling is not supported; configure sampling in Pi agent request-overrides.json',
+      })
+      .optional(),
   })
   .strict();
 
-const PiSdkChatConfigSchema = z.object({
-  provider: NonEmptyTrimmedStringSchema.optional(),
-  api: PiSdkApiSchema.optional(),
-  apiKey: NonEmptyTrimmedStringSchema.optional(),
-  authHeader: z.boolean().optional(),
-  baseUrl: NonEmptyTrimmedStringSchema.optional(),
-  headers: z.record(z.string(), z.string()).optional(),
-  timeoutMs: z.number().int().min(1).optional(),
-  maxTokens: z.number().int().min(1).optional(),
-  contextWindow: z.number().int().min(1).optional(),
-  reasoning: z.boolean().optional(),
-  input: z
-    .array(z.enum(['text', 'image']))
-    .min(1)
-    .optional(),
-  cost: z
-    .object({
-      input: z.number().min(0).optional(),
-      output: z.number().min(0).optional(),
-      cacheRead: z.number().min(0).optional(),
-      cacheWrite: z.number().min(0).optional(),
-    })
-    .optional(),
-  compat: PiSdkCompatSchema.optional(),
-  temperature: z.number().min(0).max(2).optional(),
-  maxToolIterations: z.number().int().min(1).optional(),
-  compaction: z
-    .object({
-      enabled: z.boolean().optional(),
-      reserveTokens: z.number().int().min(1).optional(),
-      keepRecentTokens: z.number().int().min(1).optional(),
-    })
-    .optional(),
-});
+const ChatProfileSchema = z
+  .object({
+    models: z
+      .array(ChatProfileModelSchema)
+      .min(1)
+      .refine(
+        (models) => new Set(models.map((model) => model.id)).size === models.length,
+        'Models in a chat profile must have unique ids',
+      ),
+  })
+  .strict();
+
+const PiSdkChatConfigSchema = z
+  .object({
+    timeoutMs: z.number().int().min(1).optional(),
+    maxToolIterations: z.number().int().min(1).optional(),
+    compaction: z
+      .object({
+        enabled: z.boolean().optional(),
+        reserveTokens: z.number().int().min(1).optional(),
+        keepRecentTokens: z.number().int().min(1).optional(),
+      })
+      .optional(),
+  })
+  .strict();
 
 const ChatConfigSchema = z.object({
   provider: ChatProviderSchema.optional().nullable(),
@@ -380,6 +355,7 @@ const RawAgentConfigSchema = z.object({
   description: NonEmptyTrimmedStringSchema,
   type: AgentTypeSchema.optional().nullable(),
   chat: ChatConfigSchema.optional().nullable(),
+  chatProfile: NonEmptyTrimmedStringSchema.optional().nullable(),
   external: ExternalAgentConfigSchema.optional().nullable(),
   systemPrompt: z.string().trim().min(1).optional(),
   toolAllowlist: GlobPatternListSchema,
@@ -441,6 +417,7 @@ export const AgentConfigSchema = RawAgentConfigSchema.transform((value) => {
     description,
     type: rawType,
     chat: rawChat,
+    chatProfile,
     external: rawExternal,
     systemPrompt,
     toolAllowlist,
@@ -465,6 +442,7 @@ export const AgentConfigSchema = RawAgentConfigSchema.transform((value) => {
     agentId,
     displayName,
     description,
+    ...(chatProfile ? { chatProfile } : {}),
     ...(skills !== undefined ? { skills } : {}),
     ...(contextFiles !== undefined ? { contextFiles } : {}),
     ...(sessionWorkingDir ? { sessionWorkingDir } : {}),
@@ -501,56 +479,43 @@ export const AgentConfigSchema = RawAgentConfigSchema.transform((value) => {
         : 'pi';
 
     if (provider === 'pi') {
-      const models = parseChatModels({ agentId, modelsRaw: rawChat.models });
-      const thinking = parseChatThinking({ agentId, thinkingRaw: rawChat.thinking });
-      const config =
-        rawChat.config !== undefined && rawChat.config !== null
-          ? PiSdkChatConfigSchema.parse(rawChat.config)
-          : undefined;
-      const compaction =
-        config?.compaction !== undefined
-          ? {
-              ...(config.compaction.enabled !== undefined
-                ? { enabled: config.compaction.enabled }
-                : {}),
-              ...(config.compaction.reserveTokens !== undefined
-                ? { reserveTokens: config.compaction.reserveTokens }
-                : {}),
-              ...(config.compaction.keepRecentTokens !== undefined
-                ? { keepRecentTokens: config.compaction.keepRecentTokens }
-                : {}),
-            }
-          : undefined;
-
+      if (rawChat.models != null || rawChat.thinking != null) {
+        throw new Error(
+          `agents[${agentId}].chat.models and chat.thinking are no longer supported for Pi; use chatProfile and root chatProfiles with per-model thinking settings`,
+        );
+      }
+      const parsedConfig =
+        rawChat.config != null ? PiSdkChatConfigSchema.safeParse(rawChat.config) : undefined;
+      if (parsedConfig && !parsedConfig.success) {
+        throw new Error(
+          `agents[${agentId}].chat.config supports only timeoutMs, maxToolIterations and compaction; move provider/model definitions to Pi models.json and sampling to Pi agent request-overrides.json: ${parsedConfig.error.message}`,
+        );
+      }
+      const config = parsedConfig?.success ? parsedConfig.data : undefined;
       base.chat = {
         provider: 'pi',
-        ...(models ? { models } : {}),
-        ...(thinking ? { thinking } : {}),
         ...(config
           ? {
               config: {
-                ...(config.provider ? { provider: config.provider } : {}),
-                ...(config.api ? { api: config.api } : {}),
-                ...(config.apiKey ? { apiKey: config.apiKey } : {}),
-                ...(config.authHeader !== undefined ? { authHeader: config.authHeader } : {}),
-                ...(config.baseUrl ? { baseUrl: config.baseUrl } : {}),
-                ...(config.headers ? { headers: config.headers } : {}),
                 ...(config.timeoutMs !== undefined ? { timeoutMs: config.timeoutMs } : {}),
-                ...(config.maxTokens !== undefined ? { maxTokens: config.maxTokens } : {}),
-                ...(config.contextWindow !== undefined
-                  ? { contextWindow: config.contextWindow }
-                  : {}),
-                ...(config.reasoning !== undefined ? { reasoning: config.reasoning } : {}),
-                ...(config.input !== undefined ? { input: config.input } : {}),
-                ...(config.cost !== undefined ? { cost: config.cost } : {}),
-                ...(config.compat !== undefined
-                  ? { compat: config.compat as PiSdkChatConfig['compat'] }
-                  : {}),
-                ...(config.temperature !== undefined ? { temperature: config.temperature } : {}),
                 ...(config.maxToolIterations !== undefined
                   ? { maxToolIterations: config.maxToolIterations }
                   : {}),
-                ...(compaction ? { compaction } : {}),
+                ...(config.compaction
+                  ? {
+                      compaction: {
+                        ...(config.compaction.enabled !== undefined
+                          ? { enabled: config.compaction.enabled }
+                          : {}),
+                        ...(config.compaction.reserveTokens !== undefined
+                          ? { reserveTokens: config.compaction.reserveTokens }
+                          : {}),
+                        ...(config.compaction.keepRecentTokens !== undefined
+                          ? { keepRecentTokens: config.compaction.keepRecentTokens }
+                          : {}),
+                      },
+                    }
+                  : {}),
               },
             }
           : {}),
@@ -839,20 +804,26 @@ export const VoiceRealtimeConfigSchema = z.object({
    * Optional instructions override. When omitted, the server uses a default
    * concise realtime prompt plus recent conversation context.
    */
-  instructions: z.string().optional().nullable().transform((value) => {
-    if (typeof value !== 'string') {
-      return undefined;
-    }
-    const trimmed = value.trim();
-    return trimmed.length > 0 ? trimmed : undefined;
-  }),
+  instructions: z
+    .string()
+    .optional()
+    .nullable()
+    .transform((value) => {
+      if (typeof value !== 'string') {
+        return undefined;
+      }
+      const trimmed = value.trim();
+      return trimmed.length > 0 ? trimmed : undefined;
+    }),
 });
 
 export type VoiceRealtimeConfig = z.infer<typeof VoiceRealtimeConfigSchema>;
 
 export const VoiceConfigSchema = z
   .object({
-    realtime: VoiceRealtimeConfigSchema.optional().nullable().transform((value) => value ?? undefined),
+    realtime: VoiceRealtimeConfigSchema.optional()
+      .nullable()
+      .transform((value) => value ?? undefined),
   })
   .optional()
   .nullable()
@@ -892,6 +863,7 @@ export const AppConfigSchema = z
       .array(AgentConfigSchema)
       .optional()
       .transform((value) => value ?? []),
+    chatProfiles: z.record(NonEmptyTrimmedStringSchema, ChatProfileSchema).optional(),
     profiles: ProfilesConfigSchema,
     plugins: z
       .record(PluginConfigSchema)
@@ -907,6 +879,24 @@ export const AppConfigSchema = z
     codexThreads: CodexThreadsConfigSchema.optional(),
   })
   .superRefine((value, ctx) => {
+    value.agents.forEach((agent, index) => {
+      if (!agent.chatProfile) return;
+      if (agent.type === 'external' || (agent.chat?.provider && agent.chat.provider !== 'pi')) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['agents', index, 'chatProfile'],
+          message: 'chatProfile is only supported by the native Pi SDK provider',
+        });
+        return;
+      }
+      if (!Object.hasOwn(value.chatProfiles ?? {}, agent.chatProfile)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['agents', index, 'chatProfile'],
+          message: `Unknown chatProfile "${agent.chatProfile}"; define it in root chatProfiles`,
+        });
+      }
+    });
     const profileIds = new Set<string>();
     const seenProfiles = new Set<string>();
 
@@ -967,7 +957,26 @@ export const AppConfigSchema = z
         }
       });
     }
-  });
+  })
+  .transform((value) => ({
+    ...value,
+    agents: value.agents.map((agent): AgentDefinition => {
+      const profile = agent.chatProfile ? value.chatProfiles?.[agent.chatProfile] : undefined;
+      if (!profile) return agent;
+      return {
+        ...agent,
+        chat: {
+          ...agent.chat,
+          provider: 'pi',
+          models: profile.models.map((model) => model.id),
+          modelSettings: profile.models.map((model) => ({
+            id: model.id,
+            ...(model.thinking !== undefined ? { thinking: model.thinking } : {}),
+          })),
+        },
+      };
+    }),
+  }));
 
 export type AppConfig = z.infer<typeof AppConfigSchema>;
 

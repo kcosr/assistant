@@ -7,10 +7,6 @@ import type {
   AgentDefinition,
   AgentSessionWorkingDirConfig,
 } from '../../../../agent-server/src/agents';
-import {
-  getAgentAvailableModels,
-  getAgentAvailableThinkingLevels,
-} from '../../../../agent-server/src/sessionModel';
 import { resolveSessionConfigCapabilities } from '../../../../agent-server/src/sessionConfig';
 import type { PluginModule } from '../../../../agent-server/src/plugins/types';
 import { ToolError, type ToolContext } from '../../../../agent-server/src/tools';
@@ -30,6 +26,7 @@ type AgentSummary = {
   sessionConfigCapabilities?: {
     availableModels?: string[];
     availableThinking?: string[];
+    thinkingByModel?: Record<string, string[]>;
     availableSkills?: Array<{
       id: string;
       name: string;
@@ -199,13 +196,12 @@ async function listAgents(args: unknown, ctx: ToolContext): Promise<ListAgentsRe
 
   const summaries: AgentSummary[] = [];
   for (const agent of visibleAgents) {
-    const models = getAgentAvailableModels(agent);
-    const thinking = getAgentAvailableThinkingLevels(agent);
     const capabilities = await resolveSessionConfigCapabilities({
       agent,
       sessionHub: ctx.sessionHub,
       baseToolHost: ctx.baseToolHost,
     });
+    const { models, thinking, thinkingByModel } = capabilities;
     summaries.push({
       agentId: agent.agentId,
       displayName: agent.displayName,
@@ -219,6 +215,7 @@ async function listAgents(args: unknown, ctx: ToolContext): Promise<ListAgentsRe
             sessionConfigCapabilities: {
               ...(models.length > 0 ? { availableModels: models } : {}),
               ...(thinking.length > 0 ? { availableThinking: thinking } : {}),
+              ...(thinkingByModel ? { thinkingByModel } : {}),
               ...(capabilities.skills.length > 0
                 ? {
                     availableSkills: capabilities.skills.map((skill) => ({

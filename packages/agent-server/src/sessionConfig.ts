@@ -11,6 +11,7 @@ import { listInstructionSkills } from './instructionSkills';
 export interface SessionConfigCapabilities {
   models: string[];
   thinking: string[];
+  thinkingByModel?: Record<string, string[]>;
   skills: Array<{
     id: string;
     name: string;
@@ -86,15 +87,23 @@ export async function resolveSessionConfigCapabilities(options: {
   agent: AgentDefinition | undefined;
   sessionHub?: SessionHub;
   baseToolHost?: ToolHost;
+  model?: string;
 }): Promise<SessionConfigCapabilities> {
   const { agent } = options;
   const models = getAgentAvailableModels(agent);
-  const thinking = getAgentAvailableThinkingLevels(agent);
+  const thinking = getAgentAvailableThinkingLevels(agent, options.model);
   const skills = agent ? listInstructionSkills(agent) : [];
 
   return {
     models,
     thinking,
+    ...(agent?.chat?.modelSettings
+      ? {
+          thinkingByModel: Object.fromEntries(
+            models.map((model) => [model, getAgentAvailableThinkingLevels(agent, model)]),
+          ),
+        }
+      : {}),
     skills: skills.map((skill) => ({
       id: skill.id,
       name: skill.name,
@@ -110,10 +119,12 @@ export async function resolveSessionConfigForAgent(options: {
   baseToolHost?: ToolHost;
 }): Promise<ResolvedSessionConfig> {
   const { agent, sessionConfig } = options;
-  const capabilities = await resolveSessionConfigCapabilities(options);
-  const resolved: ResolvedSessionConfig = {};
-
   const model = normalizeOptionalString(sessionConfig?.model);
+  const capabilities = await resolveSessionConfigCapabilities({
+    ...options,
+    ...(model ? { model } : {}),
+  });
+  const resolved: ResolvedSessionConfig = {};
   if (model) {
     if (capabilities.models.length === 0 || !capabilities.models.includes(model)) {
       throw new Error(`Model "${model}" is not allowed for agent "${agent?.agentId ?? 'unknown'}"`);
@@ -184,7 +195,9 @@ export function filterSessionSkills<T>(options: {
   return availableSkills;
 }
 
-export function getSelectedSessionSkillIds(attributes: SessionAttributes | undefined): string[] | undefined {
+export function getSelectedSessionSkillIds(
+  attributes: SessionAttributes | undefined,
+): string[] | undefined {
   const rawAgent = attributes?.agent;
   if (!rawAgent || typeof rawAgent !== 'object' || Array.isArray(rawAgent)) {
     return undefined;

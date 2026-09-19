@@ -103,36 +103,10 @@ vi.mock('../llm/piSdkProvider', async () => {
   const actual =
     await vi.importActual<typeof import('../llm/piSdkProvider')>('../llm/piSdkProvider');
   const resolvePiSdkModel = vi.fn();
-  const resolvePiSdkRuntimeModel = vi.fn(
-    async (options: {
-      modelSpec: string;
-      config?: {
-        provider?: string;
-        apiKey?: string;
-        headers?: Record<string, string>;
-        authHeader?: boolean;
-      };
-    }) => {
-      const resolved = await resolvePiSdkModel({
-        modelSpec: options.modelSpec,
-        ...(options.config?.provider ? { defaultProvider: options.config.provider } : {}),
-      });
-      const headers =
-        options.config?.authHeader && options.config.apiKey
-          ? { ...(options.config.headers ?? {}), Authorization: `Bearer ${options.config.apiKey}` }
-          : options.config?.headers;
-      return {
-        ...resolved,
-        runtimeModel: {
-          ...resolved.model,
-          ...(headers ? { headers } : {}),
-        },
-        providerMatchesConfig: true,
-        ...(options.config?.apiKey ? { apiKey: options.config.apiKey } : {}),
-        ...(headers ? { headers } : {}),
-      };
-    },
-  );
+  const resolvePiSdkRuntimeModel = vi.fn(async (options: { modelSpec: string }) => {
+    const resolved = await resolvePiSdkModel(options);
+    return { ...resolved, runtimeModel: resolved.model };
+  });
   return {
     ...actual,
     resolvePiSdkModel,
@@ -483,7 +457,6 @@ describe('handleTextInputWithChatCompletions (pi)', () => {
       },
       piAgentRuntime: {
         agent: { steer } as never,
-        requestConfig: {},
       },
     };
 
@@ -1559,6 +1532,9 @@ describe('handleTextInputWithChatCompletions (pi)', () => {
 
     expect(capturedFirstIterationMessages).toEqual([{ role: 'user', content: 'Current request' }]);
     expect(piSessionWriter.sync).toHaveBeenCalledTimes(1);
+    expect(piSessionWriter.sync).toHaveBeenCalledWith(
+      expect.objectContaining({ thinkingLevel: 'off' }),
+    );
     const assistantMessages = syncedMessages.filter((message) => message.role === 'assistant');
     expect(assistantMessages).toHaveLength(2);
     expect(assistantMessages[0]).toMatchObject({ content: '' });
@@ -2652,6 +2628,7 @@ describe('handleTextInputWithChatCompletions (pi)', () => {
     const syncPayload = (sync.mock.calls as unknown as Array<[unknown]>)[0]?.[0];
     expect(syncPayload).toBeDefined();
     expect(syncPayload).toMatchObject({
+      thinkingLevel: 'off',
       summary: state.summary,
       messages: [
         { role: 'user', content: 'Current request' },

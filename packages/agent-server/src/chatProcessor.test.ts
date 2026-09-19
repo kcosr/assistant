@@ -84,36 +84,10 @@ vi.mock('@earendil-works/pi-agent-core', async () => {
 vi.mock('./llm/piSdkProvider', async () => {
   const actual = await vi.importActual<typeof import('./llm/piSdkProvider')>('./llm/piSdkProvider');
   const resolvePiSdkModel = vi.fn();
-  const resolvePiSdkRuntimeModel = vi.fn(
-    async (options: {
-      modelSpec: string;
-      config?: {
-        provider?: string;
-        apiKey?: string;
-        headers?: Record<string, string>;
-        authHeader?: boolean;
-      };
-    }) => {
-      const resolved = await resolvePiSdkModel({
-        modelSpec: options.modelSpec,
-        ...(options.config?.provider ? { defaultProvider: options.config.provider } : {}),
-      });
-      const headers =
-        options.config?.authHeader && options.config.apiKey
-          ? { ...(options.config.headers ?? {}), Authorization: `Bearer ${options.config.apiKey}` }
-          : options.config?.headers;
-      return {
-        ...resolved,
-        runtimeModel: {
-          ...resolved.model,
-          ...(headers ? { headers } : {}),
-        },
-        providerMatchesConfig: true,
-        ...(options.config?.apiKey ? { apiKey: options.config.apiKey } : {}),
-        ...(headers ? { headers } : {}),
-      };
-    },
-  );
+  const resolvePiSdkRuntimeModel = vi.fn(async (options: { modelSpec: string }) => {
+    const resolved = await resolvePiSdkModel(options);
+    return { ...resolved, runtimeModel: resolved.model };
+  });
   return {
     ...actual,
     runPiSdkChatCompletionIteration: vi.fn(),

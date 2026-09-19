@@ -258,7 +258,7 @@ export function createPlugin(_options: PluginFactoryArgs): PluginModule {
             ...(ctx.baseToolHost ? { baseToolHost: ctx.baseToolHost } : {}),
           });
           const model = resolvedConfig.model ?? getDefaultModelForNewSession(agent);
-          const thinking = resolvedConfig.thinking ?? getDefaultThinkingForNewSession(agent);
+          const thinking = resolvedConfig.thinking ?? getDefaultThinkingForNewSession(agent, model);
           const attributesPatch = buildSessionAttributesPatchFromConfig(resolvedConfig);
           const summary = await sessionIndex.createSession({
             agentId,

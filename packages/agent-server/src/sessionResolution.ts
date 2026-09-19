@@ -1,7 +1,10 @@
 import type { SessionConfig } from '@assistant/shared';
 
 import type { AgentRegistry } from './agents';
-import { buildSessionAttributesPatchFromConfig, resolveSessionConfigForAgent } from './sessionConfig';
+import {
+  buildSessionAttributesPatchFromConfig,
+  resolveSessionConfigForAgent,
+} from './sessionConfig';
 import type { LogicalSessionState, SessionHub } from './sessionHub';
 import type { SessionIndex, SessionSummary } from './sessionIndex';
 import { getDefaultModelForNewSession, getDefaultThinkingForNewSession } from './sessionModel';
@@ -24,7 +27,7 @@ async function createSessionForAgent(
   if (sessionConfig) {
     const resolved = await resolveSessionConfigForAgent({ agent, sessionConfig });
     const model = resolved.model ?? getDefaultModelForNewSession(agent);
-    const thinking = resolved.thinking ?? getDefaultThinkingForNewSession(agent);
+    const thinking = resolved.thinking ?? getDefaultThinkingForNewSession(agent, model);
     const attributes = buildSessionAttributesPatchFromConfig(resolved);
     return sessionIndex.createSession({
       agentId: trimmedAgentId,
@@ -71,13 +74,23 @@ export async function resolveAgentSession(
       throw new Error('No existing session for agent');
     }
   } else if (resolutionStrategy === 'create') {
-    summary = await createSessionForAgent(trimmedAgentId, agentRegistry, sessionIndex, sessionConfig);
+    summary = await createSessionForAgent(
+      trimmedAgentId,
+      agentRegistry,
+      sessionIndex,
+      sessionConfig,
+    );
     created = true;
     sessionHub.broadcastSessionCreated(summary);
   } else if (resolutionStrategy === 'latest-or-create') {
     summary = await sessionIndex.findSessionForAgent(trimmedAgentId);
     if (!summary) {
-      summary = await createSessionForAgent(trimmedAgentId, agentRegistry, sessionIndex, sessionConfig);
+      summary = await createSessionForAgent(
+        trimmedAgentId,
+        agentRegistry,
+        sessionIndex,
+        sessionConfig,
+      );
       created = true;
       sessionHub.broadcastSessionCreated(summary);
     }

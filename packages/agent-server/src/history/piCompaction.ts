@@ -2,6 +2,7 @@ import type { AgentMessage } from '@earendil-works/pi-agent-core';
 import type { Api, Model, Usage } from '@earendil-works/pi-ai';
 
 import { calculateContextTokens } from '../contextUsage';
+import { isPiReasoningLevel } from '../sessionModel';
 import { completePiSdkModel } from '../llm/piSdkRuntime';
 
 /*
@@ -710,7 +711,7 @@ async function generateSummary(options: {
   messages: PiCompactionAgentMessage[];
   model: Model<Api>;
   reserveTokens: number;
-  apiKey?: string;
+  thinkingLevel?: string;
   signal?: AbortSignal;
   customInstructions?: string;
   previousSummary?: string;
@@ -720,13 +721,13 @@ async function generateSummary(options: {
     messages,
     model,
     reserveTokens,
-    apiKey,
+    thinkingLevel,
     signal,
     customInstructions,
     previousSummary,
     prompt,
   } = options;
-  const maxTokens = Math.floor(0.8 * reserveTokens);
+  const maxTokens = Math.min(model.maxTokens, Math.floor(0.8 * reserveTokens));
   let basePrompt = prompt ?? (previousSummary ? UPDATE_SUMMARIZATION_PROMPT : SUMMARIZATION_PROMPT);
   if (customInstructions) {
     basePrompt = `${basePrompt}\n\nAdditional focus: ${customInstructions}`;
@@ -751,8 +752,9 @@ async function generateSummary(options: {
     {
       maxTokens,
       ...(signal ? { signal } : {}),
-      ...(apiKey ? { apiKey } : {}),
-      ...(model.reasoning ? { reasoning: 'high' as const } : {}),
+      ...(model.reasoning && thinkingLevel && isPiReasoningLevel(thinkingLevel)
+        ? { reasoning: thinkingLevel }
+        : {}),
     },
   );
   if (response.stopReason === 'error') {
@@ -767,11 +769,11 @@ async function generateSummary(options: {
 export async function compactPiMessages(options: {
   preparation: PiCompactionPreparation;
   model: Model<Api>;
-  apiKey?: string;
+  thinkingLevel?: string;
   customInstructions?: string;
   signal?: AbortSignal;
 }): Promise<PiCompactionResult> {
-  const { preparation, model, apiKey, customInstructions, signal } = options;
+  const { preparation, model, thinkingLevel, customInstructions, signal } = options;
   let summary: string;
   if (preparation.isSplitTurn && preparation.turnPrefixMessages.length > 0) {
     const [historyResult, turnPrefixResult] = await Promise.all([
@@ -780,7 +782,7 @@ export async function compactPiMessages(options: {
             messages: preparation.messagesToSummarize,
             model,
             reserveTokens: preparation.settings.reserveTokens,
-            ...(apiKey ? { apiKey } : {}),
+            ...(thinkingLevel ? { thinkingLevel } : {}),
             ...(signal ? { signal } : {}),
             ...(customInstructions ? { customInstructions } : {}),
             ...(preparation.previousSummary
@@ -792,7 +794,7 @@ export async function compactPiMessages(options: {
         messages: preparation.turnPrefixMessages,
         model,
         reserveTokens: Math.floor(preparation.settings.reserveTokens * 0.5),
-        ...(apiKey ? { apiKey } : {}),
+        ...(thinkingLevel ? { thinkingLevel } : {}),
         ...(signal ? { signal } : {}),
         prompt: TURN_PREFIX_SUMMARIZATION_PROMPT,
       }),
@@ -803,7 +805,7 @@ export async function compactPiMessages(options: {
       messages: preparation.messagesToSummarize,
       model,
       reserveTokens: preparation.settings.reserveTokens,
-      ...(apiKey ? { apiKey } : {}),
+      ...(thinkingLevel ? { thinkingLevel } : {}),
       ...(signal ? { signal } : {}),
       ...(customInstructions ? { customInstructions } : {}),
       ...(preparation.previousSummary ? { previousSummary: preparation.previousSummary } : {}),

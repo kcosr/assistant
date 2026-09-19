@@ -5,6 +5,7 @@
 ### Breaking Changes
 
 - Removed `loadAgentDefinitionsFromFile()` from `agents.ts` — all agent loading now goes through `loadConfig()` in `config.ts`. ([#93](https://github.com/kcosr/assistant/pull/93))
+- Replaced inline Pi provider definitions and per-agent model menus with registry-backed models and named chat profiles; shared request overrides now own sampling defaults. ([#138](https://github.com/kcosr/assistant/pull/138))
 
 ### Added
 
@@ -68,6 +69,8 @@
 
 ### Fixed
 
+- Use the selected profile model’s reasoning default when creating sessions through the sessions tool or API. ([#138](https://github.com/kcosr/assistant/pull/138))
+
 - Fixed Android one-shot scheduled wake replies ignoring Auto Listen in Response and Manual modes, while preserving recognition suppression for other server-origin replies. ([#134](https://github.com/kcosr/assistant/pull/134))
 
 - Fixed voice-first Pi sessions failing before an initial typed message by making native ESM runtime dependencies resolvable from bundled plugin servers. ([#127](https://github.com/kcosr/assistant/pull/127))
@@ -98,6 +101,7 @@
 - Fixed thinking/text segment boundaries around streamed tool input so repeated reasoning no longer appears before and after a tool call in the same turn. ([#93](https://github.com/kcosr/assistant/pull/93))
 - Fixed `agents_message` tool rendering so sync results show the returned `response` text and async callbacks surface a clearer completion indicator in the tool block UI. ([#93](https://github.com/kcosr/assistant/pull/93))
 - Fixed Pi replay around questionnaire submissions so the hidden follow-up turn indicator no longer renders an empty turn before the questionnaire submission marker. ([#93](https://github.com/kcosr/assistant/pull/93))
+- Preserved provider-specific authentication, model limits, and reasoning settings across model switches, tool/history round trips, and compaction. ([#138](https://github.com/kcosr/assistant/pull/138))
 
 ### Removed
 

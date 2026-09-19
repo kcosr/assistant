@@ -1,6 +1,10 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+
+import * as piSdkRuntime from '../llm/piSdkRuntime';
+import type { Model, Api } from '@earendil-works/pi-ai';
 
 import {
+  compactPiMessages,
   DEFAULT_PI_COMPACTION_SETTINGS,
   estimatePiMessageTokens,
   preparePiCompaction,
@@ -85,4 +89,39 @@ describe('piCompaction', () => {
     expect(preparation?.messagesToSummarize).toHaveLength(1);
     expect(estimatePiMessageTokens(entries[0]!.message!)).toBeGreaterThan(0);
   });
+});
+
+describe('compaction reasoning and limits', () => {
+  it.each(['xhigh', 'medium', 'none'])(
+    'uses selected %s reasoning and the registry output limit',
+    async (thinkingLevel) => {
+      const complete = vi.spyOn(piSdkRuntime, 'completePiSdkModel').mockResolvedValue({
+        role: 'assistant',
+        content: [{ type: 'text', text: 'Summary' }],
+        stopReason: 'stop',
+      } as never);
+      const model = { reasoning: true, maxTokens: 512 } as Model<Api>;
+      try {
+        await compactPiMessages({
+          model,
+          thinkingLevel,
+          preparation: {
+            firstKeptEntryId: 'keep',
+            messagesToSummarize: [],
+            turnPrefixMessages: [],
+            isSplitTurn: false,
+            tokensBefore: 100,
+            fileOps: { read: new Set(), written: new Set(), edited: new Set() },
+            settings: { enabled: true, reserveTokens: 16384, keepRecentTokens: 20000 },
+          },
+        });
+        expect(complete).toHaveBeenCalledWith(model, expect.anything(), {
+          maxTokens: 512,
+          ...(thinkingLevel === 'none' ? {} : { reasoning: thinkingLevel }),
+        });
+      } finally {
+        complete.mockRestore();
+      }
+    },
+  );
 });

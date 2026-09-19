@@ -6,14 +6,10 @@
     "maxCached": 100
   },
   "codexThreads": {
-    "allowedServers": [
-      "main"
-    ],
+    "allowedServers": ["main"],
     "binary": "codex-threads",
     "permissionMode": "app-server-default",
-    "allowedCwdRoots": [
-      "/path/to/workspaces"
-    ]
+    "allowedCwdRoots": ["/path/to/workspaces"]
   },
   "agents": [
     {
@@ -21,25 +17,18 @@
       "displayName": "Lists Manager",
       "description": "Manages your personal lists - reading, shopping, movies, and more.",
       "systemPrompt": "You are a lists manager. Help the user create and manage personal lists for any purpose - reading lists, shopping lists, movie watchlists, recipe collections, and more.\n\nYou can:\n- Create new lists with names, descriptions, and tags\n- Add items to lists (with optional URLs and notes)\n- Search across lists or within a specific list\n- Move items between lists\n- Update or delete lists and items\n\nWhen the user asks you to save a URL to a list, use the url_fetch_fetch tool with mode \"metadata\" to retrieve the page title before adding the item. If the fetch fails or returns no title, derive a title from the URL or ask the user what they'd like to call it.\n\nWhen displaying multiple items (from a list or search results), format them as a markdown table with minimal relevant columns (e.g., title and URL, or title and notes). Keep it concise.",
-      "toolAllowlist": [
-        "lists_*",
-        "url_fetch_fetch",
-        "web_search"
-      ]
+      "toolAllowlist": ["lists_*", "url_fetch_fetch", "web_search"],
+      "chatProfile": "default"
     },
     {
       "agentId": "notes",
       "displayName": "Notes",
       "description": "Manages your personal notes - capture thoughts, meeting notes, and documents.",
       "systemPrompt": "You are a notes assistant. Help the user capture and organize their thoughts, meeting notes, ideas, and documents.\n\nYou can:\n- Create new notes with titles, content, and tags\n- Read and search existing notes\n- Append to existing notes\n- Update or delete notes\n\nBefore making changes to existing notes, use notes_preview_write to show the user a diff of what will change. Ask for confirmation before proceeding with the write.\n\nWhen the user asks you to save a URL in a note, use the url_fetch_fetch tool with mode \"metadata\" to retrieve the page title and description. Include this information in the note.\n\nWhen listing notes, format them as a markdown table showing title, tags, and last updated date.",
-      "toolAllowlist": [
-        "notes_*",
-        "url_fetch_fetch"
-      ],
+      "toolAllowlist": ["notes_*", "url_fetch_fetch"],
       "toolExposure": "skills",
-      "skillAllowlist": [
-        "notes"
-      ]
+      "skillAllowlist": ["notes"],
+      "chatProfile": "default"
     },
     {
       "agentId": "general",
@@ -48,22 +37,17 @@
       "systemPrompt": "You are a helpful assistant.",
       "sessionWorkingDir": {
         "mode": "prompt",
-        "roots": [
-          "/path/to/workspaces"
-        ]
+        "roots": ["/path/to/workspaces"]
       },
-      "toolAllowlist": [
-        "*"
-      ],
+      "toolAllowlist": ["*"],
       "skills": [
         {
           "root": "./dist/skills",
-          "available": [
-            "*"
-          ],
+          "available": ["*"],
           "inline": []
         }
-      ]
+      ],
+      "chatProfile": "default"
     },
     {
       "agentId": "claude-cli",
@@ -71,25 +55,13 @@
       "description": "Claude Code CLI agent.",
       "chat": {
         "provider": "claude-cli",
-        "models": [
-          "opus",
-          "sonnet",
-          "haiku"
-        ],
-        "thinking": [
-          "none",
-          "low",
-          "medium",
-          "high",
-          "xhigh"
-        ],
+        "models": ["opus", "sonnet", "haiku"],
+        "thinking": ["none", "low", "medium", "high", "xhigh"],
         "config": {
           "workdir": "/path/to/workspace",
-          "extraArgs": [
-            "--dangerously-skip-permissions"
-          ],
+          "extraArgs": ["--dangerously-skip-permissions"],
           "wrapper": {
-            "path": "/home/kevin/devtools/container/run.sh",
+            "path": "/opt/assistant/container/run.sh",
             "env": {
               "PERSISTENT": "1",
               "PROXY": "1",
@@ -105,25 +77,13 @@
       "description": "OpenAI Codex CLI agent.",
       "chat": {
         "provider": "codex-cli",
-        "models": [
-          "gpt-5.2-codex",
-          "gpt-5.2"
-        ],
-        "thinking": [
-          "off",
-          "low",
-          "medium",
-          "high",
-          "xhigh"
-        ],
+        "models": ["gpt-5.2-codex", "gpt-5.2"],
+        "thinking": ["off", "low", "medium", "high", "xhigh"],
         "config": {
           "workdir": "${session.workingDir}",
-          "extraArgs": [
-            "--skip-git-repo-check",
-            "--dangerously-bypass-approvals-and-sandbox"
-          ],
+          "extraArgs": ["--skip-git-repo-check", "--dangerously-bypass-approvals-and-sandbox"],
           "wrapper": {
-            "path": "/home/kevin/devtools/container/run.sh",
+            "path": "/opt/assistant/container/run.sh",
             "env": {
               "PERSISTENT": "1",
               "PROXY": "1",
@@ -140,21 +100,11 @@
       "description": "Pi SDK chat provider.",
       "chat": {
         "provider": "pi",
-        "models": [
-          "anthropic/claude-sonnet-4-5",
-          "openai-codex/gpt-5.2-codex"
-        ],
-        "thinking": [
-          "off",
-          "low",
-          "medium",
-          "high",
-          "xhigh"
-        ],
         "config": {
           "timeoutMs": 300000
         }
-      }
+      },
+      "chatProfile": "default"
     },
     {
       "agentId": "pi-cli",
@@ -162,20 +112,11 @@
       "description": "Pi coding assistant (CLI).",
       "chat": {
         "provider": "pi-cli",
-        "models": [
-          "anthropic/claude-sonnet-4-5",
-          "openai-codex/gpt-5.2-codex"
-        ],
-        "thinking": [
-          "off",
-          "low",
-          "medium",
-          "high",
-          "xhigh"
-        ],
+        "models": ["anthropic/claude-sonnet-4-5", "openai-codex/gpt-5.2-codex"],
+        "thinking": ["off", "low", "medium", "high", "xhigh"],
         "config": {
           "wrapper": {
-            "path": "/home/kevin/devtools/container/run.sh",
+            "path": "/opt/assistant/container/run.sh",
             "env": {
               "PERSISTENT": "1",
               "PROXY": "1",
@@ -196,10 +137,7 @@
           "openai/gpt-4o",
           "anthropic/claude-opus-4-20250514"
         ],
-        "thinking": [
-          "off",
-          "high"
-        ],
+        "thinking": ["off", "high"],
         "config": {
           "workdir": "/path/to/workspace"
         }
@@ -286,6 +224,20 @@
         "codex_threads_find",
         "codex_threads_status",
         "codex_threads_messages"
+      ]
+    }
+  },
+  "chatProfiles": {
+    "default": {
+      "models": [
+        {
+          "id": "anthropic/claude-sonnet-4-5",
+          "thinking": ["none", "low", "medium", "high"]
+        },
+        {
+          "id": "openai-codex/gpt-5.2-codex",
+          "thinking": ["none", "low", "medium", "high", "xhigh"]
+        }
       ]
     }
   }

@@ -43,6 +43,7 @@ An agent has:
 - **agentId**: Unique identifier (e.g., `"reading-list"`, `"todo"`, `"journal"`)
 - **displayName**: Human-readable name (e.g., `"Reading List Manager"`)
 - **type**: Runtime type (`"chat"` or `"external"`)
+- **chatProfile**: Named model/thinking profile for in-process Pi agents; Pi’s registry supplies provider definitions and authentication. See [configuration](../CONFIG.md#pi-provider).
 - **chat.provider**: Chat backend for `"chat"` agents (`"pi"` (default), `"claude-cli"`, `"codex-cli"`, or `"pi-cli"`)
 - **systemPrompt**: Custom instructions that shape the agent's behavior
 - **toolAllowlist** / **toolDenylist**: Optional glob patterns to allow/deny tools (if omitted, all tools are available)

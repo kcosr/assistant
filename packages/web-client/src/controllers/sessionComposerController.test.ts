@@ -1,7 +1,10 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { SessionComposerController } from './sessionComposerController';
+import {
+  SessionComposerController,
+  type SessionComposerAgentSummary,
+} from './sessionComposerController';
 
 describe('SessionComposerController', () => {
   const originalFetch = globalThis.fetch;
@@ -20,7 +23,7 @@ describe('SessionComposerController', () => {
     vi.restoreAllMocks();
   });
 
-  function buildController() {
+  function buildController(agents?: SessionComposerAgentSummary[]) {
     const createSessionForAgent = vi.fn(async () => 'session-1');
     const updateSession = vi.fn(async () => true);
     const createScheduledSession = vi.fn(async () => undefined);
@@ -30,31 +33,34 @@ describe('SessionComposerController', () => {
       releaseExternalDialog: vi.fn(),
     };
     const controller = new SessionComposerController({
-      getAgentSummaries: () => [
-        {
-          agentId: 'assistant',
-          displayName: 'Assistant',
-          sessionWorkingDir: { mode: 'fixed', path: '/home/kevin/assistant' },
-          sessionConfigCapabilities: {
-            availableModels: ['gpt-5.4', 'gpt-5.4-mini'],
-            availableThinking: ['low', 'medium'],
-            availableSkills: [
-              { id: 'worktrees', name: 'Worktrees', description: 'Use git worktrees.' },
-              { id: 'agent-runner-review', name: 'Review', description: 'External review.' },
-            ],
+      getAgentSummaries: () =>
+        agents ?? [
+          {
+            agentId: 'assistant',
+            displayName: 'Assistant',
+            sessionWorkingDir: { mode: 'fixed', path: '/workspace/assistant' },
+            sessionConfigCapabilities: {
+              availableModels: ['gpt-5.4', 'gpt-5.4-mini'],
+              availableThinking: ['low', 'medium'],
+              availableSkills: [
+                { id: 'worktrees', name: 'Worktrees', description: 'Use git worktrees.' },
+                { id: 'agent-runner-review', name: 'Review', description: 'External review.' },
+              ],
+            },
           },
-        },
-        {
-          agentId: 'coding',
-          displayName: 'Coding',
-          sessionWorkingDir: { mode: 'prompt', roots: ['/home/kevin/worktrees'] },
-          sessionConfigCapabilities: {
-            availableModels: ['gpt-5.4'],
-            availableThinking: ['medium', 'high'],
-            availableSkills: [{ id: 'worktrees', name: 'Worktrees', description: 'Use git worktrees.' }],
+          {
+            agentId: 'coding',
+            displayName: 'Coding',
+            sessionWorkingDir: { mode: 'prompt', roots: ['/workspace/projects'] },
+            sessionConfigCapabilities: {
+              availableModels: ['gpt-5.4'],
+              availableThinking: ['medium', 'high'],
+              availableSkills: [
+                { id: 'worktrees', name: 'Worktrees', description: 'Use git worktrees.' },
+              ],
+            },
           },
-        },
-      ],
+        ],
       createSessionForAgent,
       updateSession,
       createScheduledSession,
@@ -79,6 +85,47 @@ describe('SessionComposerController', () => {
     }
     return element;
   }
+
+  it('uses model-specific thinking choices and clears invalid selections on model changes', async () => {
+    const { controller, createSessionForAgent } = buildController([
+      {
+        agentId: 'assistant',
+        displayName: 'Assistant',
+        sessionConfigCapabilities: {
+          availableModels: ['local/model-a', 'remote/model-b', 'plain/model'],
+          availableThinking: ['xhigh', 'medium', 'none'],
+          thinkingByModel: {
+            'local/model-a': ['xhigh', 'medium', 'none'],
+            'remote/model-b': ['low', 'none'],
+            'plain/model': [],
+          },
+        },
+      },
+    ]);
+    controller.open({ initialAgentId: 'assistant' });
+    const model = queryRole<HTMLSelectElement>('model');
+    const thinking = queryRole<HTMLSelectElement>('thinking');
+    const levels = () => Array.from(thinking.options).map((option) => option.value);
+    expect(levels()).toEqual(['', 'xhigh', 'medium', 'none']);
+    thinking.value = 'medium';
+    thinking.dispatchEvent(new Event('change'));
+    model.value = 'remote/model-b';
+    model.dispatchEvent(new Event('change'));
+    expect(levels()).toEqual(['', 'low', 'none']);
+    expect(thinking.value).toBe('');
+    model.value = 'plain/model';
+    model.dispatchEvent(new Event('change'));
+    expect(levels()).toEqual(['']);
+    model.value = 'local/model-a';
+    model.dispatchEvent(new Event('change'));
+    expect(levels()).toEqual(['', 'xhigh', 'medium', 'none']);
+    expect(thinking.value).toBe('');
+    queryRole<HTMLButtonElement>('confirm').click();
+    await Promise.resolve();
+    expect(createSessionForAgent).toHaveBeenCalledWith('assistant', {
+      sessionConfig: { model: 'local/model-a' },
+    });
+  });
 
   it('creates a one-off session with sessionConfig values', async () => {
     const { controller, createSessionForAgent, createScheduledSession } = buildController();
@@ -113,7 +160,7 @@ describe('SessionComposerController', () => {
       sessionConfig: {
         model: 'gpt-5.4',
         thinking: 'medium',
-        workingDir: '/home/kevin/assistant',
+        workingDir: '/workspace/assistant',
         sessionTitle: 'Daily Assistant',
       },
     });
@@ -147,7 +194,7 @@ describe('SessionComposerController', () => {
     model.dispatchEvent(new Event('change', { bubbles: true }));
 
     const preCheck = queryRole<HTMLInputElement>('precheck');
-    preCheck.value = 'test -d /home/kevin/assistant';
+    preCheck.value = 'test -d /workspace/assistant';
     preCheck.dispatchEvent(new Event('input', { bubbles: true }));
 
     const reuse = queryRole<HTMLInputElement>('reuse');
@@ -169,11 +216,11 @@ describe('SessionComposerController', () => {
       agentId: 'assistant',
       cron: '0 9 * * 1-5',
       prompt: 'Summarize the day.',
-      preCheck: 'test -d /home/kevin/assistant',
+      preCheck: 'test -d /workspace/assistant',
       sessionTitle: 'Morning Review',
       sessionConfig: {
         model: 'gpt-5.4-mini',
-        workingDir: '/home/kevin/assistant',
+        workingDir: '/workspace/assistant',
       },
       enabled: false,
       reuseSession: false,
@@ -188,8 +235,8 @@ describe('SessionComposerController', () => {
       json: async () => ({
         roots: [
           {
-            root: '/home/kevin/worktrees',
-            directories: ['/home/kevin/worktrees/project-a'],
+            root: '/workspace/projects',
+            directories: ['/workspace/projects/project-a'],
           },
         ],
       }),
@@ -204,21 +251,25 @@ describe('SessionComposerController', () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
 
     const dirLabel = Array.from(
-      document.querySelectorAll<HTMLElement>('.working-dir-picker-overlay .session-picker-item-label'),
+      document.querySelectorAll<HTMLElement>(
+        '.working-dir-picker-overlay .session-picker-item-label',
+      ),
     ).find((element) => element.textContent?.trim() === 'project-a');
     expect(dirLabel).toBeTruthy();
     dirLabel?.closest('.session-picker-item')?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     await new Promise((resolve) => setTimeout(resolve, 0));
 
-    const workingDirValue = document.querySelector<HTMLElement>('.session-composer-working-dir-value');
-    expect(workingDirValue?.textContent).toContain('/home/kevin/worktrees/project-a');
+    const workingDirValue = document.querySelector<HTMLElement>(
+      '.session-composer-working-dir-value',
+    );
+    expect(workingDirValue?.textContent).toContain('/workspace/projects/project-a');
 
     queryRole<HTMLButtonElement>('confirm').click();
     await Promise.resolve();
 
     expect(createSessionForAgent).toHaveBeenCalledWith('coding', {
       sessionConfig: {
-        workingDir: '/home/kevin/worktrees/project-a',
+        workingDir: '/workspace/projects/project-a',
       },
     });
   });
@@ -235,7 +286,7 @@ describe('SessionComposerController', () => {
 
     expect(createSessionForAgent).toHaveBeenCalledWith('assistant', {
       sessionConfig: {
-        workingDir: '/home/kevin/assistant',
+        workingDir: '/workspace/assistant',
         skills: [],
       },
     });
@@ -261,7 +312,7 @@ describe('SessionComposerController', () => {
 
     expect(createSessionForAgent).toHaveBeenCalledWith('assistant', {
       sessionConfig: {
-        workingDir: '/home/kevin/assistant',
+        workingDir: '/workspace/assistant',
       },
     });
   });
@@ -278,7 +329,9 @@ describe('SessionComposerController', () => {
 
     firstOption?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
 
-    const expandedDescription = document.querySelector<HTMLElement>('.session-composer-skill-description');
+    const expandedDescription = document.querySelector<HTMLElement>(
+      '.session-composer-skill-description',
+    );
     expect(expandedDescription?.hidden).toBe(false);
     expect(expandedDescription?.textContent).toContain('Use git worktrees.');
   });
@@ -292,7 +345,9 @@ describe('SessionComposerController', () => {
     const firstOption = document.querySelector<HTMLElement>('.session-composer-skill-option');
     const firstInput = firstOption?.querySelector<HTMLInputElement>('input[type="checkbox"]');
     const name = firstOption?.querySelector<HTMLElement>('.session-composer-skill-name');
-    const description = firstOption?.querySelector<HTMLElement>('.session-composer-skill-description');
+    const description = firstOption?.querySelector<HTMLElement>(
+      '.session-composer-skill-description',
+    );
 
     expect(firstInput?.checked).toBe(true);
     expect(description?.hidden).toBe(true);
@@ -396,7 +451,7 @@ describe('SessionComposerController', () => {
         sessionConfig: {
           model: 'gpt-5.4-mini',
           thinking: 'low',
-          workingDir: '/home/kevin/assistant',
+          workingDir: '/workspace/assistant',
           skills: ['agent-runner-review'],
         },
       },
@@ -404,9 +459,9 @@ describe('SessionComposerController', () => {
 
     const agent = queryRole<HTMLSelectElement>('agent');
     expect(agent.disabled).toBe(true);
-    expect(queryRole<HTMLInputElement>('mode-schedule').closest('label')?.hasAttribute('hidden')).toBe(
-      true,
-    );
+    expect(
+      queryRole<HTMLInputElement>('mode-schedule').closest('label')?.hasAttribute('hidden'),
+    ).toBe(true);
 
     queryRole<HTMLButtonElement>('customize').click();
 
@@ -436,7 +491,7 @@ describe('SessionComposerController', () => {
     expect(updateSession).toHaveBeenCalledWith('session-42', {
       sessionConfig: {
         thinking: 'medium',
-        workingDir: '/home/kevin/assistant',
+        workingDir: '/workspace/assistant',
         skills: ['worktrees'],
       },
     });

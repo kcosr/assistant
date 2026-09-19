@@ -1,7 +1,3 @@
-import fs from 'node:fs/promises';
-import os from 'node:os';
-import path from 'node:path';
-
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('./piSdkRuntime', () => ({
@@ -16,7 +12,6 @@ import {
   buildPiContext,
   extractAssistantTextBlocksFromPiMessage,
   mapChatCompletionToolsToPiTools,
-  resolvePiSdkAuthApiKey,
   resolvePiSdkModel,
   resolvePiSdkRuntimeModel,
   runPiSdkChatCompletionIteration,
@@ -38,314 +33,35 @@ function createStream(events: unknown[], result: unknown) {
 }
 
 describe('resolvePiSdkModel', () => {
-  it('resolves provider/model using the default provider', async () => {
-    vi.mocked(getPiSdkProviders).mockResolvedValue(['openai', 'anthropic']);
-    vi.mocked(getPiSdkModels).mockImplementation(async (provider: string) => {
-      if (provider === 'openai') {
-        return [{ id: 'gpt-4o-mini', provider: 'openai', api: 'openai' } as never];
-      }
-      return [];
-    });
-
-    const resolved = await resolvePiSdkModel({
-      modelSpec: 'gpt-4o-mini',
-      defaultProvider: 'openai',
-    });
-
-    expect(resolved.providerId).toBe('openai');
-    expect(resolved.modelId).toBe('gpt-4o-mini');
+  it('requires an explicit provider/model identity', async () => {
+    await expect(resolvePiSdkModel({ modelSpec: 'gpt-4o-mini' })).rejects.toThrow(
+      'provider/model format',
+    );
   });
 
-  it('throws when provider is missing and no default provider is configured', async () => {
-    vi.mocked(getPiSdkProviders).mockResolvedValue(['openai']);
+  it('preserves the complete registry model without reconstruction', async () => {
+    const model = {
+      id: 'nested/model',
+      provider: 'custom',
+      thinkingLevelMap: { xhigh: 'xhigh' },
+      compat: { thinkingFormat: 'chat-template' },
+    } as never;
+    vi.mocked(getPiSdkProviders).mockResolvedValue(['custom']);
+    vi.mocked(getPiSdkModels).mockResolvedValue([model]);
+    const resolved = await resolvePiSdkRuntimeModel({ modelSpec: 'custom/nested/model' });
+    expect(resolved.model).toBe(model);
+    expect(resolved.runtimeModel).toBe(model);
+  });
+
+  it('explains missing registry providers and models', async () => {
+    vi.mocked(getPiSdkProviders).mockResolvedValue(['custom']);
     vi.mocked(getPiSdkModels).mockResolvedValue([]);
-
-    await expect(
-      resolvePiSdkModel({
-        modelSpec: 'gpt-4o-mini',
-      }),
-    ).rejects.toThrow(/provider\/model format/i);
-  });
-
-  it('synthesizes a custom model when provider has no built-in models and baseUrl is configured', async () => {
-    vi.mocked(getPiSdkProviders).mockResolvedValue(['openai']);
-    vi.mocked(getPiSdkModels).mockResolvedValue([]);
-
-    const resolved = await resolvePiSdkModel({
-      modelSpec: 'mock-scenarios/scenarios',
-      baseUrl: 'http://127.0.0.1:4010/v1',
-      api: 'openai-completions',
-      contextWindow: 65536,
-      maxTokens: 4096,
-      reasoning: false,
-      input: ['text', 'image'],
-      cost: {
-        input: 1,
-        output: 2,
-        cacheRead: 3,
-        cacheWrite: 4,
-      },
-      compat: {
-        supportsDeveloperRole: false,
-        supportsReasoningEffort: false,
-      },
-    });
-
-    expect(resolved.providerId).toBe('mock-scenarios');
-    expect(resolved.modelId).toBe('scenarios');
-    expect(resolved.model).toMatchObject({
-      id: 'scenarios',
-      name: 'scenarios',
-      api: 'openai-completions',
-      provider: 'mock-scenarios',
-      baseUrl: 'http://127.0.0.1:4010/v1',
-      reasoning: false,
-      input: ['text', 'image'],
-      contextWindow: 65536,
-      maxTokens: 4096,
-      cost: {
-        input: 1,
-        output: 2,
-        cacheRead: 3,
-        cacheWrite: 4,
-      },
-      compat: {
-        supportsDeveloperRole: false,
-        supportsReasoningEffort: false,
-      },
-    });
-  });
-
-  it('still throws for unknown providers when no baseUrl is configured', async () => {
-    vi.mocked(getPiSdkProviders).mockResolvedValue(['openai']);
-    vi.mocked(getPiSdkModels).mockResolvedValue([]);
-
-    await expect(
-      resolvePiSdkModel({
-        modelSpec: 'mock-scenarios/scenarios',
-      }),
-    ).rejects.toThrow('No Pi models found for provider "mock-scenarios"');
-  });
-
-  it('still throws when a known provider exists but the model id does not', async () => {
-    vi.mocked(getPiSdkProviders).mockResolvedValue(['openai']);
-    vi.mocked(getPiSdkModels).mockImplementation(async (provider: string) => {
-      if (provider === 'openai') {
-        return [{ id: 'gpt-4o-mini', provider: 'openai', api: 'openai-responses' } as never];
-      }
-      return [];
-    });
-
-    await expect(
-      resolvePiSdkModel({
-        modelSpec: 'openai/not-a-real-model',
-        baseUrl: 'http://127.0.0.1:4010/v1',
-      }),
-    ).rejects.toThrow('Pi model "openai/not-a-real-model" was not found');
-  });
-
-  it('does not apply config-owned custom endpoint overrides to a different explicit provider', async () => {
-    vi.mocked(getPiSdkProviders).mockResolvedValue(['openai'] as never);
-    vi.mocked(getPiSdkModels).mockResolvedValue([]);
-
-    await expect(
-      resolvePiSdkRuntimeModel({
-        modelSpec: 'other/scenarios',
-        config: {
-          provider: 'local',
-          baseUrl: 'http://127.0.0.1:4010/v1',
-          api: 'openai-completions',
-          apiKey: 'local-key',
-          authHeader: true,
-        },
-      }),
-    ).rejects.toThrow('No Pi models found for provider "other"');
-  });
-
-  it('builds runtime model headers and compat for matching custom endpoints', async () => {
-    vi.mocked(getPiSdkProviders).mockResolvedValue(['openai'] as never);
-    vi.mocked(getPiSdkModels).mockResolvedValue([]);
-
-    const resolved = await resolvePiSdkRuntimeModel({
-      modelSpec: 'local/scenarios',
-      config: {
-        provider: 'local',
-        baseUrl: 'http://127.0.0.1:4010/v1',
-        api: 'openai-completions',
-        apiKey: 'local-key',
-        authHeader: true,
-        headers: {
-          'X-Request-Source': 'assistant',
-        },
-        contextWindow: 65536,
-        maxTokens: 4096,
-        compat: {
-          supportsDeveloperRole: false,
-          supportsReasoningEffort: false,
-        },
-      },
-    });
-
-    expect(resolved.providerMatchesConfig).toBe(true);
-    expect(resolved.apiKey).toBe('local-key');
-    expect(resolved.runtimeModel).toMatchObject({
-      id: 'scenarios',
-      api: 'openai-completions',
-      provider: 'local',
-      baseUrl: 'http://127.0.0.1:4010/v1',
-      contextWindow: 65536,
-      maxTokens: 4096,
-      headers: {
-        'X-Request-Source': 'assistant',
-        Authorization: 'Bearer local-key',
-      },
-      compat: {
-        supportsDeveloperRole: false,
-        supportsReasoningEffort: false,
-      },
-    });
-  });
-
-  it('applies matching custom metadata overrides to built-in models', async () => {
-    vi.mocked(getPiSdkProviders).mockResolvedValue(['openai'] as never);
-    vi.mocked(getPiSdkModels).mockImplementation(async (provider: string) => {
-      if (provider === 'openai') {
-        return [
-          {
-            id: 'gpt-4o-mini',
-            provider: 'openai',
-            api: 'openai-responses',
-            contextWindow: 128000,
-            maxTokens: 16000,
-            reasoning: true,
-            input: ['text'],
-            cost: {
-              input: 0,
-              output: 0,
-              cacheRead: 0,
-              cacheWrite: 0,
-            },
-          } as never,
-        ];
-      }
-      return [];
-    });
-
-    const resolved = await resolvePiSdkRuntimeModel({
-      modelSpec: 'openai/gpt-4o-mini',
-      config: {
-        provider: 'openai',
-        api: 'openai-completions',
-        baseUrl: 'http://127.0.0.1:4010/v1',
-        contextWindow: 65536,
-        maxTokens: 4096,
-        reasoning: false,
-        input: ['text', 'image'],
-        cost: {
-          input: 1,
-          output: 2,
-          cacheRead: 3,
-          cacheWrite: 4,
-        },
-        compat: {
-          supportsDeveloperRole: false,
-        },
-      },
-    });
-
-    expect(resolved.runtimeModel).toMatchObject({
-      id: 'gpt-4o-mini',
-      api: 'openai-completions',
-      baseUrl: 'http://127.0.0.1:4010/v1',
-      contextWindow: 65536,
-      maxTokens: 4096,
-      reasoning: false,
-      input: ['text', 'image'],
-      cost: {
-        input: 1,
-        output: 2,
-        cacheRead: 3,
-        cacheWrite: 4,
-      },
-      compat: {
-        supportsDeveloperRole: false,
-      },
-    });
-  });
-});
-
-describe('resolvePiSdkAuthApiKey', () => {
-  it('resolves api_key credentials from auth.json', async () => {
-    const originalAgentDir = process.env['PI_CODING_AGENT_DIR'];
-    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'assistant-auth-'));
-    process.env['PI_CODING_AGENT_DIR'] = tempDir;
-
-    try {
-      await fs.writeFile(
-        path.join(tempDir, 'auth.json'),
-        JSON.stringify(
-          {
-            anthropic: {
-              type: 'api_key',
-              key: 'resolved-key',
-            },
-          },
-          null,
-          2,
-        ),
-        'utf8',
-      );
-
-      await expect(
-        resolvePiSdkAuthApiKey({
-          providerId: 'anthropic',
-        }),
-      ).resolves.toBe('resolved-key');
-    } finally {
-      if (originalAgentDir === undefined) {
-        delete process.env['PI_CODING_AGENT_DIR'];
-      } else {
-        process.env['PI_CODING_AGENT_DIR'] = originalAgentDir;
-      }
-    }
-  });
-
-  it('resolves openai-codex oauth credentials through the Pi model runtime', async () => {
-    const originalAgentDir = process.env['PI_CODING_AGENT_DIR'];
-    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'assistant-auth-oauth-'));
-    process.env['PI_CODING_AGENT_DIR'] = tempDir;
-
-    try {
-      await fs.writeFile(
-        path.join(tempDir, 'auth.json'),
-        JSON.stringify(
-          {
-            'openai-codex': {
-              type: 'oauth',
-              access: 'old-access',
-              refresh: 'old-refresh',
-              expires: Date.now() + 60_000,
-              accountId: 'acct-123',
-            },
-          },
-          null,
-          2,
-        ),
-        'utf8',
-      );
-
-      await expect(
-        resolvePiSdkAuthApiKey({
-          providerId: 'openai-codex',
-        }),
-      ).resolves.toBe('old-access');
-    } finally {
-      if (originalAgentDir === undefined) {
-        delete process.env['PI_CODING_AGENT_DIR'];
-      } else {
-        process.env['PI_CODING_AGENT_DIR'] = originalAgentDir;
-      }
-    }
+    await expect(resolvePiSdkModel({ modelSpec: 'unknown/model' })).rejects.toThrow(
+      'define it in Pi models.json',
+    );
+    await expect(resolvePiSdkModel({ modelSpec: 'custom/missing' })).rejects.toThrow(
+      'check chatProfiles models and Pi models.json',
+    );
   });
 });
 
