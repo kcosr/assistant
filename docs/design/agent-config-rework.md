@@ -34,7 +34,7 @@ Templates live in a new top-level `templates` object in `config.json`, keyed by 
       "chat": {
         "config": {
           "wrapper": {
-            "path": "/home/kevin/devtools/container/run.sh",
+            "path": "/opt/assistant/container/run.sh",
             "env": { "PERSISTENT": "1", "PROXY": "1", "CONTAINER_NAME": "assistant" }
           }
         }
@@ -42,7 +42,7 @@ Templates live in a new top-level `templates` object in `config.json`, keyed by 
     },
     "coding": {
       "extends": "containerized",
-      "sessionWorkingDir": { "mode": "prompt", "roots": ["/home/kevin/worktrees"] },
+      "sessionWorkingDir": { "mode": "prompt", "roots": ["/path/to/workspaces"] },
       "skills": [
         { "root": "./dist/skills", "available": ["*"], "inline": [] }
       ],
@@ -144,7 +144,7 @@ All `AgentDefinition` fields are inheritable **except** identity fields that mus
 
 **`chat.config` cross-provider inheritance:**
 
-`chat.config` is provider-specific -- CLI providers use `{workdir, extraArgs, wrapper}` while the Pi SDK uses `{provider, apiKey, baseUrl, ...}`. `chat.config` is deep-merged like everything else, which works well when the provider stays the same (e.g., overriding just `workdir` while inheriting `wrapper`). When an agent switches providers, inherited keys from the wrong provider may be present after merge. Post-merge validation (existing provider-specific schema checks in `config.ts`) catches these invalid combinations with a clear error. The agent can use `"config": null` to clear inherited config before providing new provider-specific values.
+`chat.config` is provider-specific -- CLI providers use `{workdir, extraArgs, wrapper}` while the Pi SDK keeps execution settings such as compaction and tool-iteration limits. Pi model choices now come from an agent’s `chatProfile`; provider definitions and authentication come from Pi’s registry (see [CONFIG.md](../CONFIG.md#pi-provider)). `chat.config` is deep-merged like everything else, which works well when the provider stays the same (e.g., overriding just `workdir` while inheriting `wrapper`). When an agent switches providers, inherited keys from the wrong provider may be present after merge. Post-merge validation (existing provider-specific schema checks in `config.ts`) catches these invalid combinations with a clear error. The agent can use `"config": null` to clear inherited config before providing new provider-specific values.
 
 **Example of `null` clearing:**
 

@@ -69,6 +69,11 @@ npm run start -w @assistant/agent-server
 # Open http://localhost:3000 in your browser
 ```
 
+In-process Pi agents reference named `chatProfiles` containing ordered `provider/model` choices,
+and per-model thinking levels. Shared request overrides supply optional sampling settings. Pi’s
+registry owns provider connections, authentication, capabilities, and limits, including custom models in
+`~/.pi/agent/models.json` on the service host. See [Pi configuration](docs/CONFIG.md#pi-provider).
+
 The built-in config includes Claude Code, Codex, and Pi CLI agents. For a full configuration example with all options, see `packages/agent-server/data/config.example.json`.
 
 ### Configuration Overrides

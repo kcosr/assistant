@@ -532,7 +532,7 @@ describe('SessionRuntime subscription message handlers', () => {
         chat: {
           provider: 'pi',
           models: ['openai/gpt-5.2', 'openai/gpt-4o-mini'],
-          thinking: ['medium', 'xhigh'],
+          modelSettings: [{ id: 'openai/gpt-5.2', thinking: ['medium', 'xhigh'] }],
         },
       },
     ]);
@@ -920,7 +920,12 @@ describe('SessionRuntime subscription message handlers', () => {
     });
     const queueSpy = vi
       .spyOn(sessionHub, 'queueMessage')
-      .mockResolvedValue({ id: 'msg-1', text: 'Questionnaire response received', queuedAt: '', source: 'user' });
+      .mockResolvedValue({
+        id: 'msg-1',
+        text: 'Questionnaire response received',
+        queuedAt: '',
+        source: 'user',
+      });
     const processNextSpy = vi.spyOn(sessionHub, 'processNextQueuedMessage').mockResolvedValue(true);
     const { runtime, connection } = createRuntime({
       sessionHub,

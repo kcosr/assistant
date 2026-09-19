@@ -1,5 +1,9 @@
 # Pi Agent OAuth Credential Reuse
 
+> Historical OAuth integration design. Current credential resolution and refresh are delegated
+> to Pi’s supported model runtime/auth storage, without restricting auth lookup to the two
+> providers discussed below. Use [named chat profiles](../CONFIG.md#pi-provider) for selection.
+
 ## Overview
 
 Enable assistant to automatically use OAuth credentials from an external Pi process
@@ -125,22 +129,10 @@ Other providers (e.g., `openai`, `google`) are not supported because:
 
 ### Agent Configuration
 
-To use OAuth-backed providers, agents should use provider-prefixed models:
-
-```json
-{
-  "chat": {
-    "provider": "pi",
-    "models": [
-      "anthropic/claude-sonnet-4-5",
-      "openai-codex/gpt-5.1-codex-mini"
-    ]
-  }
-}
-```
-
-The provider prefix (`anthropic/`, `openai-codex/`) determines which auth.json
-entry is used. No `chat.config.apiKey` is needed.
+Use a named root `chatProfiles` entry with full `provider/model` references and set the agent's
+`chatProfile` to that name. Pi resolves the corresponding credentials from its registry/auth
+storage. See [the current example](../CONFIG.md#pi-provider); inline `chat.config.apiKey` and
+Pi-agent `chat.models` are no longer supported.
 
 ### Token Refresh
 

@@ -36,7 +36,7 @@ import {
   type PiSessionPathEntry,
 } from './piCompaction';
 
-type PiThinkingLevel = 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
+type PiThinkingLevel = 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max';
 
 type ModelInfo = {
   provider: string;
@@ -241,6 +241,10 @@ function normalizeThinkingLevel(value?: string): PiThinkingLevel | null {
     return null;
   }
   switch (value) {
+    case 'none':
+      return 'off';
+    case 'off':
+    case 'max':
     case 'minimal':
     case 'low':
     case 'medium':
@@ -850,7 +854,6 @@ function resolveMessageSyncAlignment(options: {
 function resolveModelInfo(options: {
   messages: ChatCompletionMessage[];
   modelSpec?: string;
-  defaultProvider?: string;
 }): ModelInfo | null {
   for (const message of options.messages) {
     if (message.role !== 'assistant') {
@@ -877,13 +880,6 @@ function resolveModelInfo(options: {
     return {
       provider: rawSpec.slice(0, slashIndex).trim(),
       modelId: rawSpec.slice(slashIndex + 1).trim(),
-    };
-  }
-  const fallbackProvider = options.defaultProvider?.trim();
-  if (fallbackProvider) {
-    return {
-      provider: fallbackProvider,
-      modelId: rawSpec,
     };
   }
   return null;
@@ -1973,13 +1969,20 @@ export class PiSessionWriter {
     summary: SessionSummary;
     settings: PiCompactionSettings;
     model: Model<Api>;
-    apiKey?: string;
+    thinkingLevel?: string;
     customInstructions?: string;
     signal?: AbortSignal;
     updateAttributes?: (patch: SessionAttributesPatch) => Promise<SessionSummary | undefined>;
   }): Promise<{ summary: SessionSummary; result: PiCompactionResult }> {
-    const { summary, settings, model, apiKey, customInstructions, signal, updateAttributes } =
-      options;
+    const {
+      summary,
+      settings,
+      model,
+      thinkingLevel,
+      customInstructions,
+      signal,
+      updateAttributes,
+    } = options;
     const stateInfo = await this.ensureSessionState({
       summary,
       ...(updateAttributes ? { updateAttributes } : {}),
@@ -2005,7 +2008,7 @@ export class PiSessionWriter {
     const result = await compactPiMessages({
       preparation,
       model,
-      ...(apiKey ? { apiKey } : {}),
+      ...(thinkingLevel ? { thinkingLevel } : {}),
       ...(customInstructions ? { customInstructions } : {}),
       ...(signal ? { signal } : {}),
     });
@@ -2062,12 +2065,10 @@ export class PiSessionWriter {
     summary: SessionSummary;
     messages: ChatCompletionMessage[];
     modelSpec?: string;
-    defaultProvider?: string;
     thinkingLevel?: string;
     updateAttributes?: (patch: SessionAttributesPatch) => Promise<SessionSummary | undefined>;
   }): Promise<SessionSummary | undefined> {
-    const { summary, messages, modelSpec, defaultProvider, thinkingLevel, updateAttributes } =
-      options;
+    const { summary, messages, modelSpec, thinkingLevel, updateAttributes } = options;
 
     let currentSummary = summary;
     const stateInfo = await this.ensureSessionState({
@@ -2137,7 +2138,6 @@ export class PiSessionWriter {
     const modelInfo = resolveModelInfo({
       messages: newMessages,
       ...(modelSpec ? { modelSpec } : {}),
-      ...(defaultProvider ? { defaultProvider } : {}),
     });
 
     let leafId = shouldRewriteFromCurrentMessages ? null : state.leafId;

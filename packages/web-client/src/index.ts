@@ -5537,6 +5537,9 @@ async function main(): Promise<void> {
           .map((level) => level.trim())
           .filter((level) => level.length > 0);
         availableThinkingBySession.set(sessionId, normalized);
+        if (!normalized.includes(currentThinkingBySession.get(sessionId) ?? '')) {
+          currentThinkingBySession.delete(sessionId);
+        }
       }
       if (typeof currentThinking === 'string' && currentThinking.trim().length > 0) {
         currentThinkingBySession.set(sessionId, currentThinking.trim());

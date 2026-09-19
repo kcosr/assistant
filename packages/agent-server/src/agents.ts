@@ -1,5 +1,3 @@
-import type { Api, Model } from '@earendil-works/pi-ai';
-
 export interface CliWrapperConfig {
   /**
    * Command wrapper path for running CLI tools in a container.
@@ -44,7 +42,18 @@ export type AgentSessionWorkingDirConfig =
   | { mode: 'fixed'; path: string }
   | { mode: 'prompt'; roots: string[] };
 
+export interface ChatProfileModel {
+  id: string;
+  thinking?: string[];
+}
+
+export interface ChatProfile {
+  models: ChatProfileModel[];
+}
+
 export interface AgentDefinition {
+  /** Named Pi model selection profile, resolved while loading configuration. */
+  chatProfile?: string;
   agentId: string;
   displayName: string;
   description: string;
@@ -62,12 +71,14 @@ export interface AgentDefinition {
   chat?: {
     provider?: 'pi' | 'claude-cli' | 'codex-cli' | 'pi-cli';
     /**
-     * For provider "pi" and CLI providers: list of allowed model ids.
+     * Allowed model ids: derived from chatProfile for Pi, configured directly for CLI providers.
      * The first model (when present) is used as the default for new sessions.
      */
     models?: string[];
+    /** Resolved Pi profile entries, in configured selection order. */
+    modelSettings?: ChatProfileModel[];
     /**
-     * For providers "pi" and "codex-cli": list of allowed thinking levels.
+     * CLI provider thinking levels. Pi levels are stored per model in modelSettings.
      * The first level (when present) is used as the default for new sessions.
      * For Codex, the level maps to model_reasoning_effort via --config.
      */
@@ -193,37 +204,7 @@ export interface AgentDefinition {
 }
 
 export interface PiSdkChatConfig {
-  /**
-   * Default provider to use when models omit a prefix.
-   * Example: "anthropic" for "claude-sonnet-4-5".
-   */
-  provider?: string;
-  /**
-   * API implementation for synthesized custom Pi models.
-   * Example: "openai-completions" for OpenAI-compatible Chat Completions endpoints.
-   */
-  api?: string;
-  apiKey?: string;
-  /**
-   * When true, add `Authorization: Bearer <apiKey>` to request headers.
-   * This mirrors Pi's models.json `authHeader` behavior.
-   */
-  authHeader?: boolean;
-  baseUrl?: string;
-  headers?: Record<string, string>;
   timeoutMs?: number;
-  maxTokens?: number;
-  contextWindow?: number;
-  reasoning?: boolean;
-  input?: ('text' | 'image')[];
-  cost?: {
-    input?: number | undefined;
-    output?: number | undefined;
-    cacheRead?: number | undefined;
-    cacheWrite?: number | undefined;
-  };
-  compat?: Model<Api>['compat'];
-  temperature?: number;
   maxToolIterations?: number;
   compaction?: {
     enabled?: boolean;

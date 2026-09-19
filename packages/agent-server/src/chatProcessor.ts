@@ -137,7 +137,6 @@ async function persistInterruptedPiAssistantMessage(options: {
       Date.now();
     const modelSpec = resolveSessionModelForRun({ agent, summary: state.summary });
     const thinkingLevel = resolveSessionThinkingForRun({ agent, summary: state.summary });
-    const defaultProvider = (agent?.chat?.config as PiSdkChatConfig | undefined)?.provider;
     const finalAssistantMessage: ChatCompletionMessage & { role: 'assistant' } = {
       role: 'assistant',
       content: visibleAssistant.text,
@@ -157,8 +156,7 @@ async function persistInterruptedPiAssistantMessage(options: {
       summary: state.summary,
       messages: messagesForPiSync,
       ...(modelSpec ? { modelSpec } : {}),
-      ...(defaultProvider ? { defaultProvider } : {}),
-      ...(thinkingLevel ? { thinkingLevel } : {}),
+      thinkingLevel: thinkingLevel ?? 'off',
       updateAttributes: (patch) => sessionHub.updateSessionAttributes(sessionId, patch),
     });
     if (updatedSummary) {
@@ -865,13 +863,11 @@ export async function processUserMessage(
         try {
           const modelSpec = resolveSessionModelForRun({ agent, summary: state.summary });
           const thinkingLevel = resolveSessionThinkingForRun({ agent, summary: state.summary });
-          const defaultProvider = (agent?.chat?.config as PiSdkChatConfig | undefined)?.provider;
           const updatedSummary = await piSessionWriter.sync({
             summary: state.summary,
             messages: state.chatMessages,
             ...(modelSpec ? { modelSpec } : {}),
-            ...(defaultProvider ? { defaultProvider } : {}),
-            ...(thinkingLevel ? { thinkingLevel } : {}),
+            thinkingLevel: thinkingLevel ?? 'off',
             updateAttributes: (patch) => sessionHub.updateSessionAttributes(sessionId, patch),
           });
           if (updatedSummary) {
@@ -910,7 +906,7 @@ export async function processUserMessage(
         keepRecentTokens:
           piConfig?.compaction?.keepRecentTokens ?? DEFAULT_PI_COMPACTION_SETTINGS.keepRecentTokens,
       };
-      const contextWindow = runResult.piContextWindow ?? piConfig?.contextWindow ?? 0;
+      const contextWindow = runResult.piContextWindow ?? 0;
       if (
         runResult.piSdkMessage.usage &&
         shouldCompactPiContext({

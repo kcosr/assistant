@@ -1,5 +1,9 @@
 # Native Pi SDK chat provider
 
+> Configuration and runtime resolution have been superseded by the registry/profile integration
+> described in [CONFIG.md](../CONFIG.md#pi-provider). This document retains the original
+> streaming/history adapter design; inline provider definitions are no longer supported.
+
 ## Overview
 
 Replace the OpenAI chat integration in assistant with the native Pi SDK integration
@@ -38,23 +42,13 @@ Anthropic, etc.) are configured and resolved inside Pi.
 
 ### Config
 
-Add `PiSdkChatConfig` (per-agent only), exposing the common connection settings:
-
-- `provider` (string, optional; default provider for models without a prefix)
-- `models` (string[], required unless provided by session)
-- `thinking` (string[], optional; `off|minimal|low|medium|high|xhigh`)
-- `apiKey?` (Pi provider API key override)
-- `baseUrl?` (OpenAI-compatible or proxy endpoint handled by Pi)
-- `headers?` (string map, optional)
-- `timeoutMs?`
-- `maxTokens?`
-- `temperature?`
-- `maxToolIterations?` (max tool iterations before aborting; default 100)
-
-Config is per-agent only; assistant does not implement provider env lookup. The Pi
-SDK reads provider API keys from environment variables (for example
-`OPENAI_API_KEY`, `ANTHROPIC_OAUTH_TOKEN`/`ANTHROPIC_API_KEY`, `GEMINI_API_KEY`,
-`GROQ_API_KEY`, `MISTRAL_API_KEY`, `OPENROUTER_API_KEY`) when `apiKey` is not provided.
+Pi provider/model definitions are loaded by Pi's supported model runtime, including custom
+models from its `models.json` and credentials from auth storage. Assistant root `chatProfiles`
+define ordered model entries (`id`, optional `thinking`). Agents
+reference a profile through `chatProfile` and retain execution controls under `chat.config`.
+Sampling uses the shared `@kcosr/pi-request-overrides` hook and the Pi agent directory’s
+`request-overrides.json`, also consumed by its Pi extension.
+See [the current configuration contract](../CONFIG.md#pi-provider).
 
 ### Runtime Flow
 
@@ -87,21 +81,18 @@ Introduce a Pi SDK adapter similar to `SdkLlmProvider` in agent-hub:
 
 ### Model + Provider Mapping
 
-- Model selection remains in assistant (agent config + session overrides); Pi does not run
-  its own model resolver for assistant.
-- Accept `models` entries in `provider/model` form.
-- If a model entry includes a provider prefix, use that provider for resolution.
-- If no prefix is present, fall back to the configured `PiSdkChatConfig.provider` (required in that case).
-- Connection overrides (`apiKey`, `baseUrl`, `headers`) are only applied when the
-  resolved provider matches `PiSdkChatConfig.provider`.
+- Each profile model ID is a full `provider/model` reference resolved by Pi's model runtime.
+- Built-in and custom models retain their complete registry definitions and Pi authentication.
+- There is no inline provider override or synthetic-model fallback.
+- Profiles select and order models; session overrides must remain within those choices.
 
 ### Thinking Mapping
 
-- Thinking selection remains in assistant (`chat.thinking` + session override).
-- When `chat.thinking` is set, store the selected level in session summary.
-- Convert thinking level to Pi SDK `reasoning` option:
-  - `off` → omit `reasoning` (Pi defaults to reasoning disabled).
-  - `minimal|low|medium|high|xhigh` → pass through to `streamSimple(..., { reasoning })`.
+- Allowed thinking levels and their default belong to each model entry in the named profile.
+- Assistant's `none` maps explicitly to Pi's off state.
+- Enabled levels retain the registry model's `thinkingLevelMap` and compatibility/template settings.
+- Streaming uses the model runtime so provider authentication and request transformation remain
+  owned by Pi.
 
 ### Error Handling
 

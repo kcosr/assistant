@@ -856,6 +856,9 @@ export const ServerSessionCreatedMessageSchema = z.object({
 
 export const ServerSessionUpdatedMessageSchema = z.object({
   type: z.literal('session_updated'),
+  currentModel: z.string().optional(),
+  currentThinking: z.string().optional(),
+  availableThinking: z.array(z.string()).optional(),
   sessionId: z.string(),
   updatedAt: z.string(),
   // Optional user-defined session name. When omitted, the

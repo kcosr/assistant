@@ -15,9 +15,7 @@ import type {
 } from '@earendil-works/pi-ai';
 import type { AssistantTextPhase } from '@assistant/shared';
 
-import type { PiSdkChatConfig } from '../agents';
 import type { ChatCompletionMessage, ChatCompletionToolCallState } from '../chatCompletionTypes';
-import { resolvePiAgentAuthApiKey } from './piAgentAuth';
 import { getPiSdkModels, getPiSdkProviders, streamPiSdkModel } from './piSdkRuntime';
 
 export interface PiToolCallStartInfo {
@@ -40,31 +38,12 @@ export interface PiSdkModelResolution {
 
 export interface PiSdkRuntimeModelResolution extends PiSdkModelResolution {
   runtimeModel: Model<Api>;
-  providerMatchesConfig: boolean;
-  apiKey?: string;
-  headers?: Record<string, string>;
 }
 
 export interface PiAssistantTextBlock {
   text: string;
   phase?: AssistantTextPhase;
   textSignature?: string;
-}
-
-export async function resolvePiSdkAuthApiKey(options: {
-  providerId: string;
-  log?: (...args: unknown[]) => void;
-}): Promise<string | undefined> {
-  const { providerId, log } = options;
-  const trimmedProviderId = providerId.trim();
-  if (!trimmedProviderId) {
-    return undefined;
-  }
-
-  return resolvePiAgentAuthApiKey({
-    providerId: trimmedProviderId,
-    ...(log ? { log } : {}),
-  });
 }
 
 function createEmptyUsage(): Usage {
@@ -84,304 +63,38 @@ function createEmptyUsage(): Usage {
   };
 }
 
-function buildPiModelCost(
-  cost: PiSdkChatConfig['cost'] | undefined,
-  fallback?: Model<Api>['cost'],
-): Model<Api>['cost'] {
-  return {
-    input: cost?.input ?? fallback?.input ?? 0,
-    output: cost?.output ?? fallback?.output ?? 0,
-    cacheRead: cost?.cacheRead ?? fallback?.cacheRead ?? 0,
-    cacheWrite: cost?.cacheWrite ?? fallback?.cacheWrite ?? 0,
-  };
-}
-
-async function resolveProviderId(providerRaw: string): Promise<string | undefined> {
-  const trimmed = providerRaw.trim();
-  if (!trimmed) {
-    return undefined;
-  }
-  const target = trimmed.toLowerCase();
-  const providers = await getPiSdkProviders();
-  const match = providers.find((provider) => provider.toLowerCase() === target);
-  return match ?? trimmed;
-}
-
-function buildSyntheticPiSdkModel(options: {
-  providerId: string;
-  modelId: string;
-  baseUrl: string;
-  api?: string;
-  contextWindow?: number;
-  maxTokens?: number;
-  reasoning?: boolean;
-  input?: ('text' | 'image')[];
-  cost?: {
-    input?: number | undefined;
-    output?: number | undefined;
-    cacheRead?: number | undefined;
-    cacheWrite?: number | undefined;
-  };
-  compat?: Model<Api>['compat'];
-}): Model<Api> {
-  const { providerId, modelId, baseUrl, contextWindow } = options;
-  return {
-    id: modelId,
-    name: modelId,
-    api: (options.api ?? 'openai-responses') as Api,
-    provider: providerId,
-    baseUrl,
-    reasoning: options.reasoning ?? true,
-    input: options.input ?? ['text'],
-    cost: buildPiModelCost(options.cost),
-    contextWindow:
-      typeof contextWindow === 'number' && Number.isFinite(contextWindow) && contextWindow > 0
-        ? Math.floor(contextWindow)
-        : 128000,
-    maxTokens:
-      typeof options.maxTokens === 'number' &&
-      Number.isFinite(options.maxTokens) &&
-      options.maxTokens > 0
-        ? Math.floor(options.maxTokens)
-        : 16000,
-    ...(options.compat !== undefined ? { compat: options.compat } : {}),
-  };
-}
-
-function buildSyntheticPiSdkModelResolution(options: {
-  providerId: string;
-  modelIdRaw: string;
-  baseUrl: string;
-  contextWindow?: number;
-  api?: string;
-  maxTokens?: number;
-  reasoning?: boolean;
-  input?: ('text' | 'image')[];
-  cost?: {
-    input?: number | undefined;
-    output?: number | undefined;
-    cacheRead?: number | undefined;
-    cacheWrite?: number | undefined;
-  };
-  compat?: Model<Api>['compat'];
-}): PiSdkModelResolution {
-  const { providerId, modelIdRaw, baseUrl, contextWindow } = options;
-  const syntheticModel = buildSyntheticPiSdkModel({
-    providerId,
-    modelId: modelIdRaw.trim(),
-    baseUrl: baseUrl.trim(),
-    ...(options.api !== undefined ? { api: options.api } : {}),
-    ...(contextWindow !== undefined ? { contextWindow } : {}),
-    ...(options.maxTokens !== undefined ? { maxTokens: options.maxTokens } : {}),
-    ...(options.reasoning !== undefined ? { reasoning: options.reasoning } : {}),
-    ...(options.input !== undefined ? { input: options.input } : {}),
-    ...(options.cost !== undefined ? { cost: options.cost } : {}),
-    ...(options.compat !== undefined ? { compat: options.compat } : {}),
-  });
-  return {
-    model: syntheticModel,
-    providerId,
-    modelId: syntheticModel.id,
-  };
-}
-
-function getModelSpecProvider(modelSpec: string): string | undefined {
-  const trimmed = modelSpec.trim();
-  const slashIndex = trimmed.indexOf('/');
-  if (slashIndex === -1) {
-    return undefined;
-  }
-  const provider = trimmed.slice(0, slashIndex).trim();
-  return provider || undefined;
-}
-
-function providerMatchesRawConfig(provider: string | undefined, configProvider: string): boolean {
-  return Boolean(provider && provider.toLowerCase() === configProvider.toLowerCase());
-}
-
-function buildPiModelOverrides(config: PiSdkChatConfig | undefined) {
-  return {
-    ...(config?.baseUrl ? { baseUrl: config.baseUrl } : {}),
-    ...(config?.api ? { api: config.api } : {}),
-    ...(config?.contextWindow !== undefined ? { contextWindow: config.contextWindow } : {}),
-    ...(config?.maxTokens !== undefined ? { maxTokens: config.maxTokens } : {}),
-    ...(config?.reasoning !== undefined ? { reasoning: config.reasoning } : {}),
-    ...(config?.input !== undefined ? { input: config.input } : {}),
-    ...(config?.cost !== undefined ? { cost: config.cost } : {}),
-    ...(config?.compat !== undefined ? { compat: config.compat } : {}),
-  };
-}
-
-function buildPiRuntimeModelOverrides(
-  config: PiSdkChatConfig | undefined,
-  fallbackModel: Model<Api>,
-): Partial<Model<Api>> {
-  return {
-    ...(config?.api ? { api: config.api as Api } : {}),
-    ...(config?.baseUrl ? { baseUrl: config.baseUrl } : {}),
-    ...(config?.contextWindow !== undefined ? { contextWindow: config.contextWindow } : {}),
-    ...(config?.maxTokens !== undefined ? { maxTokens: config.maxTokens } : {}),
-    ...(config?.reasoning !== undefined ? { reasoning: config.reasoning } : {}),
-    ...(config?.input !== undefined ? { input: config.input } : {}),
-    ...(config?.cost !== undefined
-      ? { cost: buildPiModelCost(config.cost, fallbackModel.cost) }
-      : {}),
-    ...(config?.compat !== undefined ? { compat: config.compat } : {}),
-  };
-}
-
+/** Resolve the exact registry model; request authentication is resolved by ModelRuntime. */
 export async function resolvePiSdkRuntimeModel(options: {
   modelSpec: string;
-  config?: PiSdkChatConfig | undefined;
-  log?: (...args: unknown[]) => void;
 }): Promise<PiSdkRuntimeModelResolution> {
-  const { modelSpec, config, log } = options;
-  const configProviderRaw = config?.provider?.trim();
-  const configProvider = configProviderRaw || undefined;
-  const modelSpecProvider = getModelSpecProvider(modelSpec);
-  const modelSpecUsesConfigProvider =
-    !configProvider ||
-    !modelSpecProvider ||
-    providerMatchesRawConfig(modelSpecProvider, configProvider);
-  const modelOverrides = modelSpecUsesConfigProvider ? buildPiModelOverrides(config) : {};
-  const resolvedModel =
-    configProvider === undefined
-      ? await resolvePiSdkModel({
-          modelSpec,
-          ...modelOverrides,
-        })
-      : await resolvePiSdkModel({
-          modelSpec,
-          defaultProvider: configProvider,
-          ...modelOverrides,
-        });
-  const providerMatchesConfig =
-    !configProvider || configProvider.toLowerCase() === resolvedModel.providerId.toLowerCase();
-  const authApiKey = await resolvePiSdkAuthApiKey({
-    providerId: resolvedModel.providerId,
-    ...(log ? { log } : {}),
-  });
-  const apiKey = providerMatchesConfig ? (config?.apiKey ?? authApiKey) : authApiKey;
-  const configuredHeaders = providerMatchesConfig ? config?.headers : undefined;
-  if (providerMatchesConfig && config?.authHeader && !apiKey) {
-    log?.('Pi chat authHeader is enabled but no API key is configured or available', {
-      providerId: resolvedModel.providerId,
-      modelSpec,
-    });
-  }
-  const headers =
-    providerMatchesConfig && config?.authHeader && apiKey
-      ? { ...configuredHeaders, Authorization: `Bearer ${apiKey}` }
-      : configuredHeaders;
-  const runtimeModel: Model<Api> = {
-    ...resolvedModel.model,
-    ...(providerMatchesConfig ? buildPiRuntimeModelOverrides(config, resolvedModel.model) : {}),
-    ...(headers ? { headers } : {}),
-  };
-
-  return {
-    ...resolvedModel,
-    runtimeModel,
-    providerMatchesConfig,
-    ...(apiKey ? { apiKey } : {}),
-    ...(headers ? { headers } : {}),
-  };
+  const resolved = await resolvePiSdkModel(options);
+  return { ...resolved, runtimeModel: resolved.model };
 }
 
 export async function resolvePiSdkModel(options: {
   modelSpec: string;
-  defaultProvider?: string;
-  baseUrl?: string;
-  api?: string;
-  contextWindow?: number;
-  maxTokens?: number;
-  reasoning?: boolean;
-  input?: ('text' | 'image')[];
-  cost?: {
-    input?: number | undefined;
-    output?: number | undefined;
-    cacheRead?: number | undefined;
-    cacheWrite?: number | undefined;
-  };
-  compat?: Model<Api>['compat'];
 }): Promise<PiSdkModelResolution> {
-  const { modelSpec, defaultProvider, baseUrl, contextWindow } = options;
-  const trimmedSpec = modelSpec.trim();
-  if (!trimmedSpec) {
-    throw new Error('Pi chat requires a non-empty model id');
+  const spec = options.modelSpec.trim();
+  const slash = spec.indexOf('/');
+  if (slash < 1 || !spec.slice(slash + 1).trim()) {
+    throw new Error(
+      'Pi chat requires a model in provider/model format; configure chatProfiles models with registry model IDs',
+    );
   }
-
-  let providerRaw: string | undefined;
-  let modelIdRaw: string;
-  const slashIndex = trimmedSpec.indexOf('/');
-  if (slashIndex !== -1) {
-    providerRaw = trimmedSpec.slice(0, slashIndex);
-    modelIdRaw = trimmedSpec.slice(slashIndex + 1);
-  } else {
-    providerRaw = defaultProvider?.trim();
-    modelIdRaw = trimmedSpec;
+  const providerId = spec.slice(0, slash);
+  const modelId = spec.slice(slash + 1);
+  if (!(await getPiSdkProviders()).includes(providerId)) {
+    throw new Error(
+      `Pi provider "${providerId}" was not found; define it in Pi models.json and restart Assistant`,
+    );
   }
-
-  if (!providerRaw) {
-    throw new Error('Pi chat requires provider/model format when chat.config.provider is not set');
-  }
-
-  const providerId = await resolveProviderId(providerRaw);
-  if (!providerId) {
-    throw new Error(`Pi chat provider "${providerRaw}" is not available`);
-  }
-
-  const knownProvider = (await getPiSdkProviders()).find(
-    (provider) => provider.toLowerCase() === providerId.toLowerCase(),
-  );
-  if (!knownProvider) {
-    if (typeof baseUrl === 'string' && baseUrl.trim().length > 0) {
-      return buildSyntheticPiSdkModelResolution({
-        providerId,
-        modelIdRaw,
-        baseUrl,
-        ...(options.api !== undefined ? { api: options.api } : {}),
-        ...(contextWindow !== undefined ? { contextWindow } : {}),
-        ...(options.maxTokens !== undefined ? { maxTokens: options.maxTokens } : {}),
-        ...(options.reasoning !== undefined ? { reasoning: options.reasoning } : {}),
-        ...(options.input !== undefined ? { input: options.input } : {}),
-        ...(options.cost !== undefined ? { cost: options.cost } : {}),
-        ...(options.compat !== undefined ? { compat: options.compat } : {}),
-      });
-    }
-    throw new Error(`No Pi models found for provider "${providerId}"`);
-  }
-
-  const models = await getPiSdkModels(knownProvider);
-  if (!models || models.length === 0) {
-    if (typeof baseUrl === 'string' && baseUrl.trim().length > 0) {
-      return buildSyntheticPiSdkModelResolution({
-        providerId,
-        modelIdRaw,
-        baseUrl,
-        ...(options.api !== undefined ? { api: options.api } : {}),
-        ...(contextWindow !== undefined ? { contextWindow } : {}),
-        ...(options.maxTokens !== undefined ? { maxTokens: options.maxTokens } : {}),
-        ...(options.reasoning !== undefined ? { reasoning: options.reasoning } : {}),
-        ...(options.input !== undefined ? { input: options.input } : {}),
-        ...(options.cost !== undefined ? { cost: options.cost } : {}),
-        ...(options.compat !== undefined ? { compat: options.compat } : {}),
-      });
-    }
-    throw new Error(`No Pi models found for provider "${providerId}"`);
-  }
-
-  const targetId = modelIdRaw.trim().toLowerCase();
-  const model = models.find((entry) => entry.id.toLowerCase() === targetId);
+  const model = (await getPiSdkModels(providerId)).find((entry) => entry.id === modelId);
   if (!model) {
-    throw new Error(`Pi model "${providerId}/${modelIdRaw}" was not found`);
+    throw new Error(
+      `Pi model "${providerId}/${modelId}" was not found; check chatProfiles models and Pi models.json`,
+    );
   }
-
-  return {
-    model,
-    providerId,
-    modelId: model.id,
-  };
+  return { model, providerId, modelId: model.id };
 }
 
 export function mapChatCompletionToolsToPiTools(tools: unknown[]): PiTool[] {
@@ -708,10 +421,7 @@ export async function runPiSdkChatCompletionIteration(options: {
   }) => void;
   maxTokens?: number;
   temperature?: number;
-  reasoning?: SimpleStreamOptions['reasoning'];
-  apiKey?: string;
-  baseUrl?: string;
-  headers?: Record<string, string>;
+  reasoning?: SimpleStreamOptions['reasoning'] | 'off';
   timeoutMs?: number;
 }): Promise<{
   text: string;
@@ -736,21 +446,11 @@ export async function runPiSdkChatCompletionIteration(options: {
     maxTokens,
     temperature,
     reasoning,
-    apiKey,
-    baseUrl,
-    headers,
     timeoutMs,
   } = options;
 
   const piTools = mapChatCompletionToolsToPiTools(tools);
-  const resolvedModel: Model<Api> =
-    baseUrl || headers
-      ? {
-          ...model,
-          ...(baseUrl ? { baseUrl } : {}),
-          ...(headers ? { headers: { ...(model.headers ?? {}), ...headers } } : {}),
-        }
-      : model;
+  const resolvedModel = model;
   const context = buildPiContext({ messages, tools: piTools, model: resolvedModel });
 
   const { signal, clear } = createTimeoutSignal(
@@ -758,11 +458,9 @@ export async function runPiSdkChatCompletionIteration(options: {
   );
 
   const streamOptions: SimpleStreamOptions = {
-    ...(apiKey ? { apiKey } : {}),
     ...(maxTokens !== undefined ? { maxTokens } : {}),
     ...(temperature !== undefined ? { temperature } : {}),
-    ...(reasoning ? { reasoning } : {}),
-    ...(headers ? { headers } : {}),
+    ...(reasoning && reasoning !== 'off' ? { reasoning } : {}),
     ...(onPayload ? { onPayload } : {}),
     ...(signal ? { signal } : {}),
   };

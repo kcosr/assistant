@@ -5,6 +5,7 @@ import fs from 'node:fs/promises';
 
 import { describe, expect, it, vi } from 'vitest';
 
+import * as piSdkProvider from './llm/piSdkProvider';
 import { AgentRegistry } from './agents';
 import { AttachmentStore } from './attachments/store';
 import { SessionHub } from './sessionHub';
@@ -168,12 +169,12 @@ describe('SessionHub clearSession', () => {
       providers: {
         pi: {
           sessionId: 'pi-session-1',
-          cwd: '/home/kevin',
+          cwd: '/workspace/user',
         },
       },
     });
 
-    const encoded = encodePiCwd('/home/kevin');
+    const encoded = encodePiCwd('/workspace/user');
     const sessionDir = path.join(baseDir, encoded);
     await fs.mkdir(sessionDir, { recursive: true });
     const sessionFile = path.join(sessionDir, `2026-02-04T00-00-00-000Z_pi-session-1.jsonl`);
@@ -208,12 +209,12 @@ describe('SessionHub clearSession', () => {
       providers: {
         pi: {
           sessionId: 'pi-session-delete-1',
-          cwd: '/home/kevin',
+          cwd: '/workspace/user',
         },
       },
     });
 
-    const encoded = encodePiCwd('/home/kevin');
+    const encoded = encodePiCwd('/workspace/user');
     const sessionDir = path.join(baseDir, encoded);
     await fs.mkdir(sessionDir, { recursive: true });
     const sessionFile = path.join(sessionDir, '2026-02-04T00-00-00-000Z_pi-session-delete-1.jsonl');
@@ -642,7 +643,7 @@ describe('SessionHub compactSession guards', () => {
     ).rejects.toThrow('Pi chat requires at least one model to compact context');
   });
 
-  it('uses Pi custom-model config when compacting context', async () => {
+  it('uses the Pi registry model and selected reasoning when compacting context', async () => {
     const sessionIndex = new SessionIndex(createTempFile('session-hub-compact-custom-model'));
     const compat = {
       supportsDeveloperRole: false,
@@ -656,30 +657,29 @@ describe('SessionHub compactSession guards', () => {
         chat: {
           provider: 'pi',
           models: ['local/scenarios'],
-          config: {
-            provider: 'local',
-            baseUrl: 'http://127.0.0.1:4010/v1',
-            api: 'openai-completions',
-            apiKey: 'local-key',
-            authHeader: true,
-            headers: {
-              'X-Request-Source': 'assistant',
-            },
-            maxTokens: 4096,
-            contextWindow: 65536,
-            reasoning: false,
-            input: ['text', 'image'],
-            cost: {
-              input: 1,
-              output: 2,
-              cacheRead: 3,
-              cacheWrite: 4,
-            },
-            compat,
-          },
+          modelSettings: [{ id: 'local/scenarios', thinking: ['medium'] }],
         },
       },
     ]);
+    const model = {
+      id: 'scenarios',
+      provider: 'local',
+      api: 'openai-completions',
+      name: 'Scenarios',
+      baseUrl: 'http://127.0.0.1:4010/v1',
+      maxTokens: 4096,
+      contextWindow: 65536,
+      reasoning: true,
+      input: ['text'],
+      compat,
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+    } as const;
+    const resolver = vi.spyOn(piSdkProvider, 'resolvePiSdkRuntimeModel').mockResolvedValue({
+      model: model as never,
+      runtimeModel: model as never,
+      providerId: 'local',
+      modelId: 'scenarios',
+    });
     const compact = vi.fn(async (options: { summary: unknown }) => ({
       summary: options.summary,
       result: {
@@ -701,32 +701,11 @@ describe('SessionHub compactSession guards', () => {
 
     await sessionHub.compactSession({ sessionId: 'pi-local-session', reason: 'manual' });
 
+    expect(resolver).toHaveBeenCalledWith({ modelSpec: 'local/scenarios' });
     expect(compact).toHaveBeenCalledWith(
-      expect.objectContaining({
-        apiKey: 'local-key',
-        model: expect.objectContaining({
-          id: 'scenarios',
-          api: 'openai-completions',
-          provider: 'local',
-          baseUrl: 'http://127.0.0.1:4010/v1',
-          maxTokens: 4096,
-          contextWindow: 65536,
-          reasoning: false,
-          input: ['text', 'image'],
-          cost: {
-            input: 1,
-            output: 2,
-            cacheRead: 3,
-            cacheWrite: 4,
-          },
-          compat,
-          headers: {
-            'X-Request-Source': 'assistant',
-            Authorization: 'Bearer local-key',
-          },
-        }),
-      }),
+      expect.objectContaining({ model, thinkingLevel: 'medium' }),
     );
+    resolver.mockRestore();
   });
 });
 
@@ -801,5 +780,52 @@ describe('SessionHub loadSessionMessages', () => {
       expect.objectContaining({ role: 'user', content: 'First request' }),
       expect.objectContaining({ role: 'assistant', content: 'First reply' }),
     ]);
+  });
+});
+
+describe('SessionHub profile model switches', () => {
+  it('normalizes reasoning and broadcasts the selected model capabilities on every switch', async () => {
+    const sessionIndex = new SessionIndex(createTempFile('session-hub-profile-switch'));
+    const agentRegistry = new AgentRegistry([
+      {
+        agentId: 'local',
+        displayName: 'Local',
+        description: '',
+        chatProfile: 'local',
+        chat: {
+          provider: 'pi',
+          models: ['local/model-a', 'remote/model-b', 'plain/model'],
+          modelSettings: [
+            { id: 'local/model-a', thinking: ['xhigh', 'medium', 'none'] },
+            { id: 'remote/model-b', thinking: ['low', 'none'] },
+            { id: 'plain/model' },
+          ],
+        },
+      },
+    ]);
+    const hub = new SessionHub({ sessionIndex, agentRegistry });
+    const send = vi.fn();
+    hub.registerConnection({ sendServerMessageFromHub: send, sendErrorFromHub: vi.fn() });
+    const summary = await sessionIndex.createSession({
+      agentId: 'local',
+      model: 'local/model-a',
+      thinking: 'medium',
+    });
+    for (const [model, thinking, availableThinking] of [
+      ['remote/model-b', 'low', ['low', 'none']],
+      ['local/model-a', 'xhigh', ['xhigh', 'medium', 'none']],
+      ['plain/model', undefined, []],
+    ] as const) {
+      const updated = await hub.setSessionModel(summary.sessionId, model);
+      expect(updated?.thinking ?? undefined).toBe(thinking);
+      expect(send).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          type: 'session_updated',
+          currentModel: model,
+          availableThinking,
+          ...(thinking ? { currentThinking: thinking } : {}),
+        }),
+      );
+    }
   });
 });

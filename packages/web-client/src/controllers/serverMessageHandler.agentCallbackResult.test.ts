@@ -300,14 +300,10 @@ describe('ServerMessageHandler typing indicator', () => {
         chatLog: document.createElement('div'),
       },
     } as unknown as ChatRuntime;
-    const {
-      handler,
-      refreshSessions,
-      resetSessionTranscriptState,
-    } = makeHandler({
+    const { handler, refreshSessions, resetSessionTranscriptState } = makeHandler({
       getChatRuntimeForSession: () => runtime,
       getSpeechAudioControllerForSession: () =>
-        ({ syncMicButtonState } as unknown as SpeechAudioController),
+        ({ syncMicButtonState }) as unknown as SpeechAudioController,
     });
 
     await handler.handle({
@@ -325,11 +321,7 @@ describe('ServerMessageHandler typing indicator', () => {
 
   it('clears cached transcript state when a session is deleted', async () => {
     let selectedSessionId: string | null = 's-1';
-    const {
-      handler,
-      refreshSessions,
-      resetSessionTranscriptState,
-    } = makeHandler({
+    const { handler, refreshSessions, resetSessionTranscriptState } = makeHandler({
       getSelectedSessionId: () => selectedSessionId,
       setSelectedSessionId: (sessionId) => {
         selectedSessionId = sessionId;
@@ -865,5 +857,31 @@ describe('ServerMessageHandler typing indicator', () => {
       },
     });
     expect(handler.hasActiveRequestForSession('s-1')).toBe(false);
+  });
+});
+
+describe('ServerMessageHandler model capabilities', () => {
+  it('updates model and clears thinking choices even without a cached session summary', async () => {
+    const updateSessionModelForSession = vi.fn();
+    const updateSessionThinkingForSession = vi.fn();
+    const { handler } = makeHandler({
+      updateSessionModelForSession,
+      updateSessionThinkingForSession,
+    });
+    await handler.handle({
+      type: 'session_updated',
+      sessionId: 's-1',
+      updatedAt: new Date().toISOString(),
+      currentModel: 'plain/model',
+      availableThinking: [],
+    });
+    expect(updateSessionModelForSession).toHaveBeenCalledWith({
+      sessionId: 's-1',
+      currentModel: 'plain/model',
+    });
+    expect(updateSessionThinkingForSession).toHaveBeenCalledWith({
+      sessionId: 's-1',
+      availableThinking: [],
+    });
   });
 });

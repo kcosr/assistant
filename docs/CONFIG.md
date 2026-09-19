@@ -50,7 +50,7 @@ Pi SDK chat uses provider-specific environment variables. Common examples includ
 - Azure OpenAI: `AZURE_OPENAI_API_KEY` (with `AZURE_OPENAI_BASE_URL`/`AZURE_OPENAI_RESOURCE_NAME`)
 
 The assistant does not resolve these itself; it passes requests to the Pi SDK, which
-reads the provider environment variables directly. For a complete list, see the
+resolves credentials using its auth storage, registry configuration, and provider environment variables. For a complete list, see the
 `@earendil-works/pi-ai` README.
 
 ### Server
@@ -275,6 +275,7 @@ Examples:
 | -------------- | ------ | --------------------------------------------------------------- |
 | `sessions`     | object | Session cache settings.                                         |
 | `agents`       | array  | Agent persona definitions and chat provider config.             |
+| `chatProfiles` | object | Named Pi model choices and per-model thinking levels. |
 | `profiles`     | array  | Shared profile (instance) definitions for cross-plugin scoping. |
 | `plugins`      | object | Plugin enablement and per-plugin config.                        |
 | `mcpServers`   | array  | External MCP servers launched over stdio.                       |
@@ -298,7 +299,7 @@ Controls session cache behavior.
     "allowedServers": ["main", "work"],
     "binary": "codex-threads",
     "permissionMode": "app-server-default",
-    "allowedCwdRoots": ["/home/kevin/worktrees"]
+    "allowedCwdRoots": ["/path/to/workspaces"]
   }
 }
 ```
@@ -334,9 +335,13 @@ Defines agent personas and chat providers.
 
 ```json
 {
+  "chatProfiles": {
+    "default": { "models": [{ "id": "anthropic/claude-sonnet-4-5" }] }
+  },
   "agents": [
     {
       "agentId": "general",
+      "chatProfile": "default",
       "displayName": "General Assistant",
       "description": "A helpful assistant.",
       "systemPrompt": "You are a helpful assistant.",
@@ -535,7 +540,7 @@ Defines external MCP tool servers (Model Context Protocol) launched over stdio.
   "skillAllowlist": ["notes"],
   "sessionWorkingDir": {
     "mode": "prompt",
-    "roots": ["/home/kevin/worktrees"]
+    "roots": ["/path/to/workspaces"]
   },
   "skills": [
     { "root": "~/skills", "available": ["*"], "inline": ["my-critical-*"] },
@@ -598,7 +603,7 @@ To skip Bash approval for selected command prefixes, add `bashAllowPrefixes`:
 {
   "toolApprovals": {
     "required": ["bash", "find", "edit", "write"],
-    "bashAllowPrefixes": ["sedes-wrapper", "date"]
+    "bashAllowPrefixes": ["agent-wrapper", "date"]
   }
 }
 ```
@@ -618,7 +623,7 @@ Use `writeAllowDirectories` to skip approval for native `write` and `edit` calls
 {
   "toolApprovals": {
     "required": ["bash", "find", "edit", "write"],
-    "bashAllowPrefixes": ["sedes-wrapper", "date"],
+    "bashAllowPrefixes": ["agent-wrapper", "date"],
     "writeAllowDirectories": ["/tmp"]
   }
 }
@@ -887,51 +892,140 @@ standalone notification playback settings.
 
 #### `pi` Provider
 
+Pi defines providers and models; Assistant selects them through named chat profiles.
+The profile is shared by any agents referencing it, without per-agent model overrides.
+
 ```json
 {
-  "chat": {
-    "provider": "pi",
-    "models": ["anthropic/claude-sonnet-4-5", "openai-codex/gpt-5.2-codex"],
-    "thinking": ["off", "low", "medium", "high", "xhigh"],
-    "config": {
-      "provider": "anthropic",
-      "apiKey": "${ANTHROPIC_API_KEY}",
-      "baseUrl": "https://api.anthropic.com",
-      "maxTokens": 4096,
-      "temperature": 0.7,
-      "maxToolIterations": 100,
-      "compaction": {
-        "enabled": true,
-        "reserveTokens": 16384,
-        "keepRecentTokens": 20000
-      },
-      "headers": {
-        "X-Request-Source": "assistant"
+  "chatProfiles": {
+    "local": {
+      "models": [
+        {
+          "id": "local/model-a",
+          "thinking": ["xhigh", "medium", "none"]
+        },
+        {
+          "id": "remote/model-b",
+          "thinking": ["none"]
+        }
+      ]
+    }
+  },
+  "agents": [
+    {
+      "agentId": "assistant",
+      "displayName": "Assistant",
+      "chatProfile": "local",
+      "chat": {
+        "provider": "pi",
+        "config": {
+          "maxToolIterations": 100,
+          "compaction": {
+            "enabled": true,
+            "reserveTokens": 16384,
+            "keepRecentTokens": 20000
+          }
+        }
+      }
+    }
+  ]
+}
+```
+
+- `chatProfiles`: root object keyed by profile name; separate from plugin-instance `profiles`.
+- `chatProfile`: agent reference to a named profile for in-process Pi chat.
+- `models`: nonempty ordered profile list. Each `id` must be a full `provider/model` reference.
+  The first entry is the default. Built-in and custom models use the same Pi registry lookup.
+- `thinking`: optional model-specific allowed levels; the first is the default. Supported names
+  are `none`, `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, and `max`.
+  `none` becomes Pi's explicit off state. Choose levels the registry model actually supports;
+  a profile does not add capabilities to a model. Omission defaults to off.
+- `chat.config.maxToolIterations`: agent-specific maximum consecutive tool iterations (default 100).
+- `chat.config.compaction`: agent-specific context compaction controls. Compaction defaults to
+  enabled, with `reserveTokens: 16384` and `keepRecentTokens: 20000`. Manual compaction is
+  available from chat request history; automatic compaction runs after completed Pi turns when
+  usage exceeds `contextWindow - reserveTokens`.
+
+Custom definitions belong in `~/.pi/agent/models.json` on the Assistant service host, under the
+service user's Pi configuration directory. Pi's supported registry and authentication mechanisms
+load built-in and custom models, resolve API keys and headers, and reuse/refresh credentials in
+Pi's `auth.json`. The selected registry model supplies its URL, API type, input and reasoning
+capabilities, `thinkingLevelMap`, compatibility/template settings, context window, and output limit.
+Assistant does not synthesize a substitute model or parse a second provider-definition format.
+Use short registry model display names; keep configuration parameters in their dedicated fields.
+Restart Assistant after changing the configuration or registry definitions.
+
+##### Shared request overrides
+
+Sampling is configured separately from Assistant profiles in
+`~/.pi/agent/request-overrides.json`. `PI_CODING_AGENT_DIR`, when set, selects the Pi agent
+directory instead. The shared `@kcosr/pi-request-overrides` package supplies both a Pi extension
+and Assistant's stream hook, so both consumers apply the same model-specific settings:
+
+```json
+{
+  "models": {
+    "local/model-a": {
+      "sampling": {
+        "temperature": 1.0,
+        "top_p": 0.95,
+        "top_k": 20,
+        "min_p": 0.0,
+        "presence_penalty": 0.0,
+        "repeat_penalty": 1.0
       }
     }
   }
 }
 ```
 
-- `models`: optional list of allowed model ids (first is default). Entries may be `provider/model`.
-- `thinking`: optional list of allowed thinking levels (first is default). Selected level is passed
-  to the Pi SDK reasoning option; use `off` to disable reasoning.
-- `config.provider`: default provider used when a model omits a prefix (required if any model omits a prefix).
-- `config.apiKey`, `config.baseUrl`, `config.headers`: optional connection overrides applied when
-  the resolved provider matches `config.provider`.
-- When `config.baseUrl` is set and the chosen provider has no built-in Pi model catalog entry, the
-  server synthesizes an `openai-responses` model for the configured `provider/model` id. This
-  allows custom endpoints such as local mocks or proxies to be targeted without adding extra config
-  fields.
-- `config.maxTokens`, `config.temperature`, `config.timeoutMs`: optional Pi SDK request overrides.
-- `config.contextWindow`: optional context window override used for synthesized models (providers without a built-in Pi catalog entry when `config.baseUrl` is set).
-- `config.maxToolIterations`: max consecutive tool iterations before aborting with an error
-  (default: 100).
-- `config.compaction`: optional Pi SDK context compaction controls. Compaction is enabled by
-  default with Pi-compatible defaults: `reserveTokens: 16384` and `keepRecentTokens: 20000`.
-  Manual compaction is available from the chat request history menu for in-process Pi SDK sessions, and
-  automatic threshold compaction runs after completed Pi turns when usage exceeds
-  `contextWindow - reserveTokens`.
+Only sampling overrides are implemented. The broader filename leaves room for future request
+settings; headers are not currently accepted here. Provider URLs, authentication, headers, model
+limits, reasoning mappings, and compatibility settings remain exclusively in Pi's registry.
+Assistant profiles contain only model IDs and thinking choices. Omitted sampling values retain
+SDK/server defaults; adding an override deliberately changes requests for that exact model.
+
+Supported fields are `temperature` (0–2), `top_p` and `min_p` (0–1), `top_k` (nonnegative integer),
+`presence_penalty` (-2–2), and `repeat_penalty` (positive). API compatibility is checked by the
+shared package; unsupported overrides fail instead of being silently ignored.
+
+Local Pi runtimes can discover the installed Pi extension. Remote or isolated runtimes that disable
+extensions need explicit integration with the shared package. Merely placing the overrides file
+on disk does not enable it in an extension-disabled runtime.
+
+##### Reasoning transport
+
+For models with template-controlled reasoning, enabling thinking alone may not select effort.
+A registry definition exposing medium and xhigh needs
+both a `thinkingLevelMap` admitting `medium` and `xhigh` and generic chat-template settings that
+transmit Pi's selected effort as well as the thinking toggle. A literal `xhigh` template value or
+`qwen-chat-template` toggle-only format cannot implement the profile's medium choice.
+
+##### Migrating existing Pi agents
+
+1. Back up Assistant's configuration and Pi's `models.json` before changing either.
+2. Move each inline provider definition into Pi's registry, preserving that provider's endpoint,
+   authentication, API, limits, headers, and capabilities. Do not share one provider's settings
+   with another. Expand unqualified model IDs into `provider/model` references.
+3. Create named `chatProfiles`, moving ordered model choices and model-specific thinking choices
+   into each profile. Preserve the default ordering. Move active sampling overrides into the
+   shared Pi `request-overrides.json` file, not into the profile. Back up that file before editing
+   it if it already exists.
+4. Set each affected agent's `chatProfile`. Remove Pi agent `chat.models`, `chat.thinking`, and
+   obsolete `chat.config` provider/model fields, including `provider`, `api`, `baseUrl`, `apiKey`,
+   `authHeader`, `headers`, `compat`, `contextWindow`, `maxTokens`, `reasoning`, `input`, `cost`,
+   and `temperature`. Retain agent execution settings such as compaction and tool-iteration limits.
+5. Verify both registry resolution and actual requests for every affected provider before deployment.
+
+This is a configuration contract change; there is no silent inline-provider fallback. CLI agents
+retain their existing `chat.models`, `chat.thinking`, and CLI-specific `chat.config` fields.
+
+Preserve historical configuration backups and their restoration scripts unchanged. A script
+that restores the old inline configuration is not a compatible configuration restore for this
+implementation. Use it only with matching pre-migration application code, or copy
+its values into the new registry/profile contract manually. A rollback of this migration should
+restore matching application code and the newly backed-up configuration files together, including
+`request-overrides.json` if the migration changed it.
 
 Pi SDK sessions are mirrored to the Pi JSONL format so they can be resumed by the
 pi-mono CLI. Sessions are written to:
@@ -955,7 +1049,7 @@ All CLI providers share the same config shape:
     "thinking": ["off", "low", "medium", "high", "xhigh"],
     "config": {
       "wrapper": {
-        "path": "/home/kevin/devtools/container/run.sh",
+        "path": "/opt/assistant/container/run.sh",
         "env": {
           "PERSISTENT": "1",
           "PROXY": "1",

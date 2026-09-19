@@ -49,12 +49,20 @@ import type { SessionHub } from '../sessionHub';
 import type { LogicalSessionState } from '../sessionHub';
 import type { EnvConfig } from '../envConfig';
 import type { EventStore } from '../events';
-import { getAgentAvailableModels, getAgentAvailableThinkingLevels } from '../sessionModel';
+import {
+  getAgentAvailableModels,
+  getAgentAvailableThinkingLevels,
+  resolveSessionModelForRun,
+  resolveSessionThinkingForRun,
+} from '../sessionModel';
 import type { ChatCompletionToolCallState } from '../chatCompletionTypes';
 import type { SearchService } from '../search/searchService';
 import type { TtsBackendFactory } from '../tts/types';
 import { selectTtsBackendFactory } from '../tts/selectTtsBackendFactory';
-import { removePanelInventoryForConnection, updatePanelInventory } from '../panels/panelInventoryStore';
+import {
+  removePanelInventoryForConnection,
+  updatePanelInventory,
+} from '../panels/panelInventoryStore';
 import { resolveToolExposure } from '../skills';
 import type { ScheduledSessionService } from '../scheduledSessions/scheduledSessionService';
 
@@ -340,7 +348,8 @@ export class SessionRuntime {
   ): Promise<LogicalSessionState | undefined> {
     try {
       return (
-        this.sessionHub.getSessionState(sessionId) ?? (await this.sessionHub.ensureSessionState(sessionId))
+        this.sessionHub.getSessionState(sessionId) ??
+        (await this.sessionHub.ensureSessionState(sessionId))
       );
     } catch (err) {
       this.log(`failed to resolve session state for ${operation}`, err);
@@ -381,9 +390,7 @@ export class SessionRuntime {
     this.sendToClient(buildPongMessage(message, Date.now()));
   }
 
-  private async handleSetInteractionMode(
-    message: ClientSetInteractionModeMessage,
-  ): Promise<void> {
+  private async handleSetInteractionMode(message: ClientSetInteractionModeMessage): Promise<void> {
     const enabled = message.enabled === true;
     const nextState = {
       supported: this.interactionState.supported,
@@ -439,7 +446,10 @@ export class SessionRuntime {
         callId: message.callId,
         interactionId: message.interactionId,
       });
-      this.sendError('interaction_not_found', 'Interaction response did not match a pending request');
+      this.sendError(
+        'interaction_not_found',
+        'Interaction response did not match a pending request',
+      );
     }
   }
 
@@ -844,7 +854,11 @@ export class SessionRuntime {
 
     try {
       this.log('subscribe request', { sessionId: trimmed });
-      const state = await this.sessionHub.subscribeConnection(this.connection, trimmed, message.mask);
+      const state = await this.sessionHub.subscribeConnection(
+        this.connection,
+        trimmed,
+        message.mask,
+      );
       const subscribedState = await this.prepareSubscribedSessionState(state);
       const subscribedMessage: ServerSubscribedMessage = {
         type: 'subscribed',
@@ -966,9 +980,7 @@ export class SessionRuntime {
     }
   }
 
-  private async handleSetSessionThinking(
-    message: ClientSetSessionThinkingMessage,
-  ): Promise<void> {
+  private async handleSetSessionThinking(message: ClientSetSessionThinkingMessage): Promise<void> {
     const rawThinking = message.thinking;
     const trimmedThinking = typeof rawThinking === 'string' ? rawThinking.trim() : '';
     if (!trimmedThinking) {
@@ -1018,7 +1030,10 @@ export class SessionRuntime {
       return;
     }
 
-    const availableThinking = getAgentAvailableThinkingLevels(agent);
+    const availableThinking = getAgentAvailableThinkingLevels(
+      agent,
+      resolveSessionModelForRun({ agent, summary }),
+    );
     if (availableThinking.length === 0) {
       this.sendError(
         'thinking_not_supported',
@@ -1202,12 +1217,7 @@ export class SessionRuntime {
     systemPromptHasTools: boolean;
     resolution: ToolResolutionResult | null;
   }): Record<string, unknown> {
-    const {
-      targetSessionId,
-      state,
-      systemPromptHasTools,
-      resolution,
-    } = options;
+    const { targetSessionId, state, systemPromptHasTools, resolution } = options;
 
     return {
       connectionId: this.connectionId,
@@ -1247,16 +1257,26 @@ export class SessionRuntime {
       if (models.length > 0) {
         availableModels = models;
       }
-      const thinkingLevels = getAgentAvailableThinkingLevels(agent);
-      if (thinkingLevels.length > 0) {
-        availableThinking = thinkingLevels;
-      }
+      currentModel = resolveSessionModelForRun({ agent, summary });
+      currentThinking = resolveSessionThinkingForRun({ agent, summary });
+      const thinkingLevels = getAgentAvailableThinkingLevels(agent, currentModel);
+      availableThinking = thinkingLevels;
     }
 
-    if (typeof summary.model === 'string' && summary.model.trim().length > 0) {
+    if (
+      !agentId &&
+      !currentModel &&
+      typeof summary.model === 'string' &&
+      summary.model.trim().length > 0
+    ) {
       currentModel = summary.model.trim();
     }
-    if (typeof summary.thinking === 'string' && summary.thinking.trim().length > 0) {
+    if (
+      !agentId &&
+      !currentThinking &&
+      typeof summary.thinking === 'string' &&
+      summary.thinking.trim().length > 0
+    ) {
       currentThinking = summary.thinking.trim();
     }
 
@@ -1338,10 +1358,7 @@ export class SessionRuntime {
     let agentToolsForRun: AgentTool[] = [];
     let toolResolution: ToolResolutionResult | null = null;
     if (shouldResolveTools) {
-      toolResolution = await this.resolveChatCompletionTools(
-        stateForRun,
-        sessionToolHostForRun,
-      );
+      toolResolution = await this.resolveChatCompletionTools(stateForRun, sessionToolHostForRun);
       chatCompletionToolsForRun = toolResolution.specs;
       agentToolsForRun = toolResolution.agentTools;
     }
@@ -1372,7 +1389,13 @@ export class SessionRuntime {
       ttsBackendFactory: this.ttsBackendFactory,
       eventStore: this.eventStore,
       handleChatToolCalls: (sessionId, state, toolCalls) =>
-        this.handleChatToolCalls(sessionId, state, toolCalls, sessionToolHostForRun, agentToolsForRun),
+        this.handleChatToolCalls(
+          sessionId,
+          state,
+          toolCalls,
+          sessionToolHostForRun,
+          agentToolsForRun,
+        ),
       setActiveRunState: (active) => {
         this.activeRunStates.set(active.sessionId, active);
       },
@@ -1507,7 +1530,11 @@ export class SessionRuntime {
       activeRunState,
       sessionHub: this.sessionHub,
       broadcastOutputCancelled: (sessionId, responseId) => {
-        this.sendOutputCancelled(sessionId, responseId, activeRunState?.state.activeChatRun?.requestId);
+        this.sendOutputCancelled(
+          sessionId,
+          responseId,
+          activeRunState?.state.activeChatRun?.requestId,
+        );
       },
       log: (logMessage, details) => {
         this.log(logMessage, details);

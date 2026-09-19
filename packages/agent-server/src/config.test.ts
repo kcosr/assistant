@@ -3,7 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 
 import { describe, expect, it, afterEach } from 'vitest';
-import { loadConfig } from './config';
+import { AppConfigSchema, loadConfig } from './config';
 
 function createTempFile(prefix: string): string {
   return path.join(os.tmpdir(), `${prefix}-${Date.now()}-${Math.random().toString(16)}.json`);
@@ -20,6 +20,13 @@ afterEach(() => {
 });
 
 describe('loadConfig', () => {
+  it('loads the documented example with named Pi profiles', () => {
+    const config = loadConfig(path.resolve(__dirname, '../data/config.example.json'));
+    const piAgent = config.agents.find((agent) => agent.agentId === 'pi-sdk');
+    expect(piAgent?.chatProfile).toBeTruthy();
+    expect(piAgent?.chat?.modelSettings?.length).toBeGreaterThan(0);
+  });
+
   it('loads a valid config file with agents, plugins, and mcpServers', async () => {
     const filePath = createTempFile('config-valid');
     const configJson = {
@@ -180,7 +187,7 @@ describe('loadConfig', () => {
       JSON.stringify({
         codexThreads: {
           allowedServers: ['main', 'work'],
-          allowedCwdRoots: ['/home/kevin/worktrees'],
+          allowedCwdRoots: ['/workspace/projects'],
         },
       }),
       'utf8',
@@ -191,7 +198,7 @@ describe('loadConfig', () => {
       allowedServers: ['main', 'work'],
       binary: 'codex-threads',
       permissionMode: 'app-server-default',
-      allowedCwdRoots: ['/home/kevin/worktrees'],
+      allowedCwdRoots: ['/workspace/projects'],
     });
   });
 
@@ -412,7 +419,7 @@ describe('loadConfig', () => {
           description: 'Uses a fixed workspace.',
           sessionWorkingDir: {
             mode: 'fixed',
-            path: '/home/kevin/assistant',
+            path: '/workspace/assistant',
           },
         },
         {
@@ -421,7 +428,7 @@ describe('loadConfig', () => {
           description: 'Prompts for a workspace.',
           sessionWorkingDir: {
             mode: 'prompt',
-            roots: ['/home/kevin/worktrees'],
+            roots: ['/workspace/projects'],
           },
         },
       ],
@@ -432,11 +439,11 @@ describe('loadConfig', () => {
     const config = loadConfig(filePath);
     expect(config.agents[0]?.sessionWorkingDir).toEqual({
       mode: 'fixed',
-      path: '/home/kevin/assistant',
+      path: '/workspace/assistant',
     });
     expect(config.agents[1]?.sessionWorkingDir).toEqual({
       mode: 'prompt',
-      roots: ['/home/kevin/worktrees'],
+      roots: ['/workspace/projects'],
     });
   });
 
@@ -449,7 +456,7 @@ describe('loadConfig', () => {
           displayName: 'Assistant',
           description: 'Uses a fixed workspace.',
           sessionWorkingDirMode: 'prompt',
-          sessionWorkingDirRoots: ['/home/kevin/worktrees'],
+          sessionWorkingDirRoots: ['/workspace/projects'],
         },
       ],
     };
@@ -869,133 +876,163 @@ describe('loadConfig', () => {
     );
   });
 
-  it('supports pi chat provider config with env substitution', async () => {
-    const filePath = createTempFile('config-pi');
-    const configJson = {
-      agents: [
-        {
-          agentId: 'pi',
-          displayName: 'Pi',
-          description: 'Pi SDK agent.',
-          chat: {
-            provider: 'pi',
-            models: ['anthropic/claude-sonnet-4-5'],
-            thinking: ['low'],
-            config: {
-              provider: 'anthropic',
-              api: 'openai-completions',
-              baseUrl: 'https://api.anthropic.com',
-              apiKey: '${PI_API_KEY}',
-              authHeader: true,
-              headers: {
-                'X-Request-Source': '${PI_HEADER_SOURCE}',
-              },
-              maxTokens: 4096,
-              contextWindow: 65536,
-              reasoning: true,
-              input: ['text', 'image'],
-              cost: {
-                input: 0,
-                output: 0,
-                cacheRead: 0,
-                cacheWrite: 0,
-              },
-              compat: {
-                supportsDeveloperRole: false,
-                supportsReasoningEffort: false,
-              },
-              temperature: 0.7,
-              maxToolIterations: 25,
-              compaction: {
-                enabled: true,
-                reserveTokens: 8192,
-                keepRecentTokens: 12000,
+  it('resolves a shared Pi chat profile with ordered per-model defaults', async () => {
+    const filePath = createTempFile('config-pi-profile');
+    const models = [
+      { id: 'local/qwen', thinking: ['xhigh', 'medium', 'none'] },
+      {
+        id: 'other/qwen',
+        thinking: ['medium', 'none'],
+      },
+      { id: 'anthropic/claude-sonnet-4-5' },
+    ];
+    await fs.writeFile(
+      filePath,
+      JSON.stringify({
+        chatProfiles: { local: { models } },
+        templates: { base: { chatProfile: 'local' } },
+        agents: [
+          {
+            agentId: 'pi',
+            displayName: 'Pi',
+            description: 'Pi SDK agent.',
+            extends: 'base',
+            chat: {
+              provider: 'pi',
+              config: {
+                maxToolIterations: 25,
+                compaction: { enabled: true, reserveTokens: 8192, keepRecentTokens: 12000 },
               },
             },
           },
-        },
-      ],
-    };
-
-    process.env['PI_API_KEY'] = 'test-pi-key';
-    process.env['PI_HEADER_SOURCE'] = 'assistant';
-
-    await fs.writeFile(filePath, JSON.stringify(configJson), 'utf8');
-
+          {
+            agentId: 'worker',
+            displayName: 'Worker',
+            description: 'Worker.',
+            chatProfile: 'local',
+          },
+        ],
+      }),
+      'utf8',
+    );
     const config = loadConfig(filePath);
-    expect(config.agents).toHaveLength(1);
-    const [agent] = config.agents;
-    if (!agent) {
-      throw new Error('Expected agent to be defined');
+    expect(config.chatProfiles?.['local']?.models).toEqual(models);
+    for (const agent of config.agents) {
+      expect(agent.chatProfile).toBe('local');
+      expect(agent.chat?.models).toEqual(models.map((model) => model.id));
+      expect(agent.chat?.modelSettings).toEqual(models);
+      expect(agent.chat?.thinking).toBeUndefined();
     }
-    expect(agent.chat).toEqual({
-      provider: 'pi',
-      models: ['anthropic/claude-sonnet-4-5'],
-      thinking: ['low'],
-      config: {
-        provider: 'anthropic',
-        api: 'openai-completions',
-        baseUrl: 'https://api.anthropic.com',
-        apiKey: 'test-pi-key',
-        authHeader: true,
-        headers: {
-          'X-Request-Source': 'assistant',
-        },
-        maxTokens: 4096,
-        contextWindow: 65536,
-        reasoning: true,
-        input: ['text', 'image'],
-        cost: {
-          input: 0,
-          output: 0,
-          cacheRead: 0,
-          cacheWrite: 0,
-        },
-        compat: {
-          supportsDeveloperRole: false,
-          supportsReasoningEffort: false,
-        },
-        temperature: 0.7,
-        maxToolIterations: 25,
-        compaction: {
-          enabled: true,
-          reserveTokens: 8192,
-          keepRecentTokens: 12000,
-        },
-      },
+    expect(config.agents[0]?.chat?.config).toEqual({
+      maxToolIterations: 25,
+      compaction: { enabled: true, reserveTokens: 8192, keepRecentTokens: 12000 },
     });
   });
 
-  it('rejects invalid pi sdk custom model metadata config', async () => {
-    const filePath = createTempFile('config-pi-invalid-custom-model-metadata');
-    const configJson = {
-      agents: [
-        {
-          agentId: 'pi',
-          displayName: 'Pi',
-          description: 'Pi SDK agent.',
-          chat: {
-            provider: 'pi',
-            models: ['local/model'],
-            config: {
-              provider: 'local',
-              api: 'openai-completon',
-              baseUrl: 'http://127.0.0.1:4010/v1',
-              cost: {
-                input: -1,
-              },
-              compat: {
-                supportsDeveloprRole: false,
-              },
+  it('rejects unknown chat profiles with an actionable error', () => {
+    expect(() =>
+      AppConfigSchema.parse({
+        agents: [{ agentId: 'pi', displayName: 'Pi', description: 'Pi.', chatProfile: 'missing' }],
+      }),
+    ).toThrow(/Unknown chatProfile.*missing.*define it in root chatProfiles/);
+  });
+
+  it.each(['claude-cli', 'codex-cli', 'pi-cli', 'external'])(
+    'rejects a Pi chat profile on %s agents',
+    (provider) => {
+      expect(() =>
+        AppConfigSchema.parse({
+          chatProfiles: { local: { models: [{ id: 'local/model' }] } },
+          agents: [
+            {
+              agentId: 'pi',
+              displayName: 'Pi',
+              description: 'Pi.',
+              chatProfile: 'local',
+              ...(provider === 'external'
+                ? {
+                    type: 'external',
+                    external: {
+                      inputUrl: 'https://example.com',
+                      callbackBaseUrl: 'https://example.com',
+                    },
+                  }
+                : { chat: { provider } }),
             },
-          },
+          ],
+        }),
+      ).toThrow(/chatProfile is only supported by the native Pi SDK provider/);
+    },
+  );
+
+  it.each([
+    { models: [] },
+    { models: [{ id: 'unqualified' }] },
+    { models: [{ id: 'local/' }] },
+    { models: [{ id: 'local/a b' }] },
+    { models: [{ id: 'local/a' }, { id: 'local/a' }] },
+    { models: [{ id: 'local/a', thinking: [] }] },
+    { models: [{ id: 'local/a', thinking: ['medium', 'medium'] }] },
+    { models: [{ id: 'local/a', thinking: ['guess'] }] },
+    { models: [{ id: 'local/a', baseUrl: 'https://example.com' }] },
+  ])('rejects invalid chat profile %j', (profile) => {
+    expect(() => AppConfigSchema.parse({ chatProfiles: { local: profile } })).toThrow();
+  });
+
+  it('rejects profile sampling with shared configuration guidance', () => {
+    expect(() =>
+      AppConfigSchema.parse({
+        chatProfiles: {
+          local: { models: [{ id: 'local/model', sampling: { temperature: 0.7 } }] },
         },
-      ],
-    };
+      }),
+    ).toThrow(/configure sampling in Pi agent request-overrides.json/);
+  });
 
-    await fs.writeFile(filePath, JSON.stringify(configJson), 'utf8');
+  it.each(['models', 'thinking'])('rejects obsolete inline Pi chat.%s', (field) => {
+    expect(() =>
+      AppConfigSchema.parse({
+        agents: [
+          {
+            agentId: 'pi',
+            displayName: 'Pi',
+            description: 'Pi.',
+            chat: { provider: 'pi', [field]: ['local/model'] },
+          },
+        ],
+      }),
+    ).toThrow(/use chatProfile and root chatProfiles/);
+  });
 
-    expect(() => loadConfig(filePath)).toThrow();
+  it.each([
+    'provider',
+    'api',
+    'apiKey',
+    'authHeader',
+    'baseUrl',
+    'headers',
+    'maxTokens',
+    'contextWindow',
+    'reasoning',
+    'input',
+    'cost',
+    'compat',
+    'temperature',
+  ])('rejects obsolete Pi connection/model field %s with migration guidance', (field) => {
+    expect(() =>
+      AppConfigSchema.parse({
+        agents: [
+          {
+            agentId: 'pi',
+            displayName: 'Pi',
+            description: 'Pi.',
+            chat: { provider: 'pi', config: { [field]: 'obsolete' } },
+          },
+        ],
+      }),
+    ).toThrow(
+      /move provider\/model definitions to Pi models.json and sampling to Pi agent request-overrides.json/,
+    );
   });
 
   it('throws a descriptive error for invalid JSON', async () => {

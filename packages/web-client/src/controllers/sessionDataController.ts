@@ -50,6 +50,7 @@ interface AgentSummary {
   sessionConfigCapabilities?: {
     availableModels?: string[];
     availableThinking?: string[];
+    thinkingByModel?: Record<string, string[]>;
     availableSkills?: Array<{
       id: string;
       name: string;
@@ -197,6 +198,7 @@ export class SessionDataController {
           | {
               availableModels?: string[];
               availableThinking?: string[];
+              thinkingByModel?: Record<string, string[]>;
               availableSkills?: Array<{ id: string; name: string; description: string }>;
             }
           | undefined;
@@ -208,6 +210,7 @@ export class SessionDataController {
           const raw = anyAgent.sessionConfigCapabilities as {
             availableModels?: unknown;
             availableThinking?: unknown;
+            thinkingByModel?: unknown;
             availableSkills?: unknown;
           };
           const availableModels = Array.isArray(raw.availableModels)
@@ -222,6 +225,24 @@ export class SessionDataController {
                 .map((value) => value.trim())
                 .filter((value) => value.length > 0)
             : [];
+          const thinkingByModel =
+            raw.thinkingByModel &&
+            typeof raw.thinkingByModel === 'object' &&
+            !Array.isArray(raw.thinkingByModel)
+              ? Object.fromEntries(
+                  Object.entries(raw.thinkingByModel)
+                    .filter(
+                      ([model, levels]) => availableModels.includes(model) && Array.isArray(levels),
+                    )
+                    .map(([model, levels]) => [
+                      model,
+                      (levels as unknown[])
+                        .filter((level): level is string => typeof level === 'string')
+                        .map((level) => level.trim())
+                        .filter(Boolean),
+                    ]),
+                )
+              : undefined;
           const availableSkills = Array.isArray(raw.availableSkills)
             ? raw.availableSkills
                 .filter(
@@ -239,10 +260,15 @@ export class SessionDataController {
                 }))
                 .filter((value) => value.id && value.name)
             : [];
-          if (availableModels.length > 0 || availableThinking.length > 0 || availableSkills.length > 0) {
+          if (
+            availableModels.length > 0 ||
+            availableThinking.length > 0 ||
+            availableSkills.length > 0
+          ) {
             sessionConfigCapabilities = {
               ...(availableModels.length > 0 ? { availableModels } : {}),
               ...(availableThinking.length > 0 ? { availableThinking } : {}),
+              ...(thinkingByModel ? { thinkingByModel } : {}),
               ...(availableSkills.length > 0 ? { availableSkills } : {}),
             };
           }

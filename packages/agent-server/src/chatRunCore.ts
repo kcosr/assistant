@@ -45,6 +45,7 @@ import type { TtsBackendFactory, TtsStreamingSession } from './tts/types';
 import { getCodexSessionStore } from './codexSessionStore';
 
 import {
+  isPiReasoningLevel,
   resolveCliModelForRun,
   resolveSessionModelForRun,
   resolveSessionThinkingForRun,
@@ -236,18 +237,6 @@ function isPiContextOverflow(
     'exceeds the maximum',
     'exceeded maximum',
   ].some((pattern) => errorText.includes(pattern));
-}
-
-function isPiReasoningLevel(
-  value: string,
-): value is 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' {
-  return (
-    value === 'minimal' ||
-    value === 'low' ||
-    value === 'medium' ||
-    value === 'high' ||
-    value === 'xhigh'
-  );
 }
 
 const SENSITIVE_DEBUG_KEYS = new Set([
@@ -1331,7 +1320,7 @@ export async function runChatCompletionCore(
     if (!modelSpec) {
       throw new ChatRunError(
         'agent_config_error',
-        'Pi chat requires at least one model in chat.models or a session override.',
+        'Pi chat requires at least one model in its named chat profile.',
       );
     }
 
@@ -1339,8 +1328,6 @@ export async function runChatCompletionCore(
     try {
       resolvedRuntime = await resolvePiSdkRuntimeModel({
         modelSpec,
-        ...(piConfig ? { config: piConfig } : {}),
-        log,
       });
     } catch (err) {
       throw new ChatRunError(
@@ -1380,14 +1367,7 @@ export async function runChatCompletionCore(
 
     const agentModel = resolvedRuntime.runtimeModel;
     piContextWindow = agentModel.contextWindow;
-    type PiRuntimeConfig = {
-      apiKey?: string;
-      temperature?: number;
-      maxTokens?: number;
-      headers?: Record<string, string>;
-    };
     type PiRuntimeState = {
-      requestConfig: PiRuntimeConfig;
       onPayload?: ((payload: unknown, model: Model<Api>) => unknown | Promise<unknown>) | undefined;
       agent: Agent;
     };
@@ -1396,7 +1376,6 @@ export async function runChatCompletionCore(
       ((await (async () => {
         const { Agent } = await importPiAgentCore();
         const runtime: PiRuntimeState = {
-          requestConfig: {},
           onPayload: undefined,
           agent: undefined as unknown as Agent,
         };
@@ -1408,18 +1387,10 @@ export async function runChatCompletionCore(
                 message.role === 'assistant' ||
                 message.role === 'toolResult',
             ) as PiSdkMessage[],
-          getApiKey: async () => runtime.requestConfig.apiKey,
           streamFn: async (model, context, options) =>
             streamPiSdkModel(model, context, {
               ...options,
-              ...(runtime.requestConfig.apiKey ? { apiKey: runtime.requestConfig.apiKey } : {}),
-              ...(runtime.requestConfig.temperature !== undefined
-                ? { temperature: runtime.requestConfig.temperature }
-                : {}),
-              ...(runtime.requestConfig.maxTokens !== undefined
-                ? { maxTokens: runtime.requestConfig.maxTokens }
-                : {}),
-              ...(runtime.requestConfig.headers ? { headers: runtime.requestConfig.headers } : {}),
+              maxTokens: model.maxTokens,
             }),
           onPayload: async (payload, model) =>
             runtime.onPayload ? runtime.onPayload(payload, model) : undefined,
@@ -1428,16 +1399,6 @@ export async function runChatCompletionCore(
         state.piAgentRuntime = runtime as LogicalSessionState['piAgentRuntime'];
         return runtime;
       })()) as PiRuntimeState);
-    piAgentRuntime.requestConfig = {
-      ...(resolvedRuntime.apiKey ? { apiKey: resolvedRuntime.apiKey } : {}),
-      ...(resolvedRuntime.providerMatchesConfig && piConfig?.temperature !== undefined
-        ? { temperature: piConfig.temperature }
-        : {}),
-      ...(resolvedRuntime.providerMatchesConfig && piConfig?.maxTokens !== undefined
-        ? { maxTokens: piConfig.maxTokens }
-        : {}),
-      ...(resolvedRuntime.headers ? { headers: resolvedRuntime.headers } : {}),
-    };
     piAgentRuntime.onPayload = envConfig.debugChatCompletions
       ? async (payload, model) => {
           const record = {
@@ -1793,8 +1754,7 @@ export async function runChatCompletionCore(
         summary: state.summary,
         messages: piReplayAccumulator,
         ...(modelSpec ? { modelSpec } : {}),
-        ...(piConfig?.provider ? { defaultProvider: piConfig.provider } : {}),
-        ...(thinking ? { thinkingLevel: thinking } : {}),
+        thinkingLevel: thinking ?? 'off',
         updateAttributes: (patch) => sessionHub.updateSessionAttributes(sessionId, patch),
       });
       if (updatedSummary) {
