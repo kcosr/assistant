@@ -2,7 +2,11 @@
   "id": "notes",
   "version": "0.1.0",
   "description": "Markdown notes with tags and search.",
-  "surfaces": { "tool": true, "http": true, "cli": true },
+  "surfaces": {
+    "tool": true,
+    "http": true,
+    "cli": true
+  },
   "panels": [
     {
       "type": "notes",
@@ -45,7 +49,9 @@
           },
           "tags": {
             "type": "array",
-            "items": { "type": "string" },
+            "items": {
+              "type": "string"
+            },
             "description": "Filter notes by tags (AND logic)."
           }
         }
@@ -96,7 +102,7 @@
     },
     {
       "id": "write",
-      "summary": "Create a new note or overwrite an existing one.",
+      "summary": "Create a note or replace existing content using its revision from notes_read. Returns the new revision.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -118,11 +124,64 @@
           },
           "tags": {
             "type": "array",
-            "items": { "type": "string" },
+            "items": {
+              "type": "string"
+            },
             "description": "Tags for organizing notes."
+          },
+          "expectedRevision": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Revision returned by notes_read or the last successful mutation. Required when replacing an existing note; omit only for creation."
           }
         },
         "required": ["title", "content"]
+      },
+      "capabilities": ["notes.write"]
+    },
+    {
+      "id": "patch",
+      "summary": "Apply exact text replacements to an existing note at the revision from notes_read. Every oldText must match exactly once; edits must not overlap. All edits apply together or none do. Returns the new revision.",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "instance_id": {
+            "type": "string",
+            "description": "Instance id (defaults to \"default\")."
+          },
+          "title": {
+            "type": "string",
+            "description": "Note title."
+          },
+          "expectedRevision": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Revision returned by notes_read or the last successful mutation."
+          },
+          "edits": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 100,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "oldText": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "Exact unique passage, including whitespace, in the original note body."
+                },
+                "newText": {
+                  "type": "string",
+                  "description": "Replacement text; empty deletes the passage."
+                }
+              },
+              "required": ["oldText", "newText"]
+            }
+          }
+        },
+        "required": ["title", "expectedRevision", "edits"]
       },
       "capabilities": ["notes.write"]
     },
@@ -147,6 +206,11 @@
           "overwrite": {
             "type": "boolean",
             "description": "Overwrite if the note already exists with the new title."
+          },
+          "expectedRevision": {
+            "type": "string",
+            "minLength": 1,
+            "description": "If supplied, reject when the source note revision has changed."
           }
         },
         "required": ["title", "new_title"]
@@ -174,6 +238,11 @@
           "overwrite": {
             "type": "boolean",
             "description": "Overwrite if the note already exists in the destination instance."
+          },
+          "expectedRevision": {
+            "type": "string",
+            "minLength": 1,
+            "description": "If supplied, reject when the source note revision has changed."
           }
         },
         "required": ["title", "target_instance_id"]
@@ -215,7 +284,9 @@
           },
           "tags": {
             "type": "array",
-            "items": { "type": "string" },
+            "items": {
+              "type": "string"
+            },
             "description": "Filter notes by tags (AND logic)."
           },
           "limit": {
@@ -243,7 +314,9 @@
           },
           "tags": {
             "type": "array",
-            "items": { "type": "string" },
+            "items": {
+              "type": "string"
+            },
             "description": "Tags to add."
           }
         },
@@ -267,7 +340,9 @@
           },
           "tags": {
             "type": "array",
-            "items": { "type": "string" },
+            "items": {
+              "type": "string"
+            },
             "description": "Tags to remove."
           }
         },

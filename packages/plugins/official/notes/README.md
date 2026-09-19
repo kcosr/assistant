@@ -43,6 +43,40 @@ configured instances.
 Use `rename` to change a note title within an instance, or `move` to move a note between instances;
 provide `target_instance_id` and optionally `overwrite`.
 
+### Patching and revisions
+
+`read` returns an opaque `revision` with the note content. `patch` applies a batch of
+exact replacements to that revision:
+
+```json
+{
+  "title": "Project notes",
+  "expectedRevision": "<revision from read>",
+  "edits": [{ "oldText": "Status: planned", "newText": "Status: in progress" }]
+}
+```
+
+Each `oldText` must be nonempty and occur exactly once in the original body.
+Whitespace is significant. Edits must not overlap, and all matches are resolved
+before any replacement is applied. Empty `newText` deletes a passage; to insert
+text, include a unique existing passage in both old and new text. Batches contain
+1–100 edits and either all succeed or leave the note unchanged. Tags, description,
+favorite status, and creation time are preserved. Successful mutations return the
+new revision, allowing another edit without rereading unchanged content.
+
+`write` still creates notes and replaces full content. Omit `expectedRevision` only
+when creating a new note; replacing an existing note requires its current revision.
+A stale or missing revision on replacement returns `note_conflict`. Read the note
+again and reconcile your changes instead of blindly retrying with a newer token.
+`rename` and `move` also accept an optional source `expectedRevision`.
+
+The editor sends the revision it loaded. A conflicting save keeps the draft visible
+and reports the conflict. Review/copy the draft before canceling and reopening the
+latest note. No attribution or revision history is stored. Revisions are derived
+from file contents, so existing notes need no migration. Mutations are serialized
+within the Assistant process and file contents are replaced atomically; external
+programs writing files directly do not participate in that locking.
+
 HTTP endpoint format:
 
 ```

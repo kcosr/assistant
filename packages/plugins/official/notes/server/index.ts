@@ -162,6 +162,9 @@ async function withNote(
     return await action();
   } catch (err) {
     const error = err as NodeJS.ErrnoException;
+    if (error.code === 'note_conflict' || error.code === 'invalid_arguments') {
+      throw new ToolError(error.code, error.message);
+    }
     if (error.code === 'ENOENT') {
       throw new ToolError('note_not_found', `Note not found: ${title}`);
     }
@@ -415,18 +418,70 @@ export function createPlugin(_options: PluginFactoryArgs): PluginModule {
         const parsed = asObject(args);
         const instanceId = resolveInstanceId(parsed['instance_id']);
         const title = requireNonEmptyString(parsed['title'], 'title');
-        const content = requireNonEmptyString(parsed['content'], 'content');
+        const content = parseOptionalString(parsed['content'], 'content');
+        if (content === undefined) throw new ToolError('invalid_arguments', 'content is required');
+        const expectedRevision = parseOptionalString(
+          parsed['expectedRevision'],
+          'expectedRevision',
+        );
         const tags = parseOptionalTags(parsed['tags']);
         const description = parseOptionalString(parsed['description'], 'description');
         const favorite = parseOptionalBoolean(parsed['favorite'], 'favorite');
         const store = await getStore(instanceId);
-        const result = await store.write({
+        const result = (await withNote(
+          () =>
+            store.write({
+              title,
+              content,
+              ...(expectedRevision !== undefined ? { expectedRevision } : {}),
+              ...(tags !== undefined ? { tags } : {}),
+              ...(description !== undefined ? { description } : {}),
+              ...(favorite !== undefined ? { favorite } : {}),
+            }),
           title,
-          content,
-          ...(tags !== undefined ? { tags } : {}),
-          ...(description !== undefined ? { description } : {}),
-          ...(favorite !== undefined ? { favorite } : {}),
+        )) as NoteMetadata;
+        broadcastNotesUpdate(ctx, {
+          instance_id: instanceId,
+          title: result.title,
+          action: 'note_updated',
+          note: result,
         });
+        return result;
+      },
+      patch: async (args, ctx): Promise<NoteMetadata> => {
+        const parsed = asObject(args);
+        const instanceId = resolveInstanceId(parsed['instance_id']);
+        const title = requireNonEmptyString(parsed['title'], 'title');
+        const expectedRevision = requireNonEmptyString(
+          parsed['expectedRevision'],
+          'expectedRevision',
+        );
+        const rawEdits = parsed['edits'];
+        if (!Array.isArray(rawEdits) || rawEdits.length < 1 || rawEdits.length > 100) {
+          throw new ToolError(
+            'invalid_arguments',
+            'edits must contain between 1 and 100 replacements',
+          );
+        }
+        const edits = rawEdits.map((value) => {
+          const edit = asObject(value);
+          if (
+            typeof edit['oldText'] !== 'string' ||
+            edit['oldText'].length === 0 ||
+            typeof edit['newText'] !== 'string'
+          ) {
+            throw new ToolError(
+              'invalid_arguments',
+              'Each edit requires nonempty oldText and string newText',
+            );
+          }
+          return { oldText: edit['oldText'], newText: edit['newText'] };
+        });
+        const store = await getStore(instanceId);
+        const result = (await withNote(
+          () => store.patch({ title, expectedRevision, edits }),
+          title,
+        )) as NoteMetadata;
         broadcastNotesUpdate(ctx, {
           instance_id: instanceId,
           title: result.title,
@@ -453,7 +508,20 @@ export function createPlugin(_options: PluginFactoryArgs): PluginModule {
         }
         const store = await getStore(instanceId);
         try {
-          const result = await store.rename({ title, newTitle, overwrite });
+          const expectedRevision = parseOptionalString(
+            parsed['expectedRevision'],
+            'expectedRevision',
+          );
+          const result = (await withNote(
+            () =>
+              store.rename({
+                title,
+                newTitle,
+                overwrite,
+                ...(expectedRevision !== undefined ? { expectedRevision } : {}),
+              }),
+            title,
+          )) as NoteMetadata;
           broadcastNotesUpdate(ctx, { instance_id: instanceId, title, action: 'note_deleted' });
           broadcastNotesUpdate(ctx, {
             instance_id: instanceId,
@@ -494,32 +562,37 @@ export function createPlugin(_options: PluginFactoryArgs): PluginModule {
         }
 
         const sourceStore = await getStore(instanceId);
-        const note = (await withNote(async () => sourceStore.read(title), title)) as Note;
-
         const targetStore = await getStore(targetInstanceId);
-        if (!overwrite) {
-          try {
-            await targetStore.read(title);
+        const expectedRevision = parseOptionalString(
+          parsed['expectedRevision'],
+          'expectedRevision',
+        );
+        let result: NoteMetadata;
+        try {
+          result = (await withNote(
+            () =>
+              sourceStore.moveTo(targetStore, {
+                title,
+                overwrite,
+                ...(expectedRevision !== undefined ? { expectedRevision } : {}),
+              }),
+            title,
+          )) as NoteMetadata;
+        } catch (err) {
+          if ((err as NodeJS.ErrnoException).code === 'EEXIST') {
             throw new ToolError(
               'invalid_arguments',
               `Note already exists in target instance: ${title}`,
             );
-          } catch (err) {
-            const error = err as NodeJS.ErrnoException;
-            if (error.code !== 'ENOENT') {
-              throw err;
-            }
           }
+          throw err;
         }
-
-        const result = await targetStore.writeWithMetadata(note);
         broadcastNotesUpdate(ctx, {
           instance_id: targetInstanceId,
           title: result.title,
           action: 'note_updated',
           note: result,
         });
-        await sourceStore.delete(title);
         broadcastNotesUpdate(ctx, { instance_id: instanceId, title, action: 'note_deleted' });
         return result;
       },

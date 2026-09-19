@@ -276,6 +276,7 @@ type NoteSummary = NoteMetadata & {
 };
 
 type Note = NoteMetadata & {
+  revision: string;
   content: string;
 };
 
@@ -371,7 +372,12 @@ function parseNote(value: unknown): Note | null {
     return null;
   }
   const content = typeof obj['content'] === 'string' ? obj['content'] : '';
+  const revision = typeof obj['revision'] === 'string' ? obj['revision'] : '';
+  if (!revision) {
+    return null;
+  }
   return {
+    revision,
     ...metadata,
     content,
   };
@@ -892,14 +898,11 @@ if (!registry || typeof registry.registerPanel !== 'function') {
         } else {
           const note =
             availableNotes.find(
-              (entry) =>
-                entry.title === reference.id && entry.instanceId === reference.instanceId,
+              (entry) => entry.title === reference.id && entry.instanceId === reference.instanceId,
             ) ?? activeNote;
           const noteInstanceId = note?.instanceId ?? activeNoteInstanceId;
           if (note && noteInstanceId && selectedInstanceIds.length > 1) {
-            dropdownTriggerText.textContent = `${note.title} (${getInstanceLabel(
-              noteInstanceId,
-            )})`;
+            dropdownTriggerText.textContent = `${note.title} (${getInstanceLabel(noteInstanceId)})`;
           } else {
             dropdownTriggerText.textContent = note?.title ?? 'Select a note...';
           }
@@ -1894,7 +1897,7 @@ if (!registry || typeof registry.registerPanel !== 'function') {
         const contentInput = document.createElement('textarea');
         contentInput.className = 'list-item-form-textarea note-content-textarea';
         contentInput.value = note.content;
-        contentInput.required = true;
+        contentInput.required = isNew;
 
         contentLabel.appendChild(contentInput);
         form.appendChild(contentLabel);
@@ -1921,6 +1924,8 @@ if (!registry || typeof registry.registerPanel !== 'function') {
         updateCompactMode();
 
         let isSaving = false;
+        let editorInstanceId = activeNoteInstanceId ?? activeInstanceId;
+        let expectedRevision = isNew ? undefined : note.revision;
 
         const save = async (): Promise<void> => {
           if (isSaving) {
@@ -1934,7 +1939,7 @@ if (!registry || typeof registry.registerPanel !== 'function') {
             titleInput.focus();
             return;
           }
-          if (!content) {
+          if (isNew && !content) {
             services.setStatus('Content is required');
             contentInput.focus();
             return;
@@ -1944,28 +1949,42 @@ if (!registry || typeof registry.registerPanel !== 'function') {
           saveButton.disabled = true;
           cancelButton.disabled = true;
           try {
-            const sourceInstanceId = activeNoteInstanceId ?? activeInstanceId;
+            const sourceInstanceId = editorInstanceId;
             const targetInstanceId = selectedInstanceId ?? sourceInstanceId;
             if (!isNew && sourceInstanceId !== targetInstanceId) {
-              await callInstanceOperation(sourceInstanceId, 'move', {
-                title,
-                target_instance_id: targetInstanceId,
-              });
+              const moved = await callInstanceOperation<{ revision: string }>(
+                sourceInstanceId,
+                'move',
+                { title, target_instance_id: targetInstanceId, expectedRevision },
+              );
+              expectedRevision = moved.revision;
+              editorInstanceId = targetInstanceId;
+              activeNoteInstanceId = targetInstanceId;
+              note = { ...note, revision: moved.revision };
+              activeNote = note;
+              updatePanelContext();
             }
             const nextTags = applyPinnedTag(tagInput.getTags(), pinnedCheckbox.checked);
-            const result = await callInstanceOperation<unknown>(targetInstanceId, 'write', {
-              title,
-              content: contentInput.value,
-              description,
-              tags: nextTags,
-              favorite: favoriteCheckbox.checked,
-            });
+            const result = await callInstanceOperation<NoteMetadata & { revision: string }>(
+              targetInstanceId,
+              'write',
+              {
+                title,
+                content: contentInput.value,
+                description,
+                tags: nextTags,
+                favorite: favoriteCheckbox.checked,
+                ...(expectedRevision ? { expectedRevision } : {}),
+              },
+            );
             const metadata = parseNoteMetadata(result);
             const savedTags = metadata?.tags ?? nextTags;
             const savedDescription =
               metadata?.description ?? (description.length > 0 ? description : undefined);
-            const savedFavorite = metadata?.favorite ?? (favoriteCheckbox.checked ? true : undefined);
+            const savedFavorite =
+              metadata?.favorite ?? (favoriteCheckbox.checked ? true : undefined);
             const updatedNote: Note = {
+              revision: result.revision,
               title,
               content: contentInput.value,
               tags: savedTags,
@@ -1996,7 +2015,10 @@ if (!registry || typeof registry.registerPanel !== 'function') {
             setMode('note');
           } catch (err) {
             console.error('Failed to save note', err);
-            services.setStatus('Failed to save note');
+            const detail = err instanceof Error ? err.message : 'Unknown error';
+            services.setStatus(
+              `Failed to save note: ${detail}. Your draft has been kept. If the note changed, copy your draft and reopen the latest note before saving.`,
+            );
           } finally {
             isSaving = false;
             saveButton.disabled = false;
@@ -2014,8 +2036,8 @@ if (!registry || typeof registry.registerPanel !== 'function') {
             setMode('browser');
             return;
           }
-          renderNoteView(note);
-          setMode('note');
+          isEditing = false;
+          void loadNote(note.title, editorInstanceId, { silent: true });
         });
 
         saveButton.addEventListener('click', (event) => {
@@ -2061,6 +2083,7 @@ if (!registry || typeof registry.registerPanel !== 'function') {
         const resolvedInstanceId =
           instanceId ?? getInstanceSelectionOptions()?.preferredInstanceId ?? activeInstanceId;
         const draft: Note = {
+          revision: '',
           title: '',
           content: '',
           tags: [],
@@ -2077,10 +2100,7 @@ if (!registry || typeof registry.registerPanel !== 'function') {
         setMode('note');
       };
 
-      const openExistingNoteEditor = async (
-        title: string,
-        instanceId: string,
-      ): Promise<void> => {
+      const openExistingNoteEditor = async (title: string, instanceId: string): Promise<void> => {
         if (!title || !instanceId) {
           return;
         }
@@ -2404,7 +2424,12 @@ if (!registry || typeof registry.registerPanel !== 'function') {
         if (!title) {
           return;
         }
-        if (activeNoteTitle === title && activeNoteInstanceId === instanceId && activeNote && !isEditing) {
+        if (
+          activeNoteTitle === title &&
+          activeNoteInstanceId === instanceId &&
+          activeNote &&
+          !isEditing
+        ) {
           updateDropdownSelection({ type: 'note', id: title, instanceId });
           renderNoteView(activeNote);
           setMode('note');
@@ -2452,6 +2477,9 @@ if (!registry || typeof registry.registerPanel !== 'function') {
         }
 
         if (action === 'note_deleted') {
+          if (isEditing) {
+            return;
+          }
           activeNoteTitle = null;
           activeNoteInstanceId = null;
           activeNote = null;
@@ -2554,10 +2582,7 @@ if (!registry || typeof registry.registerPanel !== 'function') {
       }
 
       void refreshInstances({ silent: true }).then(() => {
-        if (
-          initialInstanceIds &&
-          initialInstanceIds.join('|') !== selectedInstanceIds.join('|')
-        ) {
+        if (initialInstanceIds && initialInstanceIds.join('|') !== selectedInstanceIds.join('|')) {
           initialTitle = null;
           initialNoteInstanceId = null;
         }

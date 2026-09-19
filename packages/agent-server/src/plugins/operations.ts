@@ -570,7 +570,7 @@ function resolveOperationErrorStatus(code: string | undefined): number {
   if (code === 'invalid_arguments') {
     return 400;
   }
-  if (code === 'session_busy') {
+  if (code === 'session_busy' || code === 'note_conflict') {
     return 409;
   }
   if (code === 'tool_not_found') {

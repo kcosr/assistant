@@ -1,10 +1,21 @@
-import { mkdir, readdir, readFile, stat, unlink, writeFile } from 'node:fs/promises';
+import { readdir, readFile, stat, unlink } from 'node:fs/promises';
 import path from 'node:path';
 
 import type { Note, NoteMetadata, NoteSearchResult } from './types';
 import { parseFrontmatter, serializeFrontmatter } from './frontmatter';
 import { NotePathResolver } from './notePaths';
 import { hasAllTags, normalizeTags } from '@assistant/shared';
+
+import {
+  InvalidNotePatchError,
+  atomicWrite,
+  checkRevision,
+  noteRevision,
+  patchNoteBody,
+  withNoteLocks,
+  type NoteEdit,
+} from './noteMutations';
+export { NotesConflictError, InvalidNotePatchError } from './noteMutations';
 
 const DEFAULT_SEARCH_LIMIT = 20;
 
@@ -140,7 +151,23 @@ export class NotesStore {
       updated,
       ...(description ? { description } : {}),
       content,
+      revision: noteRevision(fileContent),
     };
+  }
+
+  private async raw(file: string): Promise<string | undefined> {
+    try {
+      return await readFile(file, 'utf-8');
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined;
+      throw error;
+    }
+  }
+
+  private async save(file: string, metadata: NoteMetadata, content: string): Promise<NoteMetadata> {
+    const raw = serializeFrontmatter(metadata, content);
+    await atomicWrite(file, raw);
+    return { ...metadata, revision: noteRevision(raw) };
   }
 
   async write(params: {
@@ -149,238 +176,147 @@ export class NotesStore {
     tags?: string[];
     description?: string;
     favorite?: boolean;
+    expectedRevision?: string;
   }): Promise<NoteMetadata> {
-    const { title, content } = params;
-    const { filePath } = this.paths.resolvePath(title);
-
-    let existingMetadata: Partial<NoteMetadata> | undefined;
-    try {
-      const existingContent = await readFile(filePath, 'utf-8');
-      const parsed = parseFrontmatter(existingContent);
-      existingMetadata = parsed.metadata;
-    } catch (err) {
-      const error = err as NodeJS.ErrnoException;
-      if (error.code !== 'ENOENT') {
-        throw err;
-      }
-    }
-
-    const now = new Date().toISOString();
-    const created = existingMetadata?.created ?? now;
-    const tags = params.tags ?? existingMetadata?.tags ?? [];
-    let description: string | undefined;
-    if (params.description !== undefined) {
-      const trimmed = params.description.trim();
-      description = trimmed ? params.description : undefined;
-    } else if (typeof existingMetadata?.description === 'string') {
-      description = existingMetadata.description;
-    }
-
-    let favorite: boolean | undefined;
-    if (params.favorite !== undefined) {
-      favorite = params.favorite === true ? true : undefined;
-    } else if (existingMetadata?.favorite === true) {
-      favorite = true;
-    }
-
-    const metadata: NoteMetadata = {
-      title,
-      tags: normalizeTags(tags),
-      created,
-      updated: now,
-      ...(favorite ? { favorite: true } : {}),
-      ...(description ? { description } : {}),
-    };
-
-    const serialized = serializeFrontmatter(metadata, content);
-    await mkdir(this.baseDir, { recursive: true });
-    await writeFile(filePath, serialized, 'utf-8');
-    return metadata;
+    const { filePath } = this.paths.resolvePath(params.title);
+    return withNoteLocks([filePath], async () => {
+      const raw = await this.raw(filePath);
+      checkRevision(raw, params.expectedRevision);
+      const existing = raw === undefined ? {} : parseFrontmatter(raw).metadata;
+      const now = new Date().toISOString();
+      const description = params.description ?? existing.description;
+      const metadata: NoteMetadata = {
+        title: params.title,
+        tags: normalizeTags(params.tags ?? existing.tags ?? []),
+        created: existing.created ?? now,
+        updated: now,
+        ...((params.favorite ?? existing.favorite) === true ? { favorite: true } : {}),
+        ...(description?.trim() ? { description } : {}),
+      };
+      return this.save(filePath, metadata, params.content);
+    });
   }
 
-  async writeWithMetadata(note: Note): Promise<NoteMetadata> {
-    const { filePath } = this.paths.resolvePath(note.title);
-    const now = new Date().toISOString();
-    const metadata: NoteMetadata = {
-      title: note.title,
-      tags: normalizeTags(note.tags ?? []),
-      ...(note.favorite === true ? { favorite: true } : {}),
-      created: note.created || now,
-      updated: note.updated || now,
-      ...(note.description && note.description.trim() ? { description: note.description } : {}),
-    };
-
-    const serialized = serializeFrontmatter(metadata, note.content);
-    await mkdir(this.baseDir, { recursive: true });
-    await writeFile(filePath, serialized, 'utf-8');
-    return metadata;
+  async patch(params: {
+    title: string;
+    expectedRevision: string;
+    edits: NoteEdit[];
+  }): Promise<NoteMetadata> {
+    if (typeof params.expectedRevision !== 'string' || !params.expectedRevision) {
+      throw new InvalidNotePatchError(
+        'expectedRevision is required. Read the note before patching.',
+      );
+    }
+    const { filePath } = this.paths.resolvePath(params.title);
+    return withNoteLocks([filePath], async () => {
+      const raw = await this.raw(filePath);
+      checkRevision(raw, params.expectedRevision);
+      const note = await this.read(params.title);
+      const content = patchNoteBody(note.content, params.edits);
+      const { content: _body, revision: _revision, ...metadata } = note;
+      if (content === note.content) return { ...metadata, revision: note.revision };
+      return this.save(filePath, { ...metadata, updated: new Date().toISOString() }, content);
+    });
   }
 
   async rename(params: {
     title: string;
     newTitle: string;
     overwrite?: boolean;
+    expectedRevision?: string;
   }): Promise<NoteMetadata> {
-    const { title, newTitle, overwrite } = params;
-    const source = this.paths.resolvePath(title);
-    const target = this.paths.resolvePath(newTitle);
-    const fileContent = await readFile(source.filePath, 'utf-8');
-    const { metadata, content } = parseFrontmatter(fileContent);
+    return this.transfer(
+      this,
+      params.title,
+      params.newTitle,
+      params.overwrite,
+      params.expectedRevision,
+      true,
+    );
+  }
 
-    const now = new Date().toISOString();
-    const created = metadata.created ?? now;
-    const tags = normalizeTags(metadata.tags);
-    const description =
-      typeof metadata.description === 'string' && metadata.description.trim().length > 0
-        ? metadata.description
-        : undefined;
-    const updated = now;
+  async moveTo(
+    target: NotesStore,
+    params: {
+      title: string;
+      overwrite?: boolean;
+      expectedRevision?: string;
+    },
+  ): Promise<NoteMetadata> {
+    return this.transfer(
+      target,
+      params.title,
+      params.title,
+      params.overwrite,
+      params.expectedRevision,
+      false,
+    );
+  }
 
-    const newMetadata: NoteMetadata = {
-      title: newTitle,
-      tags,
-      created,
-      updated,
-      ...(description ? { description } : {}),
-    };
-
-    const serialized = serializeFrontmatter(newMetadata, content);
-    await mkdir(this.baseDir, { recursive: true });
-
-    if (source.slug === target.slug) {
-      await writeFile(source.filePath, serialized, 'utf-8');
-      return newMetadata;
-    }
-
-    if (!overwrite) {
-      try {
-        await readFile(target.filePath, 'utf-8');
-        const existsError = new Error(`Note already exists: ${newTitle}`) as NodeJS.ErrnoException;
-        existsError.code = 'EEXIST';
-        throw existsError;
-      } catch (err) {
-        const error = err as NodeJS.ErrnoException;
-        if (error.code !== 'ENOENT') {
-          throw err;
-        }
+  private async transfer(
+    targetStore: NotesStore,
+    title: string,
+    newTitle: string,
+    overwrite: boolean | undefined,
+    expectedRevision: string | undefined,
+    renameTitle: boolean,
+  ): Promise<NoteMetadata> {
+    const source = this.paths.resolvePath(title).filePath;
+    const target = targetStore.paths.resolvePath(newTitle).filePath;
+    return withNoteLocks([source, target], async () => {
+      if (expectedRevision !== undefined) checkRevision(await this.raw(source), expectedRevision);
+      const note = await this.read(title);
+      if (source !== target && !overwrite && (await this.raw(target)) !== undefined) {
+        const error = new Error(`Note already exists: ${newTitle}`) as NodeJS.ErrnoException;
+        error.code = 'EEXIST';
+        throw error;
       }
-    }
+      const { content, revision: _revision, ...metadata } = note;
+      const result = await targetStore.save(
+        target,
+        {
+          ...metadata,
+          ...(renameTitle ? { title: newTitle, updated: new Date().toISOString() } : {}),
+        },
+        content,
+      );
+      if (source !== target) await unlink(source);
+      return result;
+    });
+  }
 
-    await writeFile(target.filePath, serialized, 'utf-8');
-    await this.delete(title);
-    return newMetadata;
+  private async update(title: string, transform: (note: Note) => void): Promise<NoteMetadata> {
+    const { filePath } = this.paths.resolvePath(title);
+    return withNoteLocks([filePath], async () => {
+      const note = await this.read(title);
+      transform(note);
+      const { content, revision: _revision, ...metadata } = note;
+      return this.save(filePath, { ...metadata, updated: new Date().toISOString() }, content);
+    });
   }
 
   async append(title: string, content: string): Promise<NoteMetadata> {
-    const { filePath } = this.paths.resolvePath(title);
-
-    const existingContent = await readFile(filePath, 'utf-8');
-    const { metadata, content: body } = parseFrontmatter(existingContent);
-
-    const now = new Date().toISOString();
-    const created = metadata.created ?? now;
-    const tags = normalizeTags(metadata.tags);
-    const description =
-      typeof metadata.description === 'string' && metadata.description.trim().length > 0
-        ? metadata.description
-        : undefined;
-    const updatedBody = body.length > 0 ? `${body}\n${content}` : content;
-
-    const newMetadata: NoteMetadata = {
-      title: metadata.title ?? title,
-      tags,
-      created,
-      updated: now,
-      ...(description ? { description } : {}),
-    };
-
-    const serialized = serializeFrontmatter(newMetadata, updatedBody);
-    await writeFile(filePath, serialized, 'utf-8');
-    return newMetadata;
+    return this.update(title, (note) => {
+      note.content = note.content.length > 0 ? `${note.content}\n${content}` : content;
+    });
   }
 
-  async addTags(title: string, tagsToAdd: string[]): Promise<NoteMetadata> {
-    const { filePath, slug } = this.paths.resolvePath(title);
-
-    let fileContent: string;
-    try {
-      fileContent = await readFile(filePath, 'utf-8');
-    } catch (err) {
-      const error = err as NodeJS.ErrnoException;
-      if (error.code === 'ENOENT') {
-        throw err;
-      }
-      throw err;
-    }
-
-    const { metadata, content } = parseFrontmatter(fileContent);
-
-    const now = new Date().toISOString();
-    const created = metadata.created ?? now;
-    const existingTags = normalizeTags(metadata.tags);
-    const description =
-      typeof metadata.description === 'string' && metadata.description.trim().length > 0
-        ? metadata.description
-        : undefined;
-    const combinedTags = normalizeTags([...existingTags, ...tagsToAdd]);
-
-    const newMetadata: NoteMetadata = {
-      title: metadata.title ?? title ?? this.paths.titleFromSlug(slug),
-      tags: combinedTags,
-      created,
-      updated: now,
-      ...(description ? { description } : {}),
-    };
-
-    const serialized = serializeFrontmatter(newMetadata, content);
-    await mkdir(this.baseDir, { recursive: true });
-    await writeFile(filePath, serialized, 'utf-8');
-    return newMetadata;
+  async addTags(title: string, tags: string[]): Promise<NoteMetadata> {
+    return this.update(title, (note) => {
+      note.tags = normalizeTags([...note.tags, ...tags]);
+    });
   }
 
-  async removeTags(title: string, tagsToRemove: string[]): Promise<NoteMetadata> {
-    const { filePath, slug } = this.paths.resolvePath(title);
-
-    let fileContent: string;
-    try {
-      fileContent = await readFile(filePath, 'utf-8');
-    } catch (err) {
-      const error = err as NodeJS.ErrnoException;
-      if (error.code === 'ENOENT') {
-        throw err;
-      }
-      throw err;
-    }
-
-    const { metadata, content } = parseFrontmatter(fileContent);
-
-    const now = new Date().toISOString();
-    const created = metadata.created ?? now;
-    const existingTags = normalizeTags(metadata.tags);
-    const description =
-      typeof metadata.description === 'string' && metadata.description.trim().length > 0
-        ? metadata.description
-        : undefined;
-    const removeNormalized = normalizeTags(tagsToRemove);
-    const remainingTags = existingTags.filter((tag) => !removeNormalized.includes(tag));
-
-    const newMetadata: NoteMetadata = {
-      title: metadata.title ?? title ?? this.paths.titleFromSlug(slug),
-      tags: remainingTags,
-      created,
-      updated: now,
-      ...(description ? { description } : {}),
-    };
-
-    const serialized = serializeFrontmatter(newMetadata, content);
-    await mkdir(this.baseDir, { recursive: true });
-    await writeFile(filePath, serialized, 'utf-8');
-    return newMetadata;
+  async removeTags(title: string, tags: string[]): Promise<NoteMetadata> {
+    const removing = normalizeTags(tags);
+    return this.update(title, (note) => {
+      note.tags = note.tags.filter((tag) => !removing.includes(tag));
+    });
   }
 
   async delete(title: string): Promise<void> {
     const { filePath } = this.paths.resolvePath(title);
-    await unlink(filePath);
+    await withNoteLocks([filePath], () => unlink(filePath));
   }
 
   async search(params: {

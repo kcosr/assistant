@@ -80,6 +80,7 @@ describe('NotesStore (plugin)', () => {
     const second = await store.write({
       title: 'Daily Log',
       content: 'Day 2',
+      expectedRevision: first.revision!,
     });
 
     expect(second.created).toBe(first.created);
@@ -180,12 +181,14 @@ describe('NotesStore (plugin)', () => {
     const preserved = await store.write({
       title: 'Summary Note',
       content: 'Updated content',
+      expectedRevision: (await store.read('Summary Note')).revision,
     });
     expect(preserved.description).toBe('Initial description');
 
     const cleared = await store.write({
       title: 'Summary Note',
       content: 'Cleared description',
+      expectedRevision: preserved.revision!,
       description: '',
     });
     expect(cleared.description).toBeUndefined();
