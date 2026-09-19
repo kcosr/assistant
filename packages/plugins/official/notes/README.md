@@ -43,6 +43,23 @@ configured instances.
 Use `rename` to change a note title within an instance, or `move` to move a note between instances;
 provide `target_instance_id` and optionally `overwrite`.
 
+### Appending
+
+Use `append` (`notes_append`) to add text to an existing note without reading or
+replacing its current contents:
+
+```json
+{ "title": "Journal", "text": "\n\n## Update\nFinished the first draft." }
+```
+
+Text is concatenated exactly; include any desired spaces or newlines. The operation
+preserves metadata, uses the same mutation lock as other note edits, and returns
+metadata with the new `revision`. An optional `expectedRevision` rejects an append
+when the note has changed since that revision. Without it, the text is appended to
+the latest content. Missing notes return `note_not_found`; append never creates a
+note. Empty text is a no-op that returns the current revision. Retrying a successful
+append duplicates its text; after an uncertain response, read before retrying.
+
 ### Patching and revisions
 
 `read` returns an opaque `revision` with the note content. `patch` applies a batch of

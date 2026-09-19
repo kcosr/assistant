@@ -11,6 +11,8 @@
 
 ### Added
 
+- Added `notes_append` for exact additions to existing notes, with optional revision checking and updated revision metadata returned. ([#139](https://github.com/kcosr/assistant/pull/139))
+
 - Added `notes_patch` for atomic exact-text edit batches, note revision tokens, and conflict protection for editor saves that preserves drafts when notes change. ([#139](https://github.com/kcosr/assistant/pull/139))
 
 - Added per-agent Bash command-prefix and write/edit directory exceptions to native tool approvals, including intentional support for trailing shell pipes and chains. ([#136](https://github.com/kcosr/assistant/pull/136))

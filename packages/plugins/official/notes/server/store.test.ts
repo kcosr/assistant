@@ -104,7 +104,7 @@ describe('NotesStore (plugin)', () => {
     });
 
     vi.setSystemTime(new Date('2024-01-02T00:00:00.000Z'));
-    const meta = await store.append('Journal', 'Entry 2');
+    const meta = await store.append({ title: 'Journal', text: '\nEntry 2' });
 
     expect(meta.created).toBe('2024-01-01T00:00:00.000Z');
     expect(meta.updated).toBe('2024-01-02T00:00:00.000Z');

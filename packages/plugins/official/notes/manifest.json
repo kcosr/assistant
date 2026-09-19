@@ -186,6 +186,35 @@
       "capabilities": ["notes.write"]
     },
     {
+      "id": "append",
+      "summary": "Append text exactly to an existing note without reading or replacing its current content. Include desired newlines in text. Returns the new revision. Repeating a successful append adds the text again.",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "instance_id": {
+            "type": "string",
+            "description": "Instance id (defaults to \"default\")."
+          },
+          "title": {
+            "type": "string",
+            "description": "Note title."
+          },
+          "text": {
+            "type": "string",
+            "description": "Text to append verbatim; no separator or newline is added automatically."
+          },
+          "expectedRevision": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Optional revision from read or a successful mutation; rejects changes since that revision."
+          }
+        },
+        "required": ["title", "text"]
+      },
+      "capabilities": ["notes.write"]
+    },
+    {
       "id": "rename",
       "summary": "Rename a note.",
       "inputSchema": {

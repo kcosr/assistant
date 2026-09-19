@@ -8,6 +8,7 @@ import { hasAllTags, normalizeTags } from '@assistant/shared';
 
 import {
   InvalidNotePatchError,
+  NotesConflictError,
   atomicWrite,
   checkRevision,
   noteRevision,
@@ -295,9 +296,24 @@ export class NotesStore {
     });
   }
 
-  async append(title: string, content: string): Promise<NoteMetadata> {
-    return this.update(title, (note) => {
-      note.content = note.content.length > 0 ? `${note.content}\n${content}` : content;
+  async append(params: {
+    title: string;
+    text: string;
+    expectedRevision?: string;
+  }): Promise<NoteMetadata> {
+    const { filePath } = this.paths.resolvePath(params.title);
+    return withNoteLocks([filePath], async () => {
+      const note = await this.read(params.title);
+      if (params.expectedRevision !== undefined && params.expectedRevision !== note.revision) {
+        throw new NotesConflictError('Note changed. Read the note and reconcile before appending.');
+      }
+      const { content, revision, ...metadata } = note;
+      if (params.text.length === 0) return { ...metadata, revision };
+      return this.save(
+        filePath,
+        { ...metadata, updated: new Date().toISOString() },
+        content + params.text,
+      );
     });
   }
 

@@ -448,6 +448,34 @@ export function createPlugin(_options: PluginFactoryArgs): PluginModule {
         });
         return result;
       },
+      append: async (args, ctx): Promise<NoteMetadata> => {
+        const parsed = asObject(args);
+        const instanceId = resolveInstanceId(parsed['instance_id']);
+        const title = requireNonEmptyString(parsed['title'], 'title');
+        const text = parseOptionalString(parsed['text'], 'text');
+        if (text === undefined) throw new ToolError('invalid_arguments', 'text is required');
+        const expectedRevision =
+          parsed['expectedRevision'] === undefined
+            ? undefined
+            : requireNonEmptyString(parsed['expectedRevision'], 'expectedRevision');
+        const store = await getStore(instanceId);
+        const result = (await withNote(
+          () =>
+            store.append({
+              title,
+              text,
+              ...(expectedRevision !== undefined ? { expectedRevision } : {}),
+            }),
+          title,
+        )) as NoteMetadata;
+        broadcastNotesUpdate(ctx, {
+          instance_id: instanceId,
+          title: result.title,
+          action: 'note_updated',
+          note: result,
+        });
+        return result;
+      },
       patch: async (args, ctx): Promise<NoteMetadata> => {
         const parsed = asObject(args);
         const instanceId = resolveInstanceId(parsed['instance_id']);

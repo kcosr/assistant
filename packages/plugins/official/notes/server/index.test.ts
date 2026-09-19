@@ -26,6 +26,55 @@ function createTestPlugin() {
 }
 
 describe('notes plugin operations', () => {
+  it('exposes append with optional revision, exact formatting, and update broadcasts', async () => {
+    const plugin = createTestPlugin();
+    await plugin.initialize(createTempDataDir());
+    const ctx = createTestContext();
+    const ops = plugin.operations!;
+    const initial = (await ops.write({ title: 'Append note', content: 'Body' }, ctx)) as {
+      revision: string;
+    };
+    const { tools } = createPluginOperationSurface({
+      manifest: manifestJson as CombinedPluginManifest,
+      handlers: ops,
+    });
+    const append = tools.find((tool) => tool.name === 'notes_append')!;
+    expect(append).toBeDefined();
+    const broadcastToAll = vi.fn();
+    ctx.sessionHub = { broadcastToAll } as unknown as NonNullable<ToolContext['sessionHub']>;
+    const result = (await append.handler({ title: 'Append note', text: '\n  added\n' }, ctx)) as {
+      revision: string;
+    };
+    expect(result.revision).not.toBe(initial.revision);
+    expect(await ops.read({ title: 'Append note' }, ctx)).toMatchObject({
+      content: 'Body\n  added\n',
+      revision: result.revision,
+    });
+    expect(broadcastToAll).toHaveBeenCalledWith(
+      expect.objectContaining({
+        payload: expect.objectContaining({
+          action: 'note_updated',
+          note: expect.objectContaining({ revision: result.revision }),
+        }),
+      }),
+    );
+    broadcastToAll.mockClear();
+    await expect(
+      append.handler(
+        { title: 'Append note', text: 'lost', expectedRevision: initial.revision },
+        ctx,
+      ),
+    ).rejects.toMatchObject({ code: 'note_conflict' });
+    expect(broadcastToAll).not.toHaveBeenCalled();
+    await expect(append.handler({ title: 'Missing', text: 'x' }, ctx)).rejects.toMatchObject({
+      code: 'note_not_found',
+    });
+    await expect(ops.append({ title: 'Append note' }, ctx)).rejects.toMatchObject({
+      code: 'invalid_arguments',
+    });
+    await plugin.shutdown?.();
+  });
+
   it('publishes notes_patch as a tool and returns HTTP 409 on stale revisions', async () => {
     const plugin = createTestPlugin();
     await plugin.initialize(createTempDataDir());

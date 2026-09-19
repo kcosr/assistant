@@ -25,6 +25,44 @@ async function seed(content = 'one two three') {
 }
 
 describe('note revisions and patches', () => {
+  it('appends exact text and returns revisions without requiring a read', async () => {
+    const original = await seed('Body');
+    const result = await store.append({ title: 'Note', text: '  suffix\r\n' });
+    const note = await store.read('Note');
+    expect(note).toMatchObject({
+      content: 'Body  suffix\r\n',
+      revision: result.revision,
+      tags: original.tags,
+      favorite: true,
+      description: original.description,
+      created: original.created,
+    });
+    expect(result.revision).not.toBe(original.revision);
+    await expect(
+      store.append({ title: 'Note', text: 'lost', expectedRevision: original.revision }),
+    ).rejects.toMatchObject({ code: 'note_conflict' });
+    expect(await store.read('Note')).toEqual(note);
+    const noop = await store.append({ title: 'Note', text: '', expectedRevision: note.revision });
+    expect(noop.revision).toBe(note.revision);
+    await store.append({ title: 'Note', text: 'next', expectedRevision: result.revision! });
+    expect((await store.read('Note')).content).toBe('Body  suffix\r\nnext');
+    await expect(store.append({ title: 'Missing', text: 'no creation' })).rejects.toMatchObject({
+      code: 'ENOENT',
+    });
+  });
+
+  it('keeps simultaneous appends and fences a stale replacement', async () => {
+    const original = await seed('');
+    await Promise.all([
+      store.append({ title: 'Note', text: 'first' }),
+      new NotesStore(directory).append({ title: 'Note', text: 'second' }),
+    ]);
+    expect((await store.read('Note')).content).toBe('firstsecond');
+    await expect(
+      store.write({ title: 'Note', content: 'lost', expectedRevision: original.revision }),
+    ).rejects.toMatchObject({ code: 'note_conflict' });
+  });
+
   it('requires the current revision for replacement and never recreates a deleted note', async () => {
     const note = await seed();
     await expect(store.write({ title: 'Note', content: 'wrong' })).rejects.toMatchObject({
@@ -197,7 +235,7 @@ describe('note revisions and patches', () => {
     await seed();
     await Promise.all([
       store.addTags('Note', ['new']),
-      new NotesStore(directory).append('Note', 'appended'),
+      new NotesStore(directory).append({ title: 'Note', text: '\nappended' }),
     ]);
     const note = await store.read('Note');
     expect(note.tags).toEqual(['work', 'new']);
