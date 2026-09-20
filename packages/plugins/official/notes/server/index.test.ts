@@ -7,6 +7,8 @@ import type { ToolContext } from '../../../../agent-server/src/tools';
 import type { CombinedPluginManifest } from '@assistant/shared';
 import manifestJson from '../manifest.json';
 import { createPlugin } from './index';
+import { createPluginOperationSurface } from '../../../../agent-server/src/plugins/operations';
+import type { HttpContext } from '../../../../agent-server/src/http/types';
 
 function createTempDataDir(): string {
   return path.join(os.tmpdir(), `notes-plugin-test-${Date.now()}-${Math.random().toString(16)}`);
@@ -24,6 +26,217 @@ function createTestPlugin() {
 }
 
 describe('notes plugin operations', () => {
+  it('exposes append with optional revision, exact formatting, and update broadcasts', async () => {
+    const plugin = createTestPlugin();
+    await plugin.initialize(createTempDataDir());
+    const ctx = createTestContext();
+    const ops = plugin.operations!;
+    const initial = (await ops.write({ title: 'Append note', content: 'Body' }, ctx)) as {
+      revision: string;
+    };
+    const { tools } = createPluginOperationSurface({
+      manifest: manifestJson as CombinedPluginManifest,
+      handlers: ops,
+    });
+    const append = tools.find((tool) => tool.name === 'notes_append')!;
+    expect(append).toBeDefined();
+    const broadcastToAll = vi.fn();
+    ctx.sessionHub = { broadcastToAll } as unknown as NonNullable<ToolContext['sessionHub']>;
+    const result = (await append.handler({ title: 'Append note', text: '\n  added\n' }, ctx)) as {
+      revision: string;
+    };
+    expect(result.revision).not.toBe(initial.revision);
+    expect(await ops.read({ title: 'Append note' }, ctx)).toMatchObject({
+      content: 'Body\n  added\n',
+      revision: result.revision,
+    });
+    expect(broadcastToAll).toHaveBeenCalledWith(
+      expect.objectContaining({
+        payload: expect.objectContaining({
+          action: 'note_updated',
+          note: expect.objectContaining({ revision: result.revision }),
+        }),
+      }),
+    );
+    broadcastToAll.mockClear();
+    await expect(
+      append.handler(
+        { title: 'Append note', text: 'lost', expectedRevision: initial.revision },
+        ctx,
+      ),
+    ).rejects.toMatchObject({ code: 'note_conflict' });
+    expect(broadcastToAll).not.toHaveBeenCalled();
+    await expect(append.handler({ title: 'Missing', text: 'x' }, ctx)).rejects.toMatchObject({
+      code: 'note_not_found',
+    });
+    await expect(ops.append({ title: 'Append note' }, ctx)).rejects.toMatchObject({
+      code: 'invalid_arguments',
+    });
+    await plugin.shutdown?.();
+  });
+
+  it('publishes notes_patch as a tool and returns HTTP 409 on stale revisions', async () => {
+    const plugin = createTestPlugin();
+    await plugin.initialize(createTempDataDir());
+    const ctx = createTestContext();
+    const ops = plugin.operations!;
+    const note = (await ops.write({ title: 'HTTP note', content: 'Original' }, ctx)) as {
+      revision: string;
+    };
+    const { tools, httpRoutes } = createPluginOperationSurface({
+      manifest: manifestJson as CombinedPluginManifest,
+      handlers: ops,
+    });
+    const tool = tools.find((tool) => tool.name === 'notes_patch');
+    expect(tool).toBeDefined();
+    await tool!.handler(
+      {
+        title: 'HTTP note',
+        expectedRevision: note.revision,
+        edits: [{ oldText: 'Original', newText: 'Changed' }],
+      },
+      ctx,
+    );
+    const sendJson = vi.fn();
+    const url = new URL('http://localhost/api/plugins/notes/operations/patch');
+    const handled = await httpRoutes[0]!(
+      { httpToolContext: ctx, sessionHub: { broadcastToAll: vi.fn() } } as unknown as HttpContext,
+      { method: 'POST' } as never,
+      {} as never,
+      url,
+      url.pathname.split('/').filter(Boolean),
+      {
+        sendJson,
+        readJsonBody: async () => ({
+          title: 'HTTP note',
+          expectedRevision: note.revision,
+          edits: [{ oldText: 'Changed', newText: 'Lost' }],
+        }),
+      },
+    );
+    expect(handled).toBe(true);
+    expect(sendJson).toHaveBeenCalledWith(409, expect.objectContaining({ code: 'note_conflict' }));
+    await plugin.shutdown?.();
+  });
+
+  it('exposes revision-checked patches and replacement through plugin operations', async () => {
+    const plugin = createTestPlugin();
+    await plugin.initialize(createTempDataDir());
+    const ctx = createTestContext();
+    const ops = plugin.operations!;
+    const created = (await ops.write(
+      { title: 'Patch note', content: '  First\nSecond\n', tags: ['keep'], favorite: true },
+      ctx,
+    )) as { revision: string };
+    const read = (await ops.read({ title: 'Patch note' }, ctx)) as {
+      revision: string;
+      content: string;
+    };
+    expect(read.revision).toBe(created.revision);
+    expect(read.content).toBe('  First\nSecond\n');
+    const patched = (await ops.patch(
+      {
+        title: 'Patch note',
+        expectedRevision: read.revision,
+        edits: [
+          { oldText: 'First', newText: 'Changed' },
+          { oldText: 'Second', newText: '' },
+        ],
+      },
+      ctx,
+    )) as { revision: string };
+    expect(patched.revision).not.toBe(read.revision);
+    expect(await ops.read({ title: 'Patch note' }, ctx)).toMatchObject({
+      content: '  Changed\n\n',
+      tags: ['keep'],
+      favorite: true,
+      revision: patched.revision,
+    });
+    await expect(
+      ops.patch(
+        {
+          title: 'Patch note',
+          expectedRevision: read.revision,
+          edits: [{ oldText: 'Changed', newText: 'Lost' }],
+        },
+        ctx,
+      ),
+    ).rejects.toMatchObject({ code: 'note_conflict' });
+    await expect(ops.write({ title: 'Patch note', content: 'Lost' }, ctx)).rejects.toMatchObject({
+      code: 'note_conflict',
+    });
+    const replaced = (await ops.write(
+      { title: 'Patch note', expectedRevision: patched.revision, content: '' },
+      ctx,
+    )) as { revision: string };
+    expect(await ops.read({ title: 'Patch note' }, ctx)).toMatchObject({
+      content: '',
+      revision: replaced.revision,
+    });
+    await plugin.shutdown?.();
+  });
+
+  it('rejects an invalid patch batch without writing or broadcasting an update', async () => {
+    const plugin = createTestPlugin();
+    await plugin.initialize(createTempDataDir());
+    const ctx = createTestContext();
+    const ops = plugin.operations!;
+    const note = (await ops.write(
+      { title: 'Patch note', content: 'First repeat repeat' },
+      ctx,
+    )) as { revision: string };
+    const broadcastToAll = vi.fn();
+    ctx.sessionHub = { broadcastToAll } as unknown as NonNullable<ToolContext['sessionHub']>;
+    await expect(
+      ops.patch(
+        {
+          title: 'Patch note',
+          expectedRevision: note.revision,
+          edits: [
+            { oldText: 'First', newText: 'Changed' },
+            { oldText: 'repeat', newText: 'x' },
+          ],
+        },
+        ctx,
+      ),
+    ).rejects.toMatchObject({ code: 'note_conflict' });
+    expect(broadcastToAll).not.toHaveBeenCalled();
+    expect(await ops.read({ title: 'Patch note' }, ctx)).toMatchObject({
+      content: 'First repeat repeat',
+      revision: note.revision,
+    });
+    await expect(
+      ops.patch(
+        {
+          title: 'Patch note',
+          expectedRevision: note.revision,
+          edits: [{ oldText: '', newText: 'x' }],
+        },
+        ctx,
+      ),
+    ).rejects.toMatchObject({ code: 'invalid_arguments' });
+    await expect(
+      ops.patch({ title: 'Patch note', edits: [{ oldText: 'First', newText: 'x' }] }, ctx),
+    ).rejects.toMatchObject({ code: 'invalid_arguments' });
+    await ops.patch(
+      {
+        title: 'Patch note',
+        expectedRevision: note.revision,
+        edits: [{ oldText: 'First', newText: 'Changed' }],
+      },
+      ctx,
+    );
+    expect(broadcastToAll).toHaveBeenCalledWith(
+      expect.objectContaining({
+        payload: expect.objectContaining({
+          action: 'note_updated',
+          note: expect.objectContaining({ revision: expect.any(String) }),
+        }),
+      }),
+    );
+    await plugin.shutdown?.();
+  });
+
   it('writes, lists, reads, searches, tags, and deletes notes', async () => {
     const dataDir = createTempDataDir();
     const plugin = createTestPlugin();

@@ -6,20 +6,23 @@ import {
 } from '../../../../web-client/src/utils/keyboardShortcuts';
 
 type PanelFactory = () => {
-  mount: (container: HTMLElement, host: {
-    panelId: () => string;
-    getContext: (key: string) => unknown | null;
-    subscribeContext: (key: string, handler: (value: unknown) => void) => () => void;
-    setContext: (key: string, value: unknown) => void;
-    persistPanelState: (state: unknown) => void;
-    loadPanelState: () => unknown | null;
-    setPanelMetadata: (meta: Record<string, unknown>) => void;
-    openPanel: (panelType: string, options?: { focus?: boolean }) => string | null;
-    closePanel: (panelId: string) => void;
-    openPanelMenu?: (panelId: string, anchor: HTMLElement) => void;
-    startPanelDrag?: (panelId: string, event: PointerEvent) => void;
-    startPanelReorder?: (panelId: string, event: PointerEvent) => void;
-  }) => {
+  mount: (
+    container: HTMLElement,
+    host: {
+      panelId: () => string;
+      getContext: (key: string) => unknown | null;
+      subscribeContext: (key: string, handler: (value: unknown) => void) => () => void;
+      setContext: (key: string, value: unknown) => void;
+      persistPanelState: (state: unknown) => void;
+      loadPanelState: () => unknown | null;
+      setPanelMetadata: (meta: Record<string, unknown>) => void;
+      openPanel: (panelType: string, options?: { focus?: boolean }) => string | null;
+      closePanel: (panelId: string) => void;
+      openPanelMenu?: (panelId: string, anchor: HTMLElement) => void;
+      startPanelDrag?: (panelId: string, event: PointerEvent) => void;
+      startPanelReorder?: (panelId: string, event: PointerEvent) => void;
+    },
+  ) => {
     onVisibilityChange?: (visible: boolean) => void;
     unmount: () => void;
   };
@@ -45,6 +48,7 @@ describe('notes panel context', () => {
   let factories: Record<string, PanelFactory>;
 
   beforeEach(() => {
+    window.localStorage.clear();
     factories = {};
     (globalThis as { ASSISTANT_PANEL_REGISTRY?: unknown }).ASSISTANT_PANEL_REGISTRY = {
       registerPanel: (panelType: string, factory: PanelFactory) => {
@@ -52,12 +56,15 @@ describe('notes panel context', () => {
       },
     };
     vi.stubGlobal('ASSISTANT_API_HOST', 'localhost');
-    vi.stubGlobal('fetch', vi.fn(async () => {
-      return new Response(JSON.stringify({ ok: true, result: [] }), {
-        status: 200,
-        headers: { 'Content-Type': 'application/json' },
-      });
-    }));
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => {
+        return new Response(JSON.stringify({ ok: true, result: [] }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }),
+    );
     document.body.innerHTML = '';
   });
 
@@ -166,6 +173,7 @@ describe('notes panel context', () => {
         }
         if (operation === 'read') {
           return jsonResponse({
+            revision: 'revision-1',
             title: 'Dev Note',
             content: 'Hello',
             tags: [],
@@ -178,9 +186,7 @@ describe('notes panel context', () => {
     );
 
     const keyboardShortcuts = createShortcutHarness(() => {
-      const active = context.get('panel.active') as
-        | { panelId?: string; panelType?: string }
-        | null;
+      const active = context.get('panel.active') as { panelId?: string; panelType?: string } | null;
       if (!active || typeof active.panelId !== 'string' || typeof active.panelType !== 'string') {
         return null;
       }
@@ -213,7 +219,9 @@ describe('notes panel context', () => {
 
     await waitFor(() => latestContext?.type === 'note');
 
-    const contextAttributes = latestContext?.contextAttributes as Record<string, string> | undefined;
+    const contextAttributes = latestContext?.contextAttributes as
+      | Record<string, string>
+      | undefined;
     expect(latestContext?.instance_id).toBe('default');
     expect(contextAttributes?.['instance-id']).toBe('default');
     expect(contextAttributes?.['instance-ids']).toBe('work,default');
@@ -221,205 +229,293 @@ describe('notes panel context', () => {
     handle.unmount();
   });
 
-  it('renders and saves note descriptions', async () => {
-    vi.resetModules();
-    await import('./index');
+  it.each([
+    [false, false],
+    [true, false],
+    [false, true],
+    [true, true],
+  ])(
+    'checks editor revisions and preserves drafts (conflict: %s, move: %s)',
+    async (conflict, move) => {
+      vi.resetModules();
+      await import('./index');
 
-    const factory = factories['notes'];
-    expect(factory).toBeDefined();
+      const factory = factories['notes'];
+      expect(factory).toBeDefined();
 
-    const panelModule = factory!();
-    const container = document.createElement('div');
-    document.body.appendChild(container);
+      const panelModule = factory!();
+      const container = document.createElement('div');
+      document.body.appendChild(container);
 
-    const context = new Map<string, unknown>();
-    const subscribers = new Map<string, Set<(value: unknown) => void>>();
-    const notify = (key: string, value: unknown) => {
-      const handlers = subscribers.get(key);
-      if (!handlers) return;
-      for (const handler of handlers) {
-        handler(value);
-      }
-    };
-
-    const panelId = 'notes-desc';
-    const host = {
-      panelId: () => panelId,
-      getContext: (key: string) => context.get(key) ?? null,
-      subscribeContext: (key: string, handler: (value: unknown) => void) => {
-        const handlers = subscribers.get(key) ?? new Set();
-        handlers.add(handler);
-        subscribers.set(key, handlers);
-        return () => {
-          handlers.delete(handler);
-        };
-      },
-      setContext: (key: string, value: unknown) => {
-        context.set(key, value);
-        notify(key, value);
-      },
-      persistPanelState: () => undefined,
-      loadPanelState: () => ({
-        selectedNoteTitle: 'Dev Note',
-        selectedNoteInstanceId: 'default',
-        mode: 'note',
-        instanceIds: ['default'],
-      }),
-      setPanelMetadata: () => undefined,
-      openPanel: () => null,
-      closePanel: () => undefined,
-      openPanelMenu: () => undefined,
-      startPanelDrag: () => undefined,
-      startPanelReorder: () => undefined,
-    };
-
-    const jsonResponse = (result: unknown) =>
-      new Response(JSON.stringify({ ok: true, result }), {
-        status: 200,
-        headers: { 'Content-Type': 'application/json' },
-      });
-
-    let writePayload: Record<string, unknown> | null = null;
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-        const url = typeof input === 'string' ? input : input.toString();
-        if (!url.includes('/api/plugins/notes/operations/')) {
-          return jsonResponse({});
+      const context = new Map<string, unknown>();
+      const subscribers = new Map<string, Set<(value: unknown) => void>>();
+      const notify = (key: string, value: unknown) => {
+        const handlers = subscribers.get(key);
+        if (!handlers) return;
+        for (const handler of handlers) {
+          handler(value);
         }
-        const operation = url.split('/').pop() ?? '';
-        const body = init?.body ? JSON.parse(init.body as string) : {};
+      };
 
-        if (operation === 'instance_list') {
-          return jsonResponse([{ id: 'default', label: 'Default' }]);
-        }
-        if (operation === 'list') {
-          return jsonResponse([
-            {
+      const panelId = 'notes-desc';
+      const host = {
+        panelId: () => panelId,
+        getContext: (key: string) => context.get(key) ?? null,
+        subscribeContext: (key: string, handler: (value: unknown) => void) => {
+          const handlers = subscribers.get(key) ?? new Set();
+          handlers.add(handler);
+          subscribers.set(key, handlers);
+          return () => {
+            handlers.delete(handler);
+          };
+        },
+        setContext: (key: string, value: unknown) => {
+          context.set(key, value);
+          notify(key, value);
+        },
+        persistPanelState: () => undefined,
+        loadPanelState: () => ({
+          selectedNoteTitle: 'Dev Note',
+          selectedNoteInstanceId: 'default',
+          mode: 'note',
+          instanceIds: move ? ['default', 'other'] : ['default'],
+        }),
+        setPanelMetadata: () => undefined,
+        openPanel: () => null,
+        closePanel: () => undefined,
+        openPanelMenu: () => undefined,
+        startPanelDrag: () => undefined,
+        startPanelReorder: () => undefined,
+      };
+
+      const jsonResponse = (result: unknown) =>
+        new Response(JSON.stringify({ ok: true, result }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+
+      let writePayload: Record<string, unknown> | null = null;
+      let writeCount = 0;
+      const movePayloads: Record<string, unknown>[] = [];
+      const setStatus = vi.fn();
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+          const url = typeof input === 'string' ? input : input.toString();
+          if (!url.includes('/api/plugins/notes/operations/')) {
+            return jsonResponse({});
+          }
+          const operation = url.split('/').pop() ?? '';
+          const body = init?.body ? JSON.parse(init.body as string) : {};
+
+          if (operation === 'instance_list') {
+            return jsonResponse([
+              { id: 'default', label: 'Default' },
+              { id: 'other', label: 'Other' },
+            ]);
+          }
+          if (operation === 'list') {
+            return jsonResponse([
+              {
+                title: 'Dev Note',
+                tags: [],
+                created: '2024-01-01',
+                updated: '2024-01-02',
+                description: 'Short description',
+              },
+            ]);
+          }
+          if (operation === 'read') {
+            return jsonResponse({
+              revision: writeCount > 0 ? 'revision-current' : 'revision-1',
               title: 'Dev Note',
+              content: writeCount > 0 ? 'Current saved content' : 'Hello',
               tags: [],
               created: '2024-01-01',
               updated: '2024-01-02',
               description: 'Short description',
-            },
-          ]);
-        }
-        if (operation === 'read') {
-          return jsonResponse({
-            title: 'Dev Note',
-            content: 'Hello',
-            tags: [],
-            created: '2024-01-01',
-            updated: '2024-01-02',
-            description: 'Short description',
-          });
-        }
-        if (operation === 'write') {
-          writePayload = body;
-          return jsonResponse({
-            title: body.title,
-            tags: body.tags ?? [],
-            created: '2024-01-01',
-            updated: '2024-01-03',
-            description: body.description ?? '',
-          });
-        }
-        return jsonResponse([]);
-      }),
-    );
+            });
+          }
+          if (operation === 'move') {
+            movePayloads.push(body);
+            return jsonResponse({ revision: 'revision-moved' });
+          }
+          if (operation === 'write') {
+            writePayload = body;
+            writeCount += 1;
+            if (conflict) {
+              return new Response(
+                JSON.stringify({ error: 'Revision conflict: read the latest note' }),
+                { status: 409 },
+              );
+            }
+            return jsonResponse({
+              revision: `revision-${writeCount + 1}`,
+              title: body.title,
+              tags: body.tags ?? [],
+              created: '2024-01-01',
+              updated: '2024-01-03',
+              description: body.description ?? '',
+            });
+          }
+          return jsonResponse([]);
+        }),
+      );
 
-    const keyboardShortcuts = createShortcutHarness(() => {
-      const active = context.get('panel.active') as
-        | { panelId?: string; panelType?: string }
-        | null;
-      if (!active || typeof active.panelId !== 'string' || typeof active.panelType !== 'string') {
-        return null;
+      const keyboardShortcuts = createShortcutHarness(() => {
+        const active = context.get('panel.active') as {
+          panelId?: string;
+          panelType?: string;
+        } | null;
+        if (!active || typeof active.panelId !== 'string' || typeof active.panelType !== 'string') {
+          return null;
+        }
+        return { panelId: active.panelId, panelType: active.panelType };
+      });
+      host.setContext('core.services', {
+        dialogManager: { hasOpenDialog: false },
+        contextMenuManager: { close: () => undefined, setActiveMenu: () => undefined },
+        listColumnPreferencesClient: {
+          load: () => Promise.resolve(),
+        },
+        keyboardShortcuts,
+        focusInput: () => undefined,
+        setStatus,
+        isMobileViewport: () => false,
+        notifyContextAvailabilityChange: () => undefined,
+      });
+
+      const handle = panelModule.mount(container, host);
+      handle.onVisibilityChange?.(true);
+
+      const waitFor = async (predicate: () => boolean) => {
+        const start = Date.now();
+        while (Date.now() - start < 2000) {
+          if (predicate()) return;
+          await new Promise((resolve) => setTimeout(resolve, 10));
+        }
+        throw new Error('Timed out waiting for description UI');
+      };
+
+      await waitFor(
+        () => container.querySelector<HTMLElement>('.collection-note-description') !== null,
+      );
+
+      const descriptionEl = container.querySelector<HTMLElement>('.collection-note-description');
+      expect(descriptionEl?.textContent).toBe('Short description');
+
+      const editButton = container.querySelector<HTMLButtonElement>('.collection-note-edit-button');
+      editButton?.click();
+
+      const compactButton = container.querySelector<HTMLButtonElement>(
+        '[data-role="note-editor-compact-toggle"]',
+      );
+      expect(compactButton?.getAttribute('aria-pressed')).toBe('false');
+      compactButton?.click();
+      expect(compactButton?.getAttribute('aria-pressed')).toBe('true');
+      expect(window.localStorage.getItem('aiAssistantNotesEditorCompactMode')).toBe('true');
+      expect(
+        container.querySelector<HTMLElement>('[data-role="note-editor-title-row"]')?.hidden,
+      ).toBe(true);
+      expect(
+        container.querySelector<HTMLElement>('[data-role="note-editor-description-row"]')?.hidden,
+      ).toBe(true);
+      expect(
+        container.querySelector<HTMLElement>('[data-role="note-editor-tags-row"]')?.hidden,
+      ).toBe(true);
+      expect(
+        container.querySelector<HTMLElement>('[data-role="note-editor-pinned-row"]')?.hidden,
+      ).toBe(true);
+      expect(
+        container.querySelector<HTMLElement>('[data-role="note-editor-favorite-row"]')?.hidden,
+      ).toBe(true);
+      expect(
+        container.querySelector<HTMLElement>('.list-item-form-label:last-of-type')?.textContent,
+      ).toContain('Content');
+      expect(
+        container.querySelector<HTMLElement>('.list-item-form-label:last-of-type')?.textContent,
+      ).not.toContain('Markdown');
+
+      const descriptionInput = container.querySelector<HTMLTextAreaElement>(
+        '.note-description-textarea',
+      );
+      expect(descriptionInput).toBeTruthy();
+      if (!descriptionInput) {
+        throw new Error('Expected description input');
       }
-      return { panelId: active.panelId, panelType: active.panelType };
-    });
-    host.setContext('core.services', {
-      dialogManager: { hasOpenDialog: false },
-      contextMenuManager: { close: () => undefined, setActiveMenu: () => undefined },
-      listColumnPreferencesClient: {
-        load: () => Promise.resolve(),
-      },
-      keyboardShortcuts,
-      focusInput: () => undefined,
-      setStatus: () => undefined,
-      isMobileViewport: () => false,
-      notifyContextAvailabilityChange: () => undefined,
-    });
-
-    const handle = panelModule.mount(container, host);
-    handle.onVisibilityChange?.(true);
-
-    const waitFor = async (predicate: () => boolean) => {
-      const start = Date.now();
-      while (Date.now() - start < 2000) {
-        if (predicate()) return;
-        await new Promise((resolve) => setTimeout(resolve, 10));
+      descriptionInput.value = 'Updated description';
+      const contentInput = container.querySelector<HTMLTextAreaElement>('.note-content-textarea')!;
+      contentInput.value = 'My unsaved draft';
+      if (move) {
+        const instanceSelect =
+          container.querySelector<HTMLSelectElement>('.list-item-form-select')!;
+        instanceSelect.value = 'other';
+        instanceSelect.dispatchEvent(new Event('change'));
       }
-      throw new Error('Timed out waiting for description UI');
-    };
 
-    await waitFor(
-      () => container.querySelector<HTMLElement>('.collection-note-description') !== null,
-    );
+      const saveButton = Array.from(container.querySelectorAll('button')).find(
+        (button) => button.textContent === 'Save',
+      );
+      saveButton?.click();
 
-    const descriptionEl = container.querySelector<HTMLElement>('.collection-note-description');
-    expect(descriptionEl?.textContent).toBe('Short description');
+      await waitFor(() => writePayload !== null);
+      expect(writePayload?.description).toBe('Updated description');
+      expect(writePayload?.expectedRevision).toBe(move ? 'revision-moved' : 'revision-1');
+      if (conflict) {
+        await waitFor(() =>
+          setStatus.mock.calls.some(([message]) => message.includes('Revision conflict')),
+        );
+        expect(
+          container.querySelector<HTMLTextAreaElement>('.note-description-textarea')?.value,
+        ).toBe('Updated description');
+        expect(container.querySelector<HTMLTextAreaElement>('.note-content-textarea')?.value).toBe(
+          'My unsaved draft',
+        );
+        expect(saveButton?.disabled).toBe(false);
+        saveButton?.click();
+        await waitFor(() => writeCount === 2);
+        expect(writePayload?.expectedRevision).toBe(move ? 'revision-moved' : 'revision-1');
+        await waitFor(() => saveButton?.disabled === false);
+        const cancel = Array.from(container.querySelectorAll('button')).find(
+          (button) => button.textContent === 'Cancel',
+        );
+        cancel?.click();
+        await waitFor(() => container.querySelector('.collection-note-edit-button') !== null);
+        container.querySelector<HTMLButtonElement>('.collection-note-edit-button')?.click();
+        expect(container.querySelector<HTMLTextAreaElement>('.note-content-textarea')?.value).toBe(
+          'Current saved content',
+        );
+        const refreshedSave = Array.from(container.querySelectorAll('button')).find(
+          (button) => button.textContent === 'Save',
+        );
+        refreshedSave?.click();
+        await waitFor(() => writeCount === 3);
+        expect(writePayload?.expectedRevision).toBe('revision-current');
+      } else {
+        await waitFor(() => container.querySelector('.collection-note-edit-button') !== null);
+        container.querySelector<HTMLButtonElement>('.collection-note-edit-button')?.click();
+        container.querySelector<HTMLTextAreaElement>('.note-content-textarea')!.value = '';
+        const nextSave = Array.from(container.querySelectorAll('button')).find(
+          (button) => button.textContent === 'Save',
+        );
+        nextSave?.click();
+        await waitFor(() => writeCount === 2);
+        expect(writePayload?.expectedRevision).toBe('revision-2');
+        expect(writePayload?.content).toBe('');
+      }
 
-    const editButton = container.querySelector<HTMLButtonElement>('.collection-note-edit-button');
-    editButton?.click();
-
-    const compactButton = container.querySelector<HTMLButtonElement>(
-      '[data-role="note-editor-compact-toggle"]',
-    );
-    expect(compactButton?.getAttribute('aria-pressed')).toBe('false');
-    compactButton?.click();
-    expect(compactButton?.getAttribute('aria-pressed')).toBe('true');
-    expect(window.localStorage.getItem('aiAssistantNotesEditorCompactMode')).toBe('true');
-    expect(
-      container.querySelector<HTMLElement>('[data-role="note-editor-title-row"]')?.hidden,
-    ).toBe(true);
-    expect(
-      container.querySelector<HTMLElement>('[data-role="note-editor-description-row"]')?.hidden,
-    ).toBe(true);
-    expect(
-      container.querySelector<HTMLElement>('[data-role="note-editor-tags-row"]')?.hidden,
-    ).toBe(true);
-    expect(
-      container.querySelector<HTMLElement>('[data-role="note-editor-pinned-row"]')?.hidden,
-    ).toBe(true);
-    expect(
-      container.querySelector<HTMLElement>('[data-role="note-editor-favorite-row"]')?.hidden,
-    ).toBe(true);
-    expect(
-      container.querySelector<HTMLElement>('.list-item-form-label:last-of-type')?.textContent,
-    ).toContain('Content');
-    expect(
-      container.querySelector<HTMLElement>('.list-item-form-label:last-of-type')?.textContent,
-    ).not.toContain('Markdown');
-
-    const descriptionInput = container.querySelector<HTMLTextAreaElement>(
-      '.note-description-textarea',
-    );
-    expect(descriptionInput).toBeTruthy();
-    if (!descriptionInput) {
-      throw new Error('Expected description input');
-    }
-    descriptionInput.value = 'Updated description';
-
-    const saveButton = Array.from(container.querySelectorAll('button')).find(
-      (button) => button.textContent === 'Save',
-    );
-    saveButton?.click();
-
-    await waitFor(() => writePayload !== null);
-    expect(writePayload?.description).toBe('Updated description');
-
-    handle.unmount();
-  });
+      expect(movePayloads).toHaveLength(move ? 1 : 0);
+      if (move) {
+        expect(movePayloads[0]).toMatchObject({
+          instance_id: 'default',
+          target_instance_id: 'other',
+          expectedRevision: 'revision-1',
+        });
+        expect(writePayload?.instance_id).toBe('other');
+      }
+      handle.unmount();
+    },
+  );
 
   it('restores compact mode from local storage when reopening the editor', async () => {
     window.localStorage.setItem('aiAssistantNotesEditorCompactMode', 'true');
@@ -502,6 +598,7 @@ describe('notes panel context', () => {
         }
         if (operation === 'read') {
           return jsonResponse({
+            revision: 'revision-1',
             title: 'Dev Note',
             content: 'Hello',
             description: 'Short description',
@@ -515,9 +612,7 @@ describe('notes panel context', () => {
     );
 
     const keyboardShortcuts = createShortcutHarness(() => {
-      const active = context.get('panel.active') as
-        | { panelId?: string; panelType?: string }
-        | null;
+      const active = context.get('panel.active') as { panelId?: string; panelType?: string } | null;
       if (!active || typeof active.panelId !== 'string' || typeof active.panelType !== 'string') {
         return null;
       }
@@ -556,11 +651,15 @@ describe('notes panel context', () => {
     editButton?.click();
 
     await waitFor(
-      () => container.querySelector<HTMLButtonElement>('[data-role="note-editor-compact-toggle"]') !== null,
+      () =>
+        container.querySelector<HTMLButtonElement>('[data-role="note-editor-compact-toggle"]') !==
+        null,
     );
 
     expect(
-      container.querySelector<HTMLButtonElement>('[data-role="note-editor-compact-toggle"]')?.getAttribute('aria-pressed'),
+      container
+        .querySelector<HTMLButtonElement>('[data-role="note-editor-compact-toggle"]')
+        ?.getAttribute('aria-pressed'),
     ).toBe('true');
     expect(
       container.querySelector<HTMLElement>('[data-role="note-editor-pinned-row"]')?.hidden,
@@ -579,6 +678,7 @@ describe('notes panel keyboard shortcuts', () => {
   let factories: Record<string, PanelFactory>;
 
   beforeEach(() => {
+    window.localStorage.clear();
     factories = {};
     (globalThis as { ASSISTANT_PANEL_REGISTRY?: unknown }).ASSISTANT_PANEL_REGISTRY = {
       registerPanel: (panelType: string, factory: PanelFactory) => {
@@ -586,12 +686,15 @@ describe('notes panel keyboard shortcuts', () => {
       },
     };
     vi.stubGlobal('ASSISTANT_API_HOST', 'localhost');
-    vi.stubGlobal('fetch', vi.fn(async () => {
-      return new Response(JSON.stringify({ ok: true, result: [] }), {
-        status: 200,
-        headers: { 'Content-Type': 'application/json' },
-      });
-    }));
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => {
+        return new Response(JSON.stringify({ ok: true, result: [] }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }),
+    );
     document.body.innerHTML = '';
   });
 
@@ -658,9 +761,7 @@ describe('notes panel keyboard shortcuts', () => {
 
     const pendingPreferences = new Promise<void>(() => {});
     const keyboardShortcuts = createShortcutHarness(() => {
-      const active = context.get('panel.active') as
-        | { panelId?: string; panelType?: string }
-        | null;
+      const active = context.get('panel.active') as { panelId?: string; panelType?: string } | null;
       if (!active || typeof active.panelId !== 'string' || typeof active.panelType !== 'string') {
         return null;
       }
@@ -694,9 +795,7 @@ describe('notes panel keyboard shortcuts', () => {
     const handle = panelModule.mount(container, host);
     handle.onVisibilityChange?.(true);
 
-    const searchInput = container.querySelector<HTMLInputElement>(
-      '.collection-list-search-input',
-    );
+    const searchInput = container.querySelector<HTMLInputElement>('.collection-list-search-input');
     expect(searchInput).not.toBeNull();
 
     document.dispatchEvent(
@@ -759,9 +858,7 @@ describe('notes panel keyboard shortcuts', () => {
 
     const pendingPreferences = new Promise<void>(() => {});
     const keyboardShortcuts = createShortcutHarness(() => {
-      const active = context.get('panel.active') as
-        | { panelId?: string; panelType?: string }
-        | null;
+      const active = context.get('panel.active') as { panelId?: string; panelType?: string } | null;
       if (!active || typeof active.panelId !== 'string' || typeof active.panelType !== 'string') {
         return null;
       }
@@ -795,9 +892,7 @@ describe('notes panel keyboard shortcuts', () => {
     const handle = panelModule.mount(container, host);
     handle.onVisibilityChange?.(true);
 
-    const searchInput = container.querySelector<HTMLInputElement>(
-      '.collection-list-search-input',
-    );
+    const searchInput = container.querySelector<HTMLInputElement>('.collection-list-search-input');
     expect(searchInput).not.toBeNull();
 
     searchInput?.focus();

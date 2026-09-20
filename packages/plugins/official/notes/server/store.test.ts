@@ -80,6 +80,7 @@ describe('NotesStore (plugin)', () => {
     const second = await store.write({
       title: 'Daily Log',
       content: 'Day 2',
+      expectedRevision: first.revision!,
     });
 
     expect(second.created).toBe(first.created);
@@ -103,7 +104,7 @@ describe('NotesStore (plugin)', () => {
     });
 
     vi.setSystemTime(new Date('2024-01-02T00:00:00.000Z'));
-    const meta = await store.append('Journal', 'Entry 2');
+    const meta = await store.append({ title: 'Journal', text: '\nEntry 2' });
 
     expect(meta.created).toBe('2024-01-01T00:00:00.000Z');
     expect(meta.updated).toBe('2024-01-02T00:00:00.000Z');
@@ -180,12 +181,14 @@ describe('NotesStore (plugin)', () => {
     const preserved = await store.write({
       title: 'Summary Note',
       content: 'Updated content',
+      expectedRevision: (await store.read('Summary Note')).revision,
     });
     expect(preserved.description).toBe('Initial description');
 
     const cleared = await store.write({
       title: 'Summary Note',
       content: 'Cleared description',
+      expectedRevision: preserved.revision!,
       description: '',
     });
     expect(cleared.description).toBeUndefined();

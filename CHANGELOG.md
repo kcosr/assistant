@@ -4,10 +4,16 @@
 
 ### Breaking Changes
 
+- Require `expectedRevision` from `notes_read` or a successful mutation when replacing existing notes with `notes_write`; creation still omits it. ([#139](https://github.com/kcosr/assistant/pull/139))
+
 - Removed `loadAgentDefinitionsFromFile()` from `agents.ts` — all agent loading now goes through `loadConfig()` in `config.ts`. ([#93](https://github.com/kcosr/assistant/pull/93))
 - Replaced inline Pi provider definitions and per-agent model menus with registry-backed models and named chat profiles; shared request overrides now own sampling defaults. ([#138](https://github.com/kcosr/assistant/pull/138))
 
 ### Added
+
+- Added `notes_append` for exact additions to existing notes, with optional revision checking and updated revision metadata returned. ([#139](https://github.com/kcosr/assistant/pull/139))
+
+- Added `notes_patch` for atomic exact-text edit batches, note revision tokens, and conflict protection for editor saves that preserves drafts when notes change. ([#139](https://github.com/kcosr/assistant/pull/139))
 
 - Added per-agent Bash command-prefix and write/edit directory exceptions to native tool approvals, including intentional support for trailing shell pipes and chains. ([#136](https://github.com/kcosr/assistant/pull/136))
 - Added an opt-in macOS setting that focuses the selected chat input when Right Option is pressed without consuming the key event. ([#132](https://github.com/kcosr/assistant/pull/132))

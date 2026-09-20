@@ -1,4 +1,5 @@
 export interface NoteMetadata {
+  revision?: string;
   title: string;
   tags: string[];
   favorite?: boolean;
@@ -8,6 +9,7 @@ export interface NoteMetadata {
 }
 
 export interface Note extends NoteMetadata {
+  revision: string;
   content: string;
 }
 
