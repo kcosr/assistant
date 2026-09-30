@@ -60,4 +60,24 @@ describe('openListSelectionDialog', () => {
 
     await expect(promise).resolves.toBeNull();
   });
+
+  it('searches by list id and instance label and supports keyboard confirmation', async () => {
+    const promise = openListSelectionDialog({
+      dialogManager: createDialogManager(),
+      title: 'Choose List',
+      items: [
+        { id: 'today', name: 'Today' },
+        { id: 'work', name: 'Tasks', instanceLabel: 'Office' },
+      ],
+    });
+    const search = document.querySelector<HTMLInputElement>('.list-selection-search-input')!;
+    search.value = 'office';
+    search.dispatchEvent(new Event('input', { bubbles: true }));
+    expect(document.querySelectorAll('.list-selection-item')).toHaveLength(1);
+    expect(document.querySelector('.list-selection-item')?.textContent).toContain('Tasks (Office)');
+    search.value = 'work';
+    search.dispatchEvent(new Event('input', { bubbles: true }));
+    search.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    await expect(promise).resolves.toEqual({ id: 'work', name: 'Tasks', instanceLabel: 'Office' });
+  });
 });

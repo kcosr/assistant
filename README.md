@@ -42,7 +42,8 @@ by an integration with the badlogic/pi-mono agent SDK.
 - **Built-in session tools** – agent can list, search, create, switch, rename, and pin sessions
 - **Persistent sessions** with JSONL event logs and optional naming/pinning
 - **Multi-client support** – multiple browser windows can share a session
-- **Theme + font preferences** (auto/light/dark + presets, including Herdr)
+- **Theme + font preferences** (auto/light/dark + presets, including Herdr). Dark uses nearly black
+  backgrounds, charcoal controls, and subtle borders; Auto uses the same palette in dark mode.
 
 ## Quick Start
 

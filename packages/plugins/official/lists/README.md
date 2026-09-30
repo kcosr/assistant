@@ -62,6 +62,9 @@ operations.
 - Custom fields can be reordered in the list metadata dialog.
 - Create and edit item dialogs start with custom fields collapsed in both Quick and Review modes. Tap or activate the Custom fields header to expand them; collapsing preserves values.
 - List item editor supports Edit and Review modes; Review shows a report-style view with markdown previews and inline edit buttons, and the default mode is configurable in settings.
+- Add and edit item dialogs use the shared searchable List picker. Search by list name or id,
+  choose a row, or use arrow keys and Enter. Escape closes the picker while keeping the editor
+  and its draft open.
 
 All operations accept an optional `instance_id` (defaults to `default`), and `instance_list` reports
 configured instances.
@@ -76,8 +79,11 @@ or deleting the source item still uses the source list item.
 - Source list item menus expose a direct Add to Focus action for adding existing items.
 - The item row menu exposes a separate source-delete action when the underlying item should be
   deleted.
-- Adding an item while Focus is open opens a source-list dropdown, then adds the new item to that
-  list and immediately adds it to Focus.
+- Adding an item while Focus is open opens the item editor directly with the last list used for
+  a successful add selected. The List selector is available in both Edit and Review modes. If the
+  remembered list is unavailable in the current instance, the first available list is selected.
+  Saving creates the source item and immediately adds it to Focus. The remembered list is stored
+  on this device; cancelling or a failed add does not change it.
 - Dragging and keyboard reordering use the normal list UI. Copying Focus items to a real list copies
   from each item's source list.
 - Focus updates use `focus-get`, `focus-items`, `focus-add`, `focus-update`, and `focus-remove`.
@@ -91,8 +97,8 @@ Pinned is a virtual list with the fixed id `__pinned__`. It is derived from sour
   source item.
 - Editing, completing, touching, moving, copying, or source-deleting a Pinned row still operates on
   the underlying source item.
-- Adding an item while Pinned is open opens a source-list dropdown, then adds the new item to that
-  list with the `pinned` tag.
+- Adding an item while Pinned is open uses the same editor and remembered source list as Focus,
+  then adds the new item to that list with the `pinned` tag.
 - Pinned read operations use `pinned-get` and `pinned-items`. Pinning and unpinning use the normal
   item tag operations.
 

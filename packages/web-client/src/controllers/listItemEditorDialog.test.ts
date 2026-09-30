@@ -14,6 +14,15 @@ const createDialogManager = (): DialogManager =>
     closeOpenDialog: vi.fn(),
   }) as unknown as DialogManager;
 
+const chooseListTarget = (id: string): void => {
+  const trigger = document.querySelector<HTMLButtonElement>('.list-item-target-trigger')!;
+  trigger.click();
+  const search = document.querySelector<HTMLInputElement>('.list-item-target-menu .list-selection-search-input')!;
+  search.value = id;
+  search.dispatchEvent(new Event('input', { bubbles: true }));
+  document.querySelector<HTMLButtonElement>(`.list-item-target-menu [data-list-id="${id}"]`)!.click();
+};
+
 describe('ListItemEditorDialog tag chips', () => {
   beforeEach(() => {
     document.body.innerHTML = '';
@@ -205,49 +214,51 @@ describe('ListItemEditorDialog tag chips', () => {
     });
   });
 
-  it('submits newly added items to the selected list target', async () => {
-    const createListItem = vi.fn<ListItemEditorDialogOptions['createListItem']>(
-      async () => true,
-    );
+  it.each(['quick', 'review'] as const)(
+    'allows list selection and submits to that target in %s mode',
+    async (initialMode) => {
+      const createListItem = vi.fn<ListItemEditorDialogOptions['createListItem']>(async () => true);
 
-    const dialog = new ListItemEditorDialog({
-      dialogManager: createDialogManager(),
-      setStatus: vi.fn(),
-      recentUserItemUpdates: new Set<string>(),
-      userUpdateTimeoutMs: 1000,
-      createListItem,
-      updateListItem: vi.fn(async () => true),
-    });
+      const dialog = new ListItemEditorDialog({
+        dialogManager: createDialogManager(),
+        setStatus: vi.fn(),
+        recentUserItemUpdates: new Set<string>(),
+        userUpdateTimeoutMs: 1000,
+        createListItem,
+        updateListItem: vi.fn(async () => true),
+      });
 
-    dialog.open('add', 'today', undefined, {
-      listTargets: [
-        { id: 'today', name: 'Today' },
-        { id: 'work', name: 'Work' },
-      ],
-    });
+      dialog.open('add', 'today', undefined, {
+        initialMode,
+        listTargets: [
+          { id: 'today', name: 'Today' },
+          { id: 'work', name: 'Work' },
+        ],
+      });
 
-    const listSelect = document.querySelector<HTMLSelectElement>('.list-item-target-select');
-    expect(listSelect).not.toBeNull();
-    if (!listSelect) return;
-    listSelect.value = 'work';
-    listSelect.dispatchEvent(new Event('change', { bubbles: true }));
+      const listTrigger = document.querySelector<HTMLButtonElement>('.list-item-target-trigger');
+      expect(listTrigger).not.toBeNull();
+      if (!listTrigger) return;
+      expect(listTrigger.closest('[hidden]')).toBeNull();
+      chooseListTarget('work');
 
-    const titleInput = document.querySelector<HTMLInputElement>(
-      '.list-item-form input.list-item-form-input',
-    );
-    expect(titleInput).not.toBeNull();
-    if (!titleInput) return;
-    titleInput.value = 'Moved before create';
+      const titleInput = document.querySelector<HTMLInputElement>(
+        '.list-item-form input.list-item-form-input',
+      );
+      expect(titleInput).not.toBeNull();
+      if (!titleInput) return;
+      titleInput.value = 'Moved before create';
 
-    document
-      .querySelector<HTMLFormElement>('.list-item-form')
-      ?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+      document
+        .querySelector<HTMLFormElement>('.list-item-form')
+        ?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
 
-    await Promise.resolve();
+      await Promise.resolve();
 
-    expect(createListItem).toHaveBeenCalledTimes(1);
-    expect(createListItem.mock.calls[0]?.[0]).toBe('work');
-  });
+      expect(createListItem).toHaveBeenCalledTimes(1);
+      expect(createListItem.mock.calls[0]?.[0]).toBe('work');
+    },
+  );
 
   it('does not submit custom fields that are not defined on a changed add target', async () => {
     const createListItem = vi.fn<ListItemEditorDialogOptions['createListItem']>(
@@ -279,11 +290,10 @@ describe('ListItemEditorDialog tag chips', () => {
       ],
     });
 
-    const listSelect = document.querySelector<HTMLSelectElement>('.list-item-target-select');
-    expect(listSelect).not.toBeNull();
-    if (!listSelect) return;
-    listSelect.value = 'work';
-    listSelect.dispatchEvent(new Event('change', { bubbles: true }));
+    const listTrigger = document.querySelector<HTMLButtonElement>('.list-item-target-trigger');
+    expect(listTrigger).not.toBeNull();
+    if (!listTrigger) return;
+    chooseListTarget('work');
 
     const titleInput = document.querySelector<HTMLInputElement>(
       '.list-item-form input.list-item-form-input',
@@ -306,6 +316,74 @@ describe('ListItemEditorDialog tag chips', () => {
     expect(createListItem).toHaveBeenCalledTimes(1);
     expect(createListItem.mock.calls[0]?.[0]).toBe('work');
     expect(createListItem.mock.calls[0]?.[1]['customFields']).toEqual({});
+  });
+
+  it('searches lists without changing the draft and Escape closes only the dropdown', () => {
+    const createListItem = vi.fn(async () => true);
+    const dialog = new ListItemEditorDialog({
+      dialogManager: createDialogManager(),
+      setStatus: vi.fn(),
+      recentUserItemUpdates: new Set<string>(),
+      userUpdateTimeoutMs: 1000,
+      createListItem,
+      updateListItem: vi.fn(async () => true),
+    });
+    dialog.open('add', 'today', undefined, {
+      listTargets: [{ id: 'today', name: 'Today' }, { id: 'work', name: 'Work' }],
+    });
+    const title = document.querySelector<HTMLInputElement>('.list-item-form-input')!;
+    title.value = 'Draft task';
+    const trigger = document.querySelector<HTMLButtonElement>('.list-item-target-trigger')!;
+    trigger.click();
+    const search = document.querySelector<HTMLInputElement>('.list-selection-search-input')!;
+    expect(document.activeElement).toBe(search);
+    search.value = 'no matching list';
+    search.dispatchEvent(new Event('input', { bubbles: true }));
+    expect(document.querySelector('.list-selection-empty')?.textContent).toBe('No matching lists');
+    search.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    expect(createListItem).not.toHaveBeenCalled();
+    expect(trigger.dataset['listId']).toBe('today');
+    search.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    expect(document.querySelector<HTMLElement>('.list-item-target-menu')!.hidden).toBe(true);
+    expect(document.querySelector('.list-item-dialog')).not.toBeNull();
+    expect(title.value).toBe('Draft task');
+    expect(document.activeElement).toBe(trigger);
+    trigger.click();
+    expect(search.value).toBe('');
+    expect(document.querySelectorAll('.list-selection-item')).toHaveLength(2);
+    expect(document.querySelector('[aria-selected="true"]')?.getAttribute('data-list-id')).toBe('today');
+    search.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    trigger.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    expect(document.querySelector('.list-item-dialog')).toBeNull();
+  });
+
+  it('chooses a list with arrow keys and Enter without submitting the task', async () => {
+    const createListItem = vi.fn(async () => true);
+    const dialog = new ListItemEditorDialog({
+      dialogManager: createDialogManager(),
+      setStatus: vi.fn(),
+      recentUserItemUpdates: new Set<string>(),
+      userUpdateTimeoutMs: 1000,
+      createListItem,
+      updateListItem: vi.fn(async () => true),
+    });
+    dialog.open('add', 'today', undefined, {
+      listTargets: [{ id: 'today', name: 'Today' }, { id: 'work', name: 'Work' }],
+    });
+    document.querySelector<HTMLInputElement>('.list-item-form-input')!.value = 'Draft';
+    const trigger = document.querySelector<HTMLButtonElement>('.list-item-target-trigger')!;
+    trigger.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }));
+    const search = document.querySelector<HTMLInputElement>('.list-selection-search-input')!;
+    search.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }));
+    search.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    expect(trigger.dataset['listId']).toBe('work');
+    expect(trigger.getAttribute('aria-expanded')).toBe('false');
+    expect(createListItem).not.toHaveBeenCalled();
+    expect(document.activeElement).toBe(trigger);
+    document.querySelector<HTMLFormElement>('.list-item-form')!
+      .dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    await Promise.resolve();
+    expect(createListItem).toHaveBeenCalledWith('work', expect.objectContaining({ title: 'Draft' }));
   });
 
   it('submits edited items with a changed target list', async () => {
@@ -334,12 +412,11 @@ describe('ListItemEditorDialog tag chips', () => {
       },
     );
 
-    const listSelect = document.querySelector<HTMLSelectElement>('.list-item-target-select');
-    expect(listSelect).not.toBeNull();
-    if (!listSelect) return;
-    expect(listSelect.value).toBe('today');
-    listSelect.value = 'work';
-    listSelect.dispatchEvent(new Event('change', { bubbles: true }));
+    const listTrigger = document.querySelector<HTMLButtonElement>('.list-item-target-trigger');
+    expect(listTrigger).not.toBeNull();
+    if (!listTrigger) return;
+    expect(listTrigger.dataset['listId']).toBe('today');
+    chooseListTarget('work');
 
     document
       .querySelector<HTMLFormElement>('.list-item-form')
@@ -393,11 +470,10 @@ describe('ListItemEditorDialog tag chips', () => {
       },
     );
 
-    const listSelect = document.querySelector<HTMLSelectElement>('.list-item-target-select');
-    expect(listSelect).not.toBeNull();
-    if (!listSelect) return;
-    listSelect.value = 'work';
-    listSelect.dispatchEvent(new Event('change', { bubbles: true }));
+    const listTrigger = document.querySelector<HTMLButtonElement>('.list-item-target-trigger');
+    expect(listTrigger).not.toBeNull();
+    if (!listTrigger) return;
+    chooseListTarget('work');
 
     document
       .querySelector<HTMLFormElement>('.list-item-form')

@@ -26,7 +26,6 @@ import {
   type ListPanelData,
   type ListPanelItem,
 } from '../../../../web-client/src/controllers/listPanelController';
-import { openListSelectionDialog } from '../../../../web-client/src/controllers/listSelectionDialog';
 import type { ListCustomFieldDefinition } from '../../../../web-client/src/controllers/listCustomFields';
 import type { ListMetadataDialogPayload } from '../../../../web-client/src/controllers/listMetadataDialog';
 import { ContextMenuManager } from '../../../../web-client/src/controllers/contextMenu';
@@ -2134,13 +2133,21 @@ if (!registry || typeof registry.registerPanel !== 'function') {
         getSearchTagController: () => sharedSearchController.getTagController(),
         getActiveInstanceId: () => activeListInstanceId ?? activeInstanceId,
         getGlobalQuery: () => globalQuery,
-        callOperation: (operation, args) => {
+        callOperation: async <T>(operation: string, args: Record<string, unknown>): Promise<T> => {
           const { instanceId, ...rest } = args as Record<string, unknown> & {
             instanceId?: unknown;
           };
           const overrideInstanceId = typeof instanceId === 'string' ? instanceId : null;
           const targetInstanceId = overrideInstanceId ?? activeListInstanceId ?? activeInstanceId;
-          return callInstanceOperation(targetInstanceId, operation, rest);
+          const result = await callInstanceOperation<T>(targetInstanceId, operation, rest);
+          if (operation === 'item-add' && typeof rest['listId'] === 'string') {
+            try {
+              window.localStorage.setItem(FOCUS_DEFAULT_LIST_STORAGE_KEY, rest['listId']);
+            } catch {
+              // Ignore storage errors.
+            }
+          }
+          return result;
         },
         icons: {
           copy: ICONS.copy,
@@ -2214,42 +2221,23 @@ if (!registry || typeof registry.registerPanel !== 'function') {
           if (!initialValue) {
             initialValue = candidates[0]?.id ?? '';
           }
-          const selected = await openListSelectionDialog({
-            dialogManager: services.dialogManager,
-            title: 'Add Focus Item',
-            message: 'Choose the source list for the new item.',
-            items: candidates.map((list) => ({
-              id: list.id,
-              name: list.name,
-              ...(selectedInstanceIds.length > 1 && list.instanceLabel
-                ? { instanceLabel: list.instanceLabel }
-                : {}),
-            })),
-            initialId: initialValue,
-            confirmText: 'Continue',
-            emptyText: 'No matching lists',
-          });
-          if (!selected) {
-            return null;
-          }
-          const trimmed = selected.id.trim();
-          const selectedList = candidates.find((list) => list.id === trimmed) ?? candidates[0];
+          const selectedList = candidates.find((list) => list.id === initialValue);
           if (!selectedList) {
             return null;
           }
-          try {
-            window.localStorage.setItem(FOCUS_DEFAULT_LIST_STORAGE_KEY, trimmed);
-          } catch {
-            // Ignore storage errors.
-          }
           return {
-            listId: trimmed,
+            listId: selectedList.id,
             instanceId,
             openOptions: {
               availableTags: [],
               defaultTags: selectedList.defaultTags ?? [],
               customFields: selectedList.customFields ?? [],
-              listTargets: [],
+              listTargets: candidates.map((list) => ({
+                id: list.id,
+                name: list.name,
+                defaultTags: list.defaultTags ?? [],
+                customFields: list.customFields ?? [],
+              })),
             },
           };
         },
