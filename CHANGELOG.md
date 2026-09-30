@@ -53,6 +53,9 @@
 
 ### Changed
 
+- Darkened the Dark and Auto theme backgrounds and surfaces to a near-black palette. ([#140](https://github.com/kcosr/assistant/pull/140))
+- Changed Focus and Pinned task creation to open the editor using the last successfully used list, and replaced Add/Edit list dropdowns with the shared searchable list picker in both Edit and Review modes. ([#140](https://github.com/kcosr/assistant/pull/140))
+
 - Collapsed custom fields by default in create/edit task dialogs, with a touch- and keyboard-accessible header in Quick and Review modes that preserves field values. ([#137](https://github.com/kcosr/assistant/pull/137))
 - Changed the Android persistent voice notification to show thread-aware status and compact Start, response-mode, and Rearm controls, while sanitizing notification response text. ([#127](https://github.com/kcosr/assistant/pull/127))
 - Changed Android response-origin handling so server-initiated turns without a client origin play on all devices while suppressing Auto Listen. ([#124](https://github.com/kcosr/assistant/pull/124))
@@ -74,6 +77,8 @@
 - Temporarily changed the Android flavor deploy default to install only the default app flavor unless another flavor is requested explicitly. ([#97](https://github.com/kcosr/assistant/pull/97))
 
 ### Fixed
+
+- Fixed cancelling the task editor leaving its dialog registration active. ([#140](https://github.com/kcosr/assistant/pull/140))
 
 - Use the selected profile model’s reasoning default when creating sessions through the sessions tool or API. ([#138](https://github.com/kcosr/assistant/pull/138))
 
