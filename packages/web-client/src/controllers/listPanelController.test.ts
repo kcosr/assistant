@@ -1497,7 +1497,7 @@ describe('ListPanelController focus view', () => {
     });
   });
 
-  it('routes the focus header add button through the source-list picker flow', async () => {
+  it('routes the focus header add button through the resolved source-list editor', async () => {
     const callOperation = vi.fn(async (operation) => {
       if (operation === 'item-add') {
         return { id: 'new-item', title: 'New task' } as unknown;

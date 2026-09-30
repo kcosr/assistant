@@ -3,6 +3,7 @@ import type { ListCustomFieldDefinition } from './listCustomFields';
 import type { ListPanelItem } from './listPanelController';
 import { applyTagColorToElement, normalizeTag } from '../utils/tagColors';
 import { MarkdownViewerController } from './markdownViewerController';
+import { ListSelectionPicker } from './listSelectionPicker';
 import {
   formatListItemReferenceLabel,
   getListItemReferenceTypeLabel,
@@ -521,29 +522,80 @@ export class ListItemEditorDialog {
       (target) => target.id && target.name,
     );
     if ((mode === 'add' || mode === 'edit') && listTargets.length > 1) {
-      const listLabel = document.createElement('label');
-      listLabel.className = 'list-item-form-label';
+      const listLabel = document.createElement('div');
+      listLabel.className = 'list-item-form-label list-item-target-picker';
       const listLabelText = document.createElement('span');
       listLabelText.className = 'list-item-form-label-text';
+      listLabelText.id = `list-item-target-label-${Math.random().toString(36).slice(2)}`;
       listLabelText.textContent = 'List';
-      const listSelect = document.createElement('select');
-      listSelect.className = 'list-item-form-select list-item-target-select';
-      for (const target of listTargets) {
-        const option = document.createElement('option');
-        option.value = target.id;
-        option.textContent = target.name;
-        listSelect.appendChild(option);
-      }
-      listSelect.value = listTargets.some((target) => target.id === initialSelectedListId)
+      selectedListId = listTargets.some((target) => target.id === initialSelectedListId)
         ? initialSelectedListId
         : listTargets[0]?.id ?? initialSelectedListId;
-      selectedListId = listSelect.value;
-      listSelect.addEventListener('change', () => {
-        selectedListId = listSelect.value || initialSelectedListId;
+      const trigger = document.createElement('button');
+      trigger.type = 'button';
+      trigger.className = 'list-item-form-select list-item-target-trigger';
+      trigger.setAttribute('aria-haspopup', 'listbox');
+      trigger.setAttribute('aria-expanded', 'false');
+      const name = document.createElement('span');
+      name.className = 'list-item-target-name';
+      name.id = `${listLabelText.id}-name`;
+      trigger.setAttribute('aria-labelledby', `${listLabelText.id} ${name.id}`);
+      const chevron = document.createElement('span');
+      chevron.className = 'list-item-target-chevron';
+      chevron.setAttribute('aria-hidden', 'true');
+      chevron.innerHTML = ICONS.chevronDown;
+      trigger.append(name, chevron);
+      const updateTrigger = (): void => {
+        name.textContent = listTargets.find((target) => target.id === selectedListId)?.name ?? '';
+        trigger.dataset['listId'] = selectedListId;
+      };
+      const closePicker = (restoreFocus = true): void => {
+        picker.element.hidden = true;
+        trigger.setAttribute('aria-expanded', 'false');
+        if (restoreFocus) trigger.focus();
+      };
+      const chooseList = (target: { id: string }): void => {
+        selectedListId = target.id;
+        updateTrigger();
+        closePicker();
+      };
+      const picker = new ListSelectionPicker({
+        items: listTargets,
+        initialId: selectedListId,
+        onChoose: chooseList,
+        onItemClick: chooseList,
+        onCancel: () => closePicker(),
       });
-      listLabel.appendChild(listLabelText);
-      listLabel.appendChild(listSelect);
-      quickEditContainer.appendChild(listLabel);
+      picker.element.classList.add('list-item-target-menu');
+      picker.element.id = `${listLabelText.id}-menu`;
+      picker.element.hidden = true;
+      trigger.setAttribute('aria-controls', picker.element.id);
+      const openPicker = (): void => {
+        picker.element.hidden = false;
+        picker.reset(selectedListId);
+        trigger.setAttribute('aria-expanded', 'true');
+        picker.focus();
+      };
+      trigger.addEventListener('click', () => {
+        if (picker.element.hidden) openPicker();
+        else closePicker();
+      });
+      trigger.addEventListener('keydown', (event) => {
+        if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+          event.preventDefault();
+          event.stopPropagation();
+          openPicker();
+        }
+      });
+      picker.element.addEventListener('keydown', (event) => picker.handleKeyDown(event));
+      dialog.addEventListener('click', (event) => {
+        if (!listLabel.contains(event.target as Node) && !picker.element.hidden) {
+          closePicker(false);
+        }
+      });
+      updateTrigger();
+      listLabel.append(listLabelText, trigger, picker.element);
+      form.appendChild(listLabel);
     }
 
     const titleLabel = document.createElement('label');
@@ -1395,8 +1447,7 @@ export class ListItemEditorDialog {
     cancelButton.className = 'confirm-dialog-button cancel';
     cancelButton.textContent = 'Cancel';
     cancelButton.addEventListener('click', () => {
-      overlay.remove();
-      document.removeEventListener('keydown', handleKeyDown);
+      closeDialog();
     });
     buttons.appendChild(cancelButton);
 

@@ -1,10 +1,8 @@
 import type { DialogManager } from './dialogManager';
 
-export interface ListSelectionItem {
-  id: string;
-  name: string;
-  instanceLabel?: string;
-}
+import { ListSelectionPicker, type ListSelectionItem } from './listSelectionPicker';
+
+export type { ListSelectionItem } from './listSelectionPicker';
 
 export interface ListSelectionDialogOptions {
   dialogManager: DialogManager;
@@ -16,14 +14,6 @@ export interface ListSelectionDialogOptions {
   emptyText?: string;
   searchPlaceholder?: string;
   showIds?: boolean;
-}
-
-function getListSelectionSearchText(item: ListSelectionItem): string {
-  return [item.name, item.id, item.instanceLabel ?? ''].join(' ').toLowerCase();
-}
-
-function getListSelectionLabel(item: ListSelectionItem): string {
-  return item.instanceLabel ? `${item.name} (${item.instanceLabel})` : item.name;
 }
 
 export function openListSelectionDialog(
@@ -52,20 +42,6 @@ export function openListSelectionDialog(
       dialog.appendChild(messageEl);
     }
 
-    const searchInput = document.createElement('input');
-    searchInput.type = 'search';
-    searchInput.className = 'list-selection-search-input';
-    searchInput.placeholder = options.searchPlaceholder ?? 'Search lists';
-    searchInput.setAttribute('aria-label', options.searchPlaceholder ?? 'Search lists');
-    searchInput.autocomplete = 'off';
-    dialog.appendChild(searchInput);
-
-    const listEl = document.createElement('div');
-    listEl.className = 'list-selection-list';
-    listEl.setAttribute('role', 'listbox');
-    listEl.setAttribute('aria-label', 'Lists');
-    dialog.appendChild(listEl);
-
     const buttons = document.createElement('div');
     buttons.className = 'confirm-dialog-buttons';
 
@@ -85,18 +61,16 @@ export function openListSelectionDialog(
     overlay.appendChild(dialog);
     document.body.appendChild(overlay);
 
-    const items = options.items.filter((item) => item.id && item.name);
-    let selectedItem =
-      items.find((item) => item.id === options.initialId) ??
-      items[0] ??
-      null;
-    let visibleItems: ListSelectionItem[] = [];
     let closed = false;
-
-    const setSelectedItem = (item: ListSelectionItem | null): void => {
-      selectedItem = item;
-      confirmButton.disabled = !selectedItem;
-    };
+    const picker = new ListSelectionPicker({
+      ...options,
+      onHighlightChange: (item) => {
+        confirmButton.disabled = !item;
+      },
+      onChoose: (item) => close(item),
+      onCancel: () => close(null),
+    });
+    dialog.insertBefore(picker.element, buttons);
 
     function close(value: ListSelectionItem | null): void {
       if (closed) {
@@ -110,97 +84,11 @@ export function openListSelectionDialog(
     }
 
     function handleKeyDown(event: KeyboardEvent): void {
-      if (event.key === 'Escape') {
-        event.preventDefault();
-        close(null);
-        return;
-      }
-      if (event.key === 'Enter') {
-        event.preventDefault();
-        close(selectedItem);
-        return;
-      }
-      if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') {
-        return;
-      }
-      if (visibleItems.length === 0) {
-        return;
-      }
-      event.preventDefault();
-      const currentIndex = selectedItem
-        ? visibleItems.findIndex((item) => item.id === selectedItem?.id)
-        : -1;
-      const nextIndex =
-        event.key === 'ArrowDown'
-          ? currentIndex < visibleItems.length - 1
-            ? currentIndex + 1
-            : 0
-          : currentIndex > 0
-            ? currentIndex - 1
-            : visibleItems.length - 1;
-      setSelectedItem(visibleItems[nextIndex] ?? null);
-      render();
+      picker.handleKeyDown(event);
     }
 
-    const render = (): void => {
-      const query = searchInput.value.trim().toLowerCase();
-      visibleItems = query
-        ? items.filter((item) => getListSelectionSearchText(item).includes(query))
-        : items;
-
-      listEl.innerHTML = '';
-      if (visibleItems.length === 0) {
-        const empty = document.createElement('div');
-        empty.className = 'list-selection-empty';
-        empty.textContent = options.emptyText ?? 'No matching lists';
-        listEl.appendChild(empty);
-        setSelectedItem(null);
-        return;
-      }
-
-      if (!selectedItem || !visibleItems.some((item) => item.id === selectedItem?.id)) {
-        setSelectedItem(visibleItems[0] ?? null);
-      }
-
-      for (const item of visibleItems) {
-        const button = document.createElement('button');
-        button.type = 'button';
-        button.className = 'list-selection-item';
-        button.dataset['listId'] = item.id;
-        button.setAttribute('role', 'option');
-        const selected = selectedItem?.id === item.id;
-        button.setAttribute('aria-selected', selected ? 'true' : 'false');
-        if (selected) {
-          button.classList.add('selected');
-          button.scrollIntoView?.({ block: 'nearest' });
-        }
-
-        const label = document.createElement('span');
-        label.className = 'list-selection-item-label';
-        label.textContent = getListSelectionLabel(item);
-        button.appendChild(label);
-
-        if (options.showIds) {
-          const id = document.createElement('span');
-          id.className = 'list-selection-item-id';
-          id.textContent = item.id;
-          button.appendChild(id);
-        }
-
-        button.addEventListener('click', () => {
-          setSelectedItem(item);
-          render();
-        });
-        button.addEventListener('dblclick', () => {
-          close(item);
-        });
-        listEl.appendChild(button);
-      }
-    };
-
-    searchInput.addEventListener('input', render);
     cancelButton.addEventListener('click', () => close(null));
-    confirmButton.addEventListener('click', () => close(selectedItem));
+    confirmButton.addEventListener('click', () => close(picker.getSelectedItem()));
     overlay.addEventListener('click', (event) => {
       if (event.target === overlay) {
         close(null);
@@ -209,7 +97,6 @@ export function openListSelectionDialog(
 
     options.dialogManager.registerExternalDialog(overlay, () => close(null));
     document.addEventListener('keydown', handleKeyDown);
-    render();
-    searchInput.focus();
+    picker.focus();
   });
 }

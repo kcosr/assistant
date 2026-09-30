@@ -3880,6 +3880,45 @@ details[open] > .list-item-custom-fields-title {
   max-height: min(560px, calc(100vh - 32px));
 }
 
+.list-selection-picker {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+}
+
+.list-selection-picker[hidden] {
+  display: none;
+}
+
+.list-item-target-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-sm);
+  text-align: left;
+  cursor: pointer;
+}
+
+.list-item-target-trigger:hover {
+  background-color: var(--color-bg-hover);
+}
+
+.list-item-target-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.list-item-target-chevron svg {
+  display: block;
+  width: 16px;
+  height: 16px;
+}
+
+.list-item-target-menu .list-selection-list {
+  max-height: 180px;
+}
+
 .list-selection-search-input {
   width: 100%;
   padding: var(--spacing-sm) var(--spacing-md);

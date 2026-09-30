@@ -45,7 +45,11 @@
             isLight = lightThemes.has(theme);
           }
           document.documentElement.setAttribute('data-theme-tone', isLight ? 'light' : 'dark');
-          document.documentElement.style.backgroundColor = isLight ? '#ffffff' : '#1a1a1a';
+          document.documentElement.style.backgroundColor = isLight
+            ? '#ffffff'
+            : theme === 'dark' || theme === 'auto'
+              ? '#0c0d0e'
+              : '#1a1a1a';
         } catch {
           // Ignore bootstrap failures and fall back to CSS defaults.
         }
