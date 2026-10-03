@@ -1,5 +1,11 @@
 # Pi Session Compaction
 
+The Pi SDK 1.0 integration retains this compaction algorithm and the JSONL v3 format.
+Effective replay also applies `context_edit` entries and restores the compacted system/tool
+checkpoint. New compactions fold prompt sections and tool declarations into `systemMessage`
+using Pi's public system-state reducer; system instructions are preserved separately from the
+conversation summary.
+
 ## Overview
 
 Add Pi-style context compaction for assistant's in-process `pi` provider sessions. Assistant already mirrors Pi SDK sessions to canonical Pi JSONL under `~/.pi/agent/sessions/...` and reloads Pi-backed state from that log; this feature extends that path so the log can contain Pi-compatible `compaction` entries, assistant can rebuild effective model context from them, users can trigger manual compaction from the chat request menu, and the server can automatically compact after threshold or context-overflow conditions. The compaction algorithm is vendored/adapted into assistant from pi-mono's coding-agent reference implementation rather than imported from `@earendil-works/pi-coding-agent` internals.

@@ -13,6 +13,8 @@ import type {
   Usage,
   Api,
   Model,
+  JsonObject,
+  SystemMessage,
 } from '@earendil-works/pi-ai';
 
 import type { ChatCompletionMessage, ChatCompletionMessageMeta } from '../chatCompletionTypes';
@@ -103,6 +105,7 @@ type PiSessionCompactionEntry = PiSessionEntryBase & {
   tokensBefore: number;
   details?: PiCompactionDetails;
   fromHook?: boolean;
+  systemMessage?: SystemMessage;
 };
 
 type PiSessionEntry =
@@ -341,7 +344,7 @@ function resolveSessionCwd(summary: SessionSummary): string | null {
   return path.resolve(process.cwd());
 }
 
-function parseToolArguments(argumentsJson: string): Record<string, unknown> {
+function parseToolArguments(argumentsJson: string): JsonObject {
   const trimmed = argumentsJson.trim();
   if (!trimmed) {
     return {};
@@ -349,7 +352,7 @@ function parseToolArguments(argumentsJson: string): Record<string, unknown> {
   try {
     const parsed = JSON.parse(trimmed);
     if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-      return parsed as Record<string, unknown>;
+      return parsed as JsonObject;
     }
   } catch {
     // Ignore parse errors and return empty args.
@@ -632,7 +635,9 @@ function normalizePiMessageForSignature(message: unknown): unknown {
   const role = typeof message['role'] === 'string' ? message['role'] : '';
   const content = Array.isArray(message['content'])
     ? message['content'].map((block) => normalizePiContentBlockForSignature(block))
-    : [];
+    : typeof message['content'] === 'string'
+      ? [{ type: 'text', text: message['content'] }]
+      : [];
   if (role === 'toolResult') {
     return {
       role,
@@ -644,6 +649,15 @@ function normalizePiMessageForSignature(message: unknown): unknown {
   }
   if (role === 'assistant') {
     return { role, content };
+  }
+  if (role === 'system') {
+    return {
+      role,
+      content: typeof message['content'] === 'string' ? message['content'] : content,
+      sections: stableNormalizeJson(message['sections'] ?? {}),
+      toolsAdded: stableNormalizeJson(message['toolsAdded'] ?? []),
+      toolsRemoved: stableNormalizeJson(message['toolsRemoved'] ?? []),
+    };
   }
   if (role === 'user') {
     const meta = normalizePiUserMeta(message['meta']);
@@ -693,6 +707,10 @@ function signatureFromChatCompletionMessage(
   knownToolCallIds?: Set<string>,
 ): string {
   switch (message.role) {
+    case 'system':
+      return signatureFromPiMessage(
+        message.piSdkMessage ?? { role: 'system', content: message.content, timestamp: 0 },
+      );
     case 'user': {
       return signatureFromPiMessage(buildUserMessage(message.content ?? '', 0, message.meta));
     }
@@ -750,6 +768,7 @@ function signatureFromChatCompletionMessage(
           display: false,
         });
       }
+      if (message.piSdkMessage) return signatureFromPiMessage(message.piSdkMessage);
       return signatureFromPiMessage({
         role: 'toolResult',
         toolCallId,
@@ -758,8 +777,6 @@ function signatureFromChatCompletionMessage(
         isError: parseToolResultIsError(message.content),
       });
     }
-    default:
-      return stableSerialize({ role: message.role });
   }
 }
 
@@ -988,6 +1005,7 @@ function buildToolResultMessage(options: {
   timestamp: number;
 }): ToolResultMessage {
   const { message, toolCallNameMap, timestamp } = options;
+  if (message.piSdkMessage) return message.piSdkMessage;
   const toolCallId = message.tool_call_id;
   const toolName = toolCallNameMap.get(toolCallId) ?? 'tool';
   return {
@@ -1259,6 +1277,9 @@ function toPiCompactionPathEntry(entry: PiSessionEntryRecord): PiSessionPathEntr
           ? Math.max(0, Math.floor(entry['tokensBefore']))
           : 0,
       details: entry['details'],
+      ...(isRecord(entry['systemMessage'])
+        ? { systemMessage: entry['systemMessage'] as unknown as SystemMessage }
+        : {}),
       ...(entry['fromHook'] === true ? { fromHook: true } : {}),
     };
   }
@@ -1766,13 +1787,24 @@ function filterEntriesByDroppedRanges(
     return entries.map((entry) => cloneJson(entry));
   }
   return entries
-    .filter((_, index) =>
-      droppedRanges.every((range) => index < range.startIndex || index > range.endIndex),
+    .filter(
+      (entry, index) =>
+        isSystemMessageEntry(entry) ||
+        droppedRanges.every((range) => index < range.startIndex || index > range.endIndex),
     )
     .map((entry) => cloneJson(entry));
 }
 
+function isSystemMessageEntry(entry: PiSessionEntryRecord): boolean {
+  return (
+    entry.type === 'message' && isRecord(entry['message']) && entry['message']['role'] === 'system'
+  );
+}
+
 function isConversationalEntry(entry: PiSessionEntryRecord): boolean {
+  if (isSystemMessageEntry(entry)) {
+    return false;
+  }
   if (entry.type === 'message' || entry.type === 'toolcall' || entry.type === 'toolresult') {
     return true;
   }
@@ -1923,9 +1955,34 @@ export class PiSessionWriter {
       return { summary: stateInfo.summary, changed: false, droppedRequestIds: [] };
     }
 
+    // Removing earlier requests keeps prompt/tool updates in their original order.
+    // Trimming the suffix instead rewinds those updates, retaining the initial
+    // baseline even when the first request itself is removed.
+    const initialSystemEntries = new Set<PiSessionEntryRecord>();
+    for (const entry of records.entries) {
+      if (isSystemMessageEntry(entry)) {
+        initialSystemEntries.add(entry);
+      } else if (
+        [
+          'message',
+          'custom_message',
+          'branch_summary',
+          'compaction',
+          'toolcall',
+          'toolresult',
+        ].includes(entry.type)
+      ) {
+        break;
+      }
+    }
     const filteredEntriesRaw =
       action === 'trim_after'
-        ? records.entries.slice(0, droppedRanges[0]!.startIndex).map((entry) => cloneJson(entry))
+        ? records.entries
+            .filter(
+              (entry, index) =>
+                index < droppedRanges[0]!.startIndex || initialSystemEntries.has(entry),
+            )
+            .map((entry) => cloneJson(entry))
         : filterEntriesByDroppedRanges(records.entries, droppedRanges);
     const filteredEntries = hadExplicitRequestSpans
       ? filterConversationalEntriesOutsideRanges(
@@ -2025,6 +2082,7 @@ export class PiSessionWriter {
       firstKeptEntryId: result.firstKeptEntryId,
       tokensBefore: result.tokensBefore,
       ...(result.details ? { details: result.details } : {}),
+      ...(result.systemMessage ? { systemMessage: result.systemMessage } : {}),
       fromHook: false,
     };
 
@@ -2078,7 +2136,7 @@ export class PiSessionWriter {
     currentSummary = stateInfo.summary;
     const state = stateInfo.state;
 
-    const persistableMessages = messages.filter((message) => message.role !== 'system');
+    const persistableMessages = messages;
     const toolCallNameMap = buildToolCallNameMap(persistableMessages);
     const currentSignatures = buildMessageSyncSignatures(persistableMessages, toolCallNameMap);
     const alignment = resolveMessageSyncAlignment({
@@ -2190,7 +2248,23 @@ export class PiSessionWriter {
         Number.isFinite(message.historyTimestampMs)
           ? message.historyTimestampMs
           : this.now().getTime();
-      if (message.role === 'user') {
+      if (message.role === 'system') {
+        const entry: PiSessionMessageEntry = {
+          type: 'message',
+          id: generateEntryId(),
+          parentId: leafId,
+          timestamp: this.now().toISOString(),
+          message: message.piSdkMessage ?? {
+            role: 'system',
+            content: message.content,
+            timestamp: messageTimestampValue,
+          },
+        };
+        entries.push(entry);
+        leafId = entry.id;
+        messageCount += 1;
+        continue;
+      } else if (message.role === 'user') {
         const text = message.content ?? '';
         const meta = message.meta;
         const piMessage = buildUserMessage(text, messageTimestampValue, meta);

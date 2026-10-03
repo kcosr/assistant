@@ -791,6 +791,7 @@ describe('handleTextInputWithChatCompletions (pi)', () => {
 
     expect(runPiSdkChatCompletionIteration).toHaveBeenCalledTimes(1);
     expect(replayMessagesAtCall).toMatchObject([
+      { role: 'system', sections: { assistant_instructions: 'System prompt' } },
       { role: 'user', content: 'Earlier request' },
       {
         role: 'assistant',
@@ -824,9 +825,9 @@ describe('handleTextInputWithChatCompletions (pi)', () => {
     expect(typeof textDone?.requestId).toBe('string');
     expect(recordSessionActivity).toHaveBeenCalledWith('s1', 'Stored final answer');
     expect(state.chatMessages).toMatchObject([
-      { role: 'system', content: 'System prompt' },
       { role: 'user', content: 'Earlier request' },
       { role: 'assistant', content: 'Stored final answer' },
+      { role: 'system', content: 'System prompt' },
       { role: 'user', content: 'Current request' },
       { role: 'assistant', content: 'Stored final answer' },
     ]);
@@ -1358,6 +1359,7 @@ describe('handleTextInputWithChatCompletions (pi)', () => {
     });
 
     expect(replayMessagesAtCall).toMatchObject([
+      { role: 'system', sections: { assistant_instructions: 'System prompt' } },
       { role: 'user', content: 'repeat request' },
       { role: 'user', content: 'repeat request' },
     ]);

@@ -295,7 +295,7 @@ describe('PluginToolHost', () => {
     expect(tools[0]?.name).toBe('fixture_echo');
 
     const result = await tools[0]!.execute('call-1', { text: 'hello' }, ctx.signal);
-    expect(result.details).toEqual({ text: 'hello' });
+    expect(result.details).toBeUndefined();
     expect(result.content[0]).toEqual({
       type: 'text',
       text: JSON.stringify({ text: 'hello' }, null, 2),

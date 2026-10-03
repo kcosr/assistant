@@ -31,6 +31,9 @@ export type ChatCompletionMessage =
   | {
       role: 'system';
       content: string;
+      /** Canonical Pi prompt sections and tool declarations, including later patches. */
+      piSdkMessage?: Extract<PiSdkMessage, { role: 'system' }>;
+      historyTimestampMs?: number;
     }
   | {
       role: 'user';
@@ -56,4 +59,6 @@ export type ChatCompletionMessage =
       tool_call_id: string;
       content: string;
       historyTimestampMs?: number;
+      /** Preserve native error state, images, and structured JSON details across replay. */
+      piSdkMessage?: Extract<PiSdkMessage, { role: 'toolResult' }>;
     };

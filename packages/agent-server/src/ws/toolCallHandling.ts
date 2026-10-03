@@ -1,6 +1,12 @@
 import type { ServerToolCallStartMessage, ServerToolResultMessage } from '@assistant/shared';
 
-import { ToolError, type AgentTool, type ToolContext, type ToolHost } from '../tools';
+import {
+  getAgentToolResultError,
+  ToolError,
+  type AgentTool,
+  type ToolContext,
+  type ToolHost,
+} from '../tools';
 import type { RateLimiter } from '../rateLimit';
 import type { SessionHub, LogicalSessionState } from '../sessionHub';
 import type { ChatCompletionToolCallState } from '../chatCompletionTypes';
@@ -430,8 +436,10 @@ export async function handleChatToolCalls(options: {
       } else {
         throw new ToolError('tool_not_found', `Tool not found: ${call.name}`);
       }
-      // If the result has an explicit `ok` field, use that; otherwise assume success
-      if (result && typeof result === 'object' && 'ok' in result) {
+      const nativeError = getAgentToolResultError(result);
+      if (nativeError !== undefined) {
+        error = { code: 'tool_error', message: nativeError };
+      } else if (result && typeof result === 'object' && 'ok' in result) {
         ok = (result as { ok: unknown }).ok === true;
         // Set error for failed tool calls (e.g., non-zero exit code)
         if (!ok && !error) {

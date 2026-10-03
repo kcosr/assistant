@@ -202,6 +202,35 @@ public final class AssistantVoiceConfigTest {
     }
 
     @Test
+    public void voiceSettingsEnableAndDisableMediaButtonsPersistently() throws Exception {
+        Context context = RuntimeEnvironment.getApplication();
+        AssistantVoiceConfig enabled = createConfig(false).withVoiceSettings(
+            new JSONObject().put("mediaButtonsEnabled", true)
+        );
+        assertTrue(enabled.mediaButtonsEnabled);
+        AssistantVoiceConfig.save(context, enabled);
+        AssistantVoiceConfig restored = AssistantVoiceConfig.load(context);
+        assertTrue(restored.mediaButtonsEnabled);
+
+        AssistantVoiceConfig disabled = restored.withVoiceSettings(
+            new JSONObject().put("mediaButtonsEnabled", false)
+        );
+        assertFalse(disabled.mediaButtonsEnabled);
+        AssistantVoiceConfig.save(context, disabled);
+        assertFalse(AssistantVoiceConfig.load(context).mediaButtonsEnabled);
+    }
+
+    @Test
+    public void unrelatedVoiceSettingsPreserveMediaButtonPreference() throws Exception {
+        for (boolean enabled : new boolean[] { false, true }) {
+            AssistantVoiceConfig updated = createConfig(enabled).withVoiceSettings(
+                new JSONObject().put("ttsGain", 1.75)
+            );
+            assertEquals(enabled, updated.mediaButtonsEnabled);
+        }
+    }
+
+    @Test
     public void manualModeHelpers() {
         AssistantVoiceConfig manual = createConfigWithAudioMode(AssistantVoiceConfig.AUDIO_MODE_MANUAL);
         assertTrue(manual.isManualMode());

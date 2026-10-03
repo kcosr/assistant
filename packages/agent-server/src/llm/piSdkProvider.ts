@@ -4,6 +4,7 @@ import type {
   Api,
   AssistantMessage,
   Context,
+  JsonObject,
   Model,
   Message,
   SimpleStreamOptions,
@@ -127,7 +128,7 @@ export function mapChatCompletionToolsToPiTools(tools: unknown[]): PiTool[] {
   return result;
 }
 
-function parseToolArguments(argumentsJson: string): Record<string, unknown> {
+function parseToolArguments(argumentsJson: string): JsonObject {
   const trimmed = argumentsJson.trim();
   if (!trimmed) {
     return {};
@@ -135,7 +136,7 @@ function parseToolArguments(argumentsJson: string): Record<string, unknown> {
   try {
     const parsed = JSON.parse(trimmed);
     if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-      return parsed as Record<string, unknown>;
+      return parsed as JsonObject;
     }
   } catch {
     // Ignore JSON errors and fall back to empty args.
@@ -225,7 +226,6 @@ export function buildPiContext(options: {
 }): Context {
   const { messages, tools, model } = options;
 
-  const systemPromptParts: string[] = [];
   const piMessages: Message[] = [];
   const toolCallNameById = new Map<string, string>();
   // When we reconstruct tool calls from ChatCompletion tool_calls (rather than
@@ -257,10 +257,13 @@ export function buildPiContext(options: {
 
   for (const message of messages) {
     if (message.role === 'system') {
-      const content = message.content.trim();
-      if (content) {
-        systemPromptParts.push(content);
-      }
+      piMessages.push(
+        message.piSdkMessage ?? {
+          role: 'system',
+          content: message.content,
+          timestamp: message.historyTimestampMs ?? nextTimestamp(),
+        },
+      );
       continue;
     }
 
@@ -341,6 +344,10 @@ export function buildPiContext(options: {
     if (message.role === 'tool') {
       const rawToolCallId = message.tool_call_id;
       const remappedToolCallId = toolCallIdRemap.get(rawToolCallId) ?? rawToolCallId;
+      if (message.piSdkMessage) {
+        piMessages.push({ ...message.piSdkMessage, toolCallId: remappedToolCallId });
+        continue;
+      }
       const toolName = toolCallNameById.get(remappedToolCallId) || 'tool';
       const isError = parseToolResultIsError(message.content);
       const toolResult: ToolResultMessage = {
@@ -355,16 +362,29 @@ export function buildPiContext(options: {
     }
   }
 
-  const context: Context = {
-    messages: piMessages,
-  };
-
-  if (systemPromptParts.length > 0) {
-    context.systemPrompt = systemPromptParts.join('\n\n');
+  // The request's executable tools are authoritative, including an empty set.
+  // Declare them after historical deltas so removed tools cannot reappear on replay.
+  const declaredNames = new Set<string>();
+  for (const message of piMessages) {
+    if (message.role !== 'system') continue;
+    for (const tool of message.toolsRemoved ?? []) declaredNames.delete(tool.name);
+    for (const tool of message.toolsAdded ?? []) declaredNames.add(tool.name);
   }
-  if (tools.length > 0) {
-    context.tools = tools;
+  const toolNames = new Set(tools.map((tool) => tool.name));
+  const toolsRemoved = [...declaredNames]
+    .filter((name) => !toolNames.has(name))
+    .map((name) => ({ name }));
+  if (tools.length > 0 || toolsRemoved.length > 0) {
+    const last = piMessages[piMessages.length - 1];
+    piMessages.splice(last?.role === 'user' ? piMessages.length - 1 : piMessages.length, 0, {
+      role: 'system',
+      content: '',
+      ...(tools.length > 0 ? { toolsAdded: tools } : {}),
+      ...(toolsRemoved.length > 0 ? { toolsRemoved } : {}),
+      timestamp: nextTimestamp(),
+    });
   }
+  const context: Context = { messages: piMessages };
 
   return context;
 }

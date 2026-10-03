@@ -4,6 +4,13 @@
 > described in [CONFIG.md](../CONFIG.md#pi-provider). This document retains the original
 > streaming/history adapter design; inline provider definitions are no longer supported.
 
+The current integration uses Pi SDK 1.0. `Agent` receives system instructions and tool
+declarations as transcript system messages; its `state.systemPrompt` is derived from those
+messages. Canonical history preserves their structured prompt sections and tool changes,
+including system checkpoints in compaction entries. The public `ModelRuntime` continues to
+own registry resolution, authentication, and provider streaming, with the shared request
+override callback applied before transmission.
+
 ## Overview
 
 Replace the OpenAI chat integration in assistant with the native Pi SDK integration

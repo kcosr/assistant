@@ -263,6 +263,23 @@ export function buildCanonicalPiReplayMessages(content: string): ChatCompletionM
     }
 
     const role = getString(message['role']);
+    if (role === 'system') {
+      const piSdkMessage = message as unknown as Extract<PiSdkMessage, { role: 'system' }>;
+      messages.push({
+        role: 'system',
+        content: [
+          extractMessageText(message),
+          ...Object.values(piSdkMessage.sections ?? {}).filter(
+            (section): section is string => typeof section === 'string',
+          ),
+        ]
+          .filter(Boolean)
+          .join('\n\n'),
+        piSdkMessage,
+        historyTimestampMs: piSdkMessage.timestamp,
+      });
+      continue;
+    }
     if (role === 'user') {
       const text = extractMessageText(message);
       if (!text) {
@@ -300,20 +317,18 @@ export function buildCanonicalPiReplayMessages(content: string): ChatCompletionM
       continue;
     }
 
-    if (role === 'toolResult' || role === 'tool_result') {
+    if (role === 'toolResult') {
       const toolCallId = getString(message['toolCallId']);
       if (!toolCallId) {
         continue;
       }
       const text = extractMessageText(message);
-      if (!text) {
-        continue;
-      }
       const historyTimestampMs = resolveTimestamp(message, entry);
       messages.push({
         role: 'tool',
         tool_call_id: toolCallId,
         content: text,
+        piSdkMessage: message as unknown as Extract<PiSdkMessage, { role: 'toolResult' }>,
         ...(historyTimestampMs !== undefined ? { historyTimestampMs } : {}),
       });
     }

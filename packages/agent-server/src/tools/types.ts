@@ -38,6 +38,10 @@ export type AgentToolContent = { type: 'text'; text: string } | { type: string; 
 export interface AgentToolResult {
   content: AgentToolContent[];
   details: unknown;
+  /** Machine-readable output retained alongside model-facing content. */
+  structuredContent?: unknown;
+  /** Native tools may report a failure without throwing. */
+  isError?: boolean;
 }
 
 export type AgentToolUpdateCallback = (partialResult: AgentToolResult) => void;

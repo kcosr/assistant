@@ -500,6 +500,7 @@ public final class AssistantVoicePlugin extends Plugin {
         voiceSettings.put("realtimeListsInstanceId", current.realtimeListsInstanceId);
         voiceSettings.put("audioMode", current.audioMode);
         voiceSettings.put("autoListenEnabled", current.autoListenEnabled);
+        voiceSettings.put("mediaButtonsEnabled", current.mediaButtonsEnabled);
         voiceSettings.put(
             "localResponseVoiceOnlyEnabled",
             current.localResponseVoiceOnlyEnabled

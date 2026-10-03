@@ -1027,15 +1027,26 @@ its values into the new registry/profile contract manually. A rollback of this m
 restore matching application code and the newly backed-up configuration files together, including
 `request-overrides.json` if the migration changed it.
 
-Pi SDK sessions are mirrored to the Pi JSONL format so they can be resumed by the
-pi-mono CLI. Sessions are written to:
+Assistant uses Pi SDK 1.0 and requires Node.js 22.19.0 or newer. Existing Pi registry,
+authentication, chat profile, and request override configuration remains valid.
+
+Pi SDK sessions are mirrored to the Pi JSONL v3 format so they can be resumed by the
+Pi CLI. Sessions are written to:
 `~/.pi/agent/sessions/<encoded-cwd>/*_<pi-session-id>.jsonl`.
 The `cwd` comes from `attributes.core.workingDir` when available (otherwise the
 server working directory).
-Canceled runs still write partial assistant/tool entries so the pi-mono CLI can resume.
+Canceled runs still write partial assistant/tool entries so the Pi CLI can resume.
 Pi-backed sessions always persist canonical Pi JSONL history for replay and reload. Compacted Pi
 JSONL logs keep the full raw history on disk and add Pi-compatible `compaction` entries; future
-model context is rebuilt as summary plus the recent kept messages.
+model context is rebuilt from the system/tool checkpoint, summary, and recent kept messages.
+System messages retain prompt sections and tool declaration changes. Replay also honors Pi
+`context_edit` entries without removing the original messages from the JSONL log.
+Deleting individual requests or trimming earlier requests preserves system/tool state.
+Trimming a request and everything after it discards later state changes while retaining the
+initial system/tool baseline.
+
+The `pi-cli` provider launches a separately installed `pi` executable (or its configured wrapper).
+Updating Assistant's SDK dependencies does not update that executable.
 
 #### CLI Providers (`claude-cli`, `codex-cli`, `pi-cli`)
 

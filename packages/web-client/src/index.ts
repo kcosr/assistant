@@ -534,6 +534,8 @@ async function main(): Promise<void> {
     voiceRuntimeModeSelect: voiceRuntimeModeSelectEl,
     audioModeSelect: audioModeSelectEl,
     autoListenCheckbox: autoListenCheckboxEl,
+    voiceMediaButtonsControl: voiceMediaButtonsControlEl,
+    voiceMediaButtonsCheckbox: voiceMediaButtonsCheckboxEl,
     localResponseVoiceOnlyCheckbox: localResponseVoiceOnlyCheckboxEl,
     standaloneNotificationPlaybackCheckbox: standaloneNotificationPlaybackCheckboxEl,
     notificationTitlePlaybackCheckbox: notificationTitlePlaybackCheckboxEl,
@@ -670,6 +672,7 @@ async function main(): Promise<void> {
   const nativeVoiceBridge = new AssistantNativeVoiceBridge();
   const useNativeVoiceRuntime = isCapacitorAndroid() && nativeVoiceBridge.isAvailable();
   const webTurnOriginId = createWebTurnOriginId();
+  voiceMediaButtonsControlEl.hidden = !useNativeVoiceRuntime;
   voiceRecognizeStopCommandControlEl.hidden = !useNativeVoiceRuntime;
   voiceRecognitionCueControlEl.hidden = !useNativeVoiceRuntime;
   voiceRecognitionCueGainControlEl.hidden = !useNativeVoiceRuntime;
@@ -1949,6 +1952,7 @@ async function main(): Promise<void> {
       cancelQueuedMessage,
       audioModeSelectEl,
       autoListenCheckboxEl,
+      voiceMediaButtonsCheckboxEl,
       localResponseVoiceOnlyCheckboxEl,
       standaloneNotificationPlaybackCheckboxEl,
       notificationTitlePlaybackCheckboxEl,
@@ -4207,6 +4211,7 @@ async function main(): Promise<void> {
         realtimeSpeakerphoneCheckbox?.checked ?? currentSettings.realtimeSpeakerphone,
       audioMode: audioModeSelectEl.value,
       autoListenEnabled: autoListenCheckboxEl.checked,
+      mediaButtonsEnabled: voiceMediaButtonsCheckboxEl.checked,
       localResponseVoiceOnlyEnabled: localResponseVoiceOnlyCheckboxEl.checked,
       standaloneNotificationPlaybackEnabled: standaloneNotificationPlaybackCheckboxEl.checked,
       notificationTitlePlaybackEnabled: notificationTitlePlaybackCheckboxEl.checked,
@@ -4277,6 +4282,7 @@ async function main(): Promise<void> {
     realtimeSpeakerphoneCheckboxEl,
     audioModeSelectEl,
     autoListenCheckboxEl,
+    voiceMediaButtonsCheckboxEl,
     localResponseVoiceOnlyCheckboxEl,
     standaloneNotificationPlaybackCheckboxEl,
     notificationTitlePlaybackCheckboxEl,
@@ -4332,6 +4338,8 @@ async function main(): Promise<void> {
     syncRealtimeControlsVisibility();
     audioModeSelectEl.value = settings.audioMode;
     autoListenCheckboxEl.checked = settings.autoListenEnabled;
+    voiceMediaButtonsCheckboxEl.checked = settings.mediaButtonsEnabled;
+    voiceMediaButtonsCheckboxEl.disabled = !useNativeVoiceRuntime;
     localResponseVoiceOnlyCheckboxEl.checked = settings.localResponseVoiceOnlyEnabled;
     standaloneNotificationPlaybackCheckboxEl.checked =
       settings.standaloneNotificationPlaybackEnabled;

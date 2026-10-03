@@ -777,6 +777,11 @@ describe('SessionHub loadSessionMessages', () => {
     const messages = state.chatMessages;
 
     expect(messages).toEqual([
+      expect.objectContaining({
+        role: 'system',
+        content: 'system',
+        piSdkMessage: expect.objectContaining({ role: 'system', content: 'system' }),
+      }),
       expect.objectContaining({ role: 'user', content: 'First request' }),
       expect.objectContaining({ role: 'assistant', content: 'First reply' }),
     ]);

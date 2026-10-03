@@ -1740,6 +1740,10 @@ button.settings-dropdown-item {
   padding: 0;
 }
 
+.voice-settings-grid .settings-dropdown-item[hidden] {
+  display: none;
+}
+
 .voice-settings-grid .list-item-form-label {
   display: flex;
   flex-direction: column;

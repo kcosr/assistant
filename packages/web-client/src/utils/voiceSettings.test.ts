@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  areVoiceSettingsEqual,
   createDefaultVoiceSettings,
   formatStartupPreRollMsLabel,
   formatRecognitionCueGainPercentLabel,
@@ -14,6 +15,19 @@ import {
 } from './voiceSettings';
 
 describe('voiceSettings', () => {
+  it('preserves headset button control and detects changes to it', () => {
+    const defaults = createDefaultVoiceSettings({ isCapacitorAndroid: true });
+    expect(defaults.mediaButtonsEnabled).toBe(false);
+    const enabled = normalizeVoiceSettings({ ...defaults, mediaButtonsEnabled: true });
+    expect(enabled.mediaButtonsEnabled).toBe(true);
+    expect(areVoiceSettingsEqual(defaults, enabled)).toBe(false);
+    const restored = normalizeVoiceSettings(JSON.parse(JSON.stringify(enabled)));
+    expect(areVoiceSettingsEqual(restored, enabled)).toBe(true);
+    expect(
+      normalizeVoiceSettings({ ...enabled, mediaButtonsEnabled: false }).mediaButtonsEnabled,
+    ).toBe(false);
+  });
+
   it('defaults tts gain to 100%', () => {
     expect(createDefaultVoiceSettings().ttsGain).toBe(1);
     expect(ttsGainToPercent(createDefaultVoiceSettings().ttsGain)).toBe(100);

@@ -30,7 +30,7 @@ and app identifiers so it can coexist with the canonical Electron app:
 
 ## Prerequisites
 
-- Node.js 20+ and npm
+- Node.js 22.19.0 or newer and npm
 - Rust toolchain (stable) – install via [rustup](https://rustup.rs/)
 - Platform-specific dependencies:
 

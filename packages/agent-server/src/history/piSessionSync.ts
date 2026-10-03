@@ -88,12 +88,18 @@ function areEquivalentReplayMessages(
   const leftToolCallId = left.role === 'tool' ? left.tool_call_id : undefined;
   const rightToolCallId = right.role === 'tool' ? right.tool_call_id : undefined;
   const leftHistoryTimestamp = 'historyTimestampMs' in left ? left.historyTimestampMs : undefined;
-  const rightHistoryTimestamp = 'historyTimestampMs' in right ? right.historyTimestampMs : undefined;
+  const rightHistoryTimestamp =
+    'historyTimestampMs' in right ? right.historyTimestampMs : undefined;
+  const systemStateEqual =
+    left.role !== 'system' ||
+    right.role !== 'system' ||
+    JSON.stringify(left.piSdkMessage) === JSON.stringify(right.piSdkMessage);
   return (
     left.role === right.role &&
     left.content === right.content &&
     leftToolCallId === rightToolCallId &&
-    leftHistoryTimestamp === rightHistoryTimestamp
+    leftHistoryTimestamp === rightHistoryTimestamp &&
+    systemStateEqual
   );
 }
 
@@ -118,7 +124,9 @@ export function resolveInterruptedPiSyncMessages(options: {
   const { baseMessages, replayMessages, finalAssistantMessage } = options;
   const replay = replayMessages ?? baseMessages;
   const droppedMessages =
-    replay !== baseMessages && replay.length > baseMessages.length && isReplayPrefix(baseMessages, replay)
+    replay !== baseMessages &&
+    replay.length > baseMessages.length &&
+    isReplayPrefix(baseMessages, replay)
       ? replay.slice(baseMessages.length)
       : [];
   const safeMessages = droppedMessages.length > 0 ? baseMessages : replay;

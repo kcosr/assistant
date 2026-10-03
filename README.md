@@ -8,8 +8,7 @@
 A personal AI assistant with a panel-based plugin system, multi-agent CLI integrations, and text/voice UI.
 Plugins define panels and operations so agents can collaborate on lists, notes, and other workflows,
 or extend the app with custom user-provided plugins.
-OpenAI-compatible sessions are limited in functionality today and will likely be replaced
-by an integration with the badlogic/pi-mono agent SDK.
+In-process chat uses the Earendil Pi SDK for model access, tool execution, and streaming.
 
 <table>
   <tr>
@@ -46,6 +45,9 @@ by an integration with the badlogic/pi-mono agent SDK.
   backgrounds, charcoal controls, and subtle borders; Auto uses the same palette in dark mode.
 
 ## Quick Start
+
+Requires Node.js **22.19.0 or newer**. The in-process Pi provider uses Pi SDK 1.0;
+CLI providers require their own separately installed executables.
 
 ```bash
 # Clone the repository

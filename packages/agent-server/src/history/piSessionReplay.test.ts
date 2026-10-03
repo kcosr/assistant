@@ -1,8 +1,164 @@
 import { describe, expect, it } from 'vitest';
 
 import { buildCanonicalPiReplayMessages } from './piSessionReplay';
+import { buildCompactionSummaryText } from './piCompaction';
+import type { SessionEntry } from '@earendil-works/pi-coding-agent';
 
 describe('buildCanonicalPiReplayMessages', () => {
+  it.each([{ content: [] }, { content: [{ type: 'text', text: 'Access denied' }] }])(
+    'preserves native tool-result error state and details with content %j',
+    ({ content }) => {
+      const message = {
+        role: 'toolResult',
+        toolCallId: 'call-1',
+        toolName: 'read',
+        content,
+        isError: true,
+        details: { code: 'denied' },
+        timestamp: 1,
+      };
+      const replay = buildCanonicalPiReplayMessages(
+        JSON.stringify({
+          type: 'message',
+          id: 'tool',
+          parentId: null,
+          timestamp: '2026-10-03T00:00:00.000Z',
+          message,
+        }),
+      );
+      expect(replay).toHaveLength(1);
+      expect(replay[0]).toMatchObject({ role: 'tool', piSdkMessage: message });
+    },
+  );
+  it.each([false, true])(
+    'matches Pi projection for system state and context edits (compacted: %s)',
+    async (compacted) => {
+      const { buildSessionProjection } = await import('@earendil-works/pi-coding-agent');
+      const timestamp = '2026-10-03T00:00:00.000Z';
+      const system = {
+        role: 'system' as const,
+        content: '',
+        sections: { assistant_instructions: 'Keep instructions', workspace: '/project' },
+        toolsAdded: [{ name: 'read', description: 'Read', parameters: { type: 'object' } }],
+        timestamp: 1,
+      };
+      const entries: SessionEntry[] = [
+        { type: 'message', id: 'system', parentId: null, timestamp, message: system },
+        {
+          type: 'message',
+          id: 'old',
+          parentId: 'system',
+          timestamp,
+          message: { role: 'user', content: 'Original content', timestamp: 2 },
+        },
+        {
+          type: 'message',
+          id: 'omitted',
+          parentId: 'old',
+          timestamp,
+          message: { role: 'user', content: 'Must not replay', timestamp: 3 },
+        },
+        {
+          type: 'message',
+          id: 'patch',
+          parentId: 'omitted',
+          timestamp,
+          message: {
+            role: 'system',
+            content: '',
+            sections: { workspace: null },
+            toolsRemoved: [{ name: 'read' }],
+            timestamp: 4,
+          },
+        },
+      ];
+      if (compacted) {
+        entries.push({
+          type: 'compaction',
+          id: 'compact',
+          parentId: 'patch',
+          timestamp,
+          summary: 'Checkpoint',
+          firstKeptEntryId: 'old',
+          tokensBefore: 300,
+          systemMessage: {
+            role: 'system',
+            content: '',
+            sections: { assistant_instructions: 'Keep instructions' },
+            timestamp: 1,
+          },
+        });
+      }
+      entries.push(
+        {
+          type: 'context_edit',
+          id: 'edit-old',
+          parentId: entries.at(-1)!.id,
+          timestamp,
+          targetId: 'old',
+          replacement: { content: 'First edit' },
+        },
+        {
+          type: 'context_edit',
+          id: 'edit-latest',
+          parentId: 'edit-old',
+          timestamp,
+          targetId: 'old',
+          replacement: { content: 'Latest edit' },
+        },
+        {
+          type: 'context_edit',
+          id: 'omit',
+          parentId: 'edit-latest',
+          timestamp,
+          targetId: 'omitted',
+          replacement: null,
+        },
+        {
+          type: 'message',
+          id: 'after',
+          parentId: 'omit',
+          timestamp,
+          message: {
+            role: 'system',
+            content: 'New instruction',
+            sections: { workspace: '/next' },
+            timestamp: 5,
+          },
+        },
+      );
+      const original = JSON.stringify(entries);
+      const actual = buildCanonicalPiReplayMessages(
+        entries.map((entry) => JSON.stringify(entry)).join('\n'),
+      );
+      const expected = buildSessionProjection(entries).messages.map((message) => {
+        if (message.role === 'compactionSummary') {
+          return { role: 'user', content: buildCompactionSummaryText(message.summary) };
+        }
+        return {
+          role: message.role,
+          content:
+            message.role === 'system'
+              ? message
+              : 'content' in message
+                ? message.content
+                : undefined,
+        };
+      });
+      expect(
+        actual.map((message) => ({
+          role: message.role,
+          content: message.role === 'system' ? message.piSdkMessage : message.content,
+        })),
+      ).toEqual(expected);
+      expect(actual.some((message) => message.content === 'Must not replay')).toBe(false);
+      expect(actual.filter((message) => message.role === 'user').at(-1)?.content).toBe(
+        'Latest edit',
+      );
+      expect(JSON.stringify(entries)).toBe(original);
+    },
+    30_000,
+  );
   it('preserves Pi assistant messages and callback metadata from canonical Pi message entries', () => {
     const content = [
       JSON.stringify({

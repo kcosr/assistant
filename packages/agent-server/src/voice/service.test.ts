@@ -5,8 +5,18 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { EnvConfig } from '../envConfig';
-import type { ToolContext, ToolHost } from '../tools';
+import { CodingToolHost, type ToolContext, type ToolHost } from '../tools';
+import { negotiateOpenAiRealtimeCall, OpenAiRealtimeSideband } from './openaiRealtime';
 import { VoiceService } from './service';
+
+vi.mock('./openaiRealtime', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./openaiRealtime')>();
+  return {
+    ...actual,
+    negotiateOpenAiRealtimeCall: vi.fn(),
+    OpenAiRealtimeSideband: vi.fn(),
+  };
+});
 
 const tempDirs: string[] = [];
 
@@ -69,6 +79,74 @@ describe('VoiceService', () => {
       }),
     );
   });
+
+  it.each([0, 7])(
+    'records native Bash exit %i with its status and structured result',
+    async (exitCode) => {
+      const dataDir = await fs.mkdtemp(path.join(os.tmpdir(), 'voice-bash-result-'));
+      tempDirs.push(dataDir);
+      const send = vi.fn<(message: { type: string; item?: { output: string } }) => void>();
+      let onProviderEvent: ((event: Record<string, unknown>) => void | Promise<void>) | undefined;
+      vi.mocked(negotiateOpenAiRealtimeCall).mockResolvedValue({
+        answerSdp: 'answer',
+        providerCallId: 'provider-call',
+      });
+      vi.mocked(OpenAiRealtimeSideband).mockImplementation((_apiKey, _callId, onEvent) => {
+        onProviderEvent = onEvent;
+        return { connect: vi.fn(), close: vi.fn(), send } as unknown as OpenAiRealtimeSideband;
+      });
+      const service = new VoiceService(
+        {
+          envConfig: makeEnv({ dataDir, apiKey: 'test-key' }),
+          toolHost: new CodingToolHost({ dataDir }),
+          createToolContext: makeToolContext,
+          toolAllowlist: ['bash'],
+        },
+        dataDir,
+      );
+      try {
+        await service.init();
+        const created = await service.createSession({});
+        await service.negotiateOffer({ sessionId: created.session.id, offerSdp: 'offer' });
+        expect(onProviderEvent).toBeDefined();
+        await onProviderEvent!({
+          type: 'response.function_call_arguments.done',
+          name: 'bash',
+          call_id: 'bash-result',
+          arguments: JSON.stringify({ command: `printf "command output"; exit ${exitCode}` }),
+        });
+
+        const events = await service.events(created.session.id, 0);
+        expect(events).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({
+              type: 'tool',
+              name: 'bash',
+              status: exitCode === 0 ? 'completed' : 'failed',
+              ...(exitCode === 0
+                ? {}
+                : { detail: expect.stringContaining('Command exited with code 7') }),
+            }),
+          ]),
+        );
+        const output = send.mock.calls.find(([message]) => message.item)?.[0].item?.output;
+        expect(output).toBeDefined();
+        const result = JSON.parse(output!);
+        expect(result).toMatchObject({
+          content: [{ type: 'text', text: expect.stringContaining('command output') }],
+          structuredContent: { exit_code: exitCode, output: 'command output' },
+          ...(exitCode === 0 ? {} : { isError: true }),
+        });
+        const conversation = await service.getConversation(created.conversationId);
+        expect(
+          conversation?.journal.find((entry) => entry.kind === 'tool_result')?.payload,
+        ).toEqual(result);
+      } finally {
+        service.shutdown();
+      }
+    },
+    15_000,
+  );
 
   it('reports not-configured without OPENAI_API_KEY', async () => {
     const dataDir = await fs.mkdtemp(path.join(os.tmpdir(), 'voice-svc-'));
