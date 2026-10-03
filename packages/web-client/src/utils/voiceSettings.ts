@@ -27,6 +27,7 @@ export interface VoiceSettings {
   realtimeListsInstanceId: string;
   audioMode: AudioMode;
   autoListenEnabled: boolean;
+  mediaButtonsEnabled: boolean;
   localResponseVoiceOnlyEnabled: boolean;
   standaloneNotificationPlaybackEnabled: boolean;
   notificationTitlePlaybackEnabled: boolean;
@@ -158,6 +159,7 @@ export function createDefaultVoiceSettings(options?: {
     realtimeListsInstanceId: 'default',
     audioMode: isAndroid ? 'tool' : 'off',
     autoListenEnabled: isAndroid,
+    mediaButtonsEnabled: false,
     localResponseVoiceOnlyEnabled: isAndroid,
     standaloneNotificationPlaybackEnabled: isAndroid,
     notificationTitlePlaybackEnabled: false,
@@ -211,6 +213,10 @@ export function normalizeVoiceSettings(
       typeof record['autoListenEnabled'] === 'boolean'
         ? record['autoListenEnabled']
         : defaults.autoListenEnabled,
+    mediaButtonsEnabled:
+      typeof record['mediaButtonsEnabled'] === 'boolean'
+        ? record['mediaButtonsEnabled']
+        : defaults.mediaButtonsEnabled,
     localResponseVoiceOnlyEnabled:
       typeof record['localResponseVoiceOnlyEnabled'] === 'boolean'
         ? record['localResponseVoiceOnlyEnabled']
@@ -268,6 +274,7 @@ export function areVoiceSettingsEqual(left: VoiceSettings, right: VoiceSettings)
     left.realtimeListsInstanceId === right.realtimeListsInstanceId &&
     left.audioMode === right.audioMode &&
     left.autoListenEnabled === right.autoListenEnabled &&
+    left.mediaButtonsEnabled === right.mediaButtonsEnabled &&
     left.localResponseVoiceOnlyEnabled === right.localResponseVoiceOnlyEnabled &&
     left.standaloneNotificationPlaybackEnabled === right.standaloneNotificationPlaybackEnabled &&
     left.notificationTitlePlaybackEnabled === right.notificationTitlePlaybackEnabled &&

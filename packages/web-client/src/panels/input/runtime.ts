@@ -75,6 +75,7 @@ export interface InputRuntimeOptions {
   cancelQueuedMessage: (messageId: string) => void;
   audioModeSelectEl: HTMLSelectElement;
   autoListenCheckboxEl: HTMLInputElement;
+  voiceMediaButtonsCheckboxEl: HTMLInputElement;
   localResponseVoiceOnlyCheckboxEl: HTMLInputElement;
   standaloneNotificationPlaybackCheckboxEl: HTMLInputElement;
   notificationTitlePlaybackCheckboxEl: HTMLInputElement;
@@ -343,6 +344,7 @@ export function createInputRuntime(options: InputRuntimeOptions): InputRuntime {
     micButtonEl: elements.micButtonEl,
     audioModeSelectEl: options.audioModeSelectEl,
     autoListenCheckboxEl: options.autoListenCheckboxEl,
+    voiceMediaButtonsCheckboxEl: options.voiceMediaButtonsCheckboxEl,
     localResponseVoiceOnlyCheckboxEl: options.localResponseVoiceOnlyCheckboxEl,
     standaloneNotificationPlaybackCheckboxEl: options.standaloneNotificationPlaybackCheckboxEl,
     notificationTitlePlaybackCheckboxEl: options.notificationTitlePlaybackCheckboxEl,

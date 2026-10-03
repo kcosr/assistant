@@ -405,6 +405,7 @@ export interface SpeechAudioControllerOptions {
   micButtonEl: HTMLButtonElement;
   audioModeSelectEl: HTMLSelectElement;
   autoListenCheckboxEl: HTMLInputElement;
+  voiceMediaButtonsCheckboxEl: HTMLInputElement;
   localResponseVoiceOnlyCheckboxEl: HTMLInputElement;
   standaloneNotificationPlaybackCheckboxEl: HTMLInputElement;
   notificationTitlePlaybackCheckboxEl: HTMLInputElement;
@@ -1053,6 +1054,7 @@ export class SpeechAudioController {
   private syncVoiceSettingsInputs(): void {
     this.options.audioModeSelectEl.value = this.currentVoiceSettings.audioMode;
     this.options.autoListenCheckboxEl.checked = this.currentVoiceSettings.autoListenEnabled;
+    this.options.voiceMediaButtonsCheckboxEl.checked = this.currentVoiceSettings.mediaButtonsEnabled;
     this.options.localResponseVoiceOnlyCheckboxEl.checked =
       this.currentVoiceSettings.localResponseVoiceOnlyEnabled;
     this.options.standaloneNotificationPlaybackCheckboxEl.checked =
@@ -1099,6 +1101,7 @@ export class SpeechAudioController {
     const supportsNativeVoiceSettings = Boolean(this.options.useNativeVoiceRuntime);
     this.options.audioModeSelectEl.disabled = !supportsAudioOutput;
     this.options.autoListenCheckboxEl.disabled = !supportsAudioOutput;
+    this.options.voiceMediaButtonsCheckboxEl.disabled = !supportsNativeVoiceSettings;
     this.options.localResponseVoiceOnlyCheckboxEl.disabled = !supportsNativeVoiceSettings;
     this.options.standaloneNotificationPlaybackCheckboxEl.disabled = !supportsNativeVoiceSettings;
     this.options.notificationTitlePlaybackCheckboxEl.disabled = !supportsNativeVoiceSettings;

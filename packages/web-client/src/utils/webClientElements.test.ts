@@ -29,6 +29,9 @@ describe('getWebClientElements', () => {
     expect(elements?.voiceRuntimeModeSelect?.id).toBe('voice-runtime-mode-select');
     expect(elements?.audioModeSelect?.id).toBe('audio-mode-select');
     expect(elements?.autoListenCheckbox?.id).toBe('auto-listen-checkbox');
+    expect(elements?.voiceMediaButtonsControl.id).toBe('voice-media-buttons-control');
+    expect(elements?.voiceMediaButtonsCheckbox.id).toBe('voice-media-buttons-checkbox');
+    expect(elements?.voiceMediaButtonsCheckbox.type).toBe('checkbox');
     expect(elements?.localResponseVoiceOnlyCheckbox?.id).toBe('local-response-voice-only-checkbox');
     expect(elements?.standaloneNotificationPlaybackCheckbox?.id).toBe(
       'standalone-notification-playback-checkbox',
@@ -86,6 +89,9 @@ describe('getWebClientElements', () => {
     expect(modal?.hidden).toBe(true);
     expect((modal as HTMLElement | null)?.style.display).toBe('none');
     expect(modal?.parentElement?.tagName).toBe('BODY');
+
+    const mediaButtonsControl = dom.window.document.getElementById('voice-media-buttons-control');
+    expect(mediaButtonsControl?.hasAttribute('hidden')).toBe(true);
 
     const recognitionCueControl = dom.window.document.getElementById(
       'voice-recognition-cue-control',

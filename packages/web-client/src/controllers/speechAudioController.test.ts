@@ -47,6 +47,7 @@ function createAudioModeSelect(): HTMLSelectElement {
 function createVoiceSettingsInputs(): {
   audioModeSelectEl: HTMLSelectElement;
   autoListenCheckboxEl: HTMLInputElement;
+  voiceMediaButtonsCheckboxEl: HTMLInputElement;
   localResponseVoiceOnlyCheckboxEl: HTMLInputElement;
   standaloneNotificationPlaybackCheckboxEl: HTMLInputElement;
   notificationTitlePlaybackCheckboxEl: HTMLInputElement;
@@ -90,6 +91,7 @@ function createVoiceSettingsInputs(): {
   return {
     audioModeSelectEl: createAudioModeSelect(),
     autoListenCheckboxEl: document.createElement('input'),
+    voiceMediaButtonsCheckboxEl: document.createElement('input'),
     localResponseVoiceOnlyCheckboxEl: document.createElement('input'),
     standaloneNotificationPlaybackCheckboxEl: document.createElement('input'),
     notificationTitlePlaybackCheckboxEl: document.createElement('input'),
@@ -118,6 +120,7 @@ function createInitialVoiceSettings(overrides?: Partial<VoiceSettings>): VoiceSe
     realtimeListsInstanceId: 'default',
     audioMode: 'off',
     autoListenEnabled: false,
+    mediaButtonsEnabled: false,
     localResponseVoiceOnlyEnabled: false,
     standaloneNotificationPlaybackEnabled: false,
     notificationTitlePlaybackEnabled: false,
@@ -244,13 +247,14 @@ describe('AssistantNativeVoiceBridge', () => {
       },
     }));
 
-    await expect(bridge.setVoiceSettings(createInitialVoiceSettings())).resolves.toBe(true);
+    const settings = createInitialVoiceSettings({ mediaButtonsEnabled: true });
+    await expect(bridge.setVoiceSettings(settings)).resolves.toBe(true);
     await expect(bridge.setSelectedSession(null)).resolves.toBe(true);
     await expect(bridge.retargetActiveRecognition(null)).resolves.toBe(true);
     await expect(bridge.setSessionTitles({ 'session-1': 'Daily Assistant' })).resolves.toBe(true);
     await expect(bridge.setAssistantBaseUrl('https://assistant')).resolves.toBe(true);
     expect(target.setVoiceSettings).toHaveBeenCalledWith({
-      settings: createInitialVoiceSettings(),
+      settings,
     });
     expect(target.setSelectedSession).toHaveBeenCalledWith({ selection: null });
     expect(target.retargetActiveRecognition).toHaveBeenCalledWith({ sessionId: null });
@@ -423,6 +427,50 @@ describe('AssistantNativeVoiceBridge', () => {
       selectedMicDeviceId: '11',
       localResponseVoiceOnlyEnabled: true,
     });
+  });
+
+  it.each([true, false])('syncs headset control with native runtime %s', (useNativeVoiceRuntime) => {
+    ensureWebSocketGlobal();
+    const inputs = createVoiceSettingsInputs();
+    const controller = new SpeechAudioController({
+      speechFeaturesEnabled: false,
+      speechInputController: null,
+      micButtonEl: document.createElement('button'),
+      ...inputs,
+      inputEl: document.createElement('textarea'),
+      getSocket: () => null,
+      getSessionId: () => 'session-a',
+      setStatus: vi.fn(),
+      setTtsStatus: vi.fn(),
+      sendUserText: vi.fn(),
+      updateInputPresentation: vi.fn(),
+      sendModesUpdate: vi.fn(),
+      supportsAudioOutput: () => true,
+      isOutputActive: () => false,
+      updateScrollButtonVisibility: vi.fn(),
+      voiceSettingsStorageKey: 'test-voice-settings',
+      continuousListeningLongPressMs: 250,
+      initialVoiceSettings: createInitialVoiceSettings({ mediaButtonsEnabled: true }),
+      useNativeVoiceRuntime,
+      nativeVoiceBridge: {} as AssistantNativeVoiceBridge,
+    });
+    controller.attach();
+    expect(inputs.voiceMediaButtonsCheckboxEl.checked).toBe(true);
+    expect(inputs.voiceMediaButtonsCheckboxEl.disabled).toBe(!useNativeVoiceRuntime);
+
+    const handler = vi.fn();
+    controller.setVoiceSettingsChangeHandler(handler);
+    for (const enabled of [false, true]) {
+      controller.setVoiceSettings({ ...controller.voiceSettings, mediaButtonsEnabled: enabled });
+      expect(inputs.voiceMediaButtonsCheckboxEl.checked).toBe(enabled);
+      expect(handler).toHaveBeenLastCalledWith(
+        expect.objectContaining({ mediaButtonsEnabled: enabled }),
+      );
+      expect(
+        JSON.parse(localStorage.getItem('test-voice-settings') ?? '{}').mediaButtonsEnabled,
+      ).toBe(enabled);
+    }
+    expect(handler).toHaveBeenCalledTimes(2);
   });
 
   it('syncs the native tts gain slider and persists gain changes', () => {
@@ -879,6 +927,7 @@ describe('SpeechAudioController.micButtonState', () => {
       micButtonEl: document.createElement('button'),
       audioModeSelectEl: createAudioModeSelect(),
       autoListenCheckboxEl: autoListenCheckbox,
+      voiceMediaButtonsCheckboxEl: document.createElement('input'),
       localResponseVoiceOnlyCheckboxEl: document.createElement('input'),
       standaloneNotificationPlaybackCheckboxEl: document.createElement('input'),
       notificationTitlePlaybackCheckboxEl: document.createElement('input'),

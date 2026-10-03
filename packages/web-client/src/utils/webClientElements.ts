@@ -7,6 +7,8 @@ export interface WebClientElements {
   voiceRuntimeModeSelect: HTMLSelectElement;
   audioModeSelect: HTMLSelectElement;
   autoListenCheckbox: HTMLInputElement;
+  voiceMediaButtonsControl: HTMLElement;
+  voiceMediaButtonsCheckbox: HTMLInputElement;
   localResponseVoiceOnlyCheckbox: HTMLInputElement;
   standaloneNotificationPlaybackCheckbox: HTMLInputElement;
   notificationTitlePlaybackCheckbox: HTMLInputElement;
@@ -92,6 +94,8 @@ export function getWebClientElements(): WebClientElements | null {
   const voiceRuntimeModeSelect = getElement<HTMLSelectElement>('voice-runtime-mode-select');
   const audioModeSelect = getElement<HTMLSelectElement>('audio-mode-select');
   const autoListenCheckbox = getElement<HTMLInputElement>('auto-listen-checkbox');
+  const voiceMediaButtonsControl = getElement<HTMLElement>('voice-media-buttons-control');
+  const voiceMediaButtonsCheckbox = getElement<HTMLInputElement>('voice-media-buttons-checkbox');
   const localResponseVoiceOnlyCheckbox = getElement<HTMLInputElement>(
     'local-response-voice-only-checkbox',
   );
@@ -177,6 +181,8 @@ export function getWebClientElements(): WebClientElements | null {
     !voiceRuntimeModeSelect ||
     !audioModeSelect ||
     !autoListenCheckbox ||
+    !voiceMediaButtonsControl ||
+    !voiceMediaButtonsCheckbox ||
     !localResponseVoiceOnlyCheckbox ||
     !standaloneNotificationPlaybackCheckbox ||
     !notificationTitlePlaybackCheckbox ||
@@ -222,6 +228,8 @@ export function getWebClientElements(): WebClientElements | null {
     voiceRuntimeModeSelect,
     audioModeSelect,
     autoListenCheckbox,
+    voiceMediaButtonsControl,
+    voiceMediaButtonsCheckbox,
     localResponseVoiceOnlyCheckbox,
     standaloneNotificationPlaybackCheckbox,
     notificationTitlePlaybackCheckbox,

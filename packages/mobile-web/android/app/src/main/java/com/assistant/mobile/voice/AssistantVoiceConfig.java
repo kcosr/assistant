@@ -816,7 +816,7 @@ final class AssistantVoiceConfig {
                 recognizeStopCommandEnabled
             ),
             settings.optInt("startupPreRollMs", startupPreRollMs),
-            mediaButtonsEnabled,
+            settings.optBoolean("mediaButtonsEnabled", mediaButtonsEnabled),
             settings.optBoolean("ttsPreferredSessionOnly", ttsPreferredSessionOnly),
             settings.optBoolean(
                 "standaloneNotificationPlaybackEnabled",

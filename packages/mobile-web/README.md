@@ -175,11 +175,11 @@ The following patches are applied automatically on `android:sync`:
   plus a `Recognition cue gain` slider clamped to `25%`-`500%`. Native voice settings also expose
   a `Startup pre-roll (ms)` slider clamped to `0`-`4096`, defaulting to `512`, which controls the
   silence prepended before recognition cue playback warms the media path.
-- The persistent Android notification now also includes a native-only Bluetooth/headset media-button
-  capture toggle. When enabled, the foreground service activates an Android `MediaSession` so
-  supported Bluetooth/headset media button presses toggle the existing native start/stop voice flow
-  based on runtime state. The toggle is persisted in native config and may compete with other media
-  apps for headset button ownership while enabled.
+- On Android, open the settings dropdown → `Voice settings` and enable `Headset button control`
+  to use supported Bluetooth/headset play/pause buttons to start listening or skip current TTS.
+  It defaults off and is saved on each device across app restarts. With voice mode enabled, the
+  foreground service activates an Android `MediaSession`; turning the toggle off releases headset
+  button capture. Enabling it may compete with other media apps for headset button ownership.
 - The same persistent Android notification exposes state-specific controls. In idle Thread mode,
   its promoted dropdown shows `Start`, the currently selected `Manual` or `Response` mode, and
   `Rearm On` / `Rearm Off` for Auto Listen. The latter two actions appear only while idle. Active
