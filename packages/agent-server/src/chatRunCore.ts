@@ -24,6 +24,8 @@ import {
   type Api,
   type AssistantMessage,
   type AssistantMessageEvent,
+  type JsonObject,
+  type SystemMessage,
   type Message as PiSdkMessage,
   type Model,
   type TextContent,
@@ -713,7 +715,7 @@ function createEmptyUsage() {
   };
 }
 
-function parseToolCallArguments(argumentsJson: string): Record<string, unknown> {
+function parseToolCallArguments(argumentsJson: string): JsonObject {
   const trimmed = argumentsJson.trim();
   if (!trimmed) {
     return {};
@@ -721,7 +723,7 @@ function parseToolCallArguments(argumentsJson: string): Record<string, unknown> 
   try {
     const parsed = JSON.parse(trimmed);
     if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-      return parsed as Record<string, unknown>;
+      return parsed as JsonObject;
     }
   } catch {
     // Fall through to empty arguments.
@@ -758,9 +760,7 @@ function parseToolResultErrorState(content: string): boolean {
   return false;
 }
 
-function getMessageTimestampMs(
-  message: Exclude<ChatCompletionMessage, { role: 'system' }>,
-): number {
+function getMessageTimestampMs(message: ChatCompletionMessage): number {
   return message.historyTimestampMs ?? Date.now();
 }
 
@@ -817,11 +817,20 @@ function buildToolNameIndex(messages: ChatCompletionMessage[]): Map<string, stri
 }
 
 function toPiAgentMessage(options: {
-  message: Exclude<ChatCompletionMessage, { role: 'system' }>;
+  message: ChatCompletionMessage;
   toolNameIndex: Map<string, string>;
   model: Model<Api>;
 }): AgentMessage {
   const { message, toolNameIndex, model } = options;
+  if (message.role === 'system') {
+    return (
+      message.piSdkMessage ?? {
+        role: 'system',
+        content: message.content,
+        timestamp: getMessageTimestampMs(message),
+      }
+    );
+  }
   if (message.role === 'user') {
     return {
       role: 'user',
@@ -834,46 +843,53 @@ function toPiAgentMessage(options: {
       ? message.piSdkMessage
       : buildSyntheticAssistantMessage({ message, model });
   }
+  if (message.piSdkMessage) return message.piSdkMessage;
   return {
     role: 'toolResult',
     toolCallId: message.tool_call_id,
     toolName: toolNameIndex.get(message.tool_call_id) ?? 'tool',
     content: message.content.trim() ? [{ type: 'text', text: message.content }] : [],
-    details: undefined,
     isError: parseToolResultErrorState(message.content),
     timestamp: getMessageTimestampMs(message),
   };
 }
 
-function buildPiAgentContext(options: {
+async function buildPiAgentContext(options: {
   messages: ChatCompletionMessage[];
   text: string;
   model: Model<Api>;
-}): {
-  systemPrompt: string;
+}): Promise<{
   contextMessages: AgentMessage[];
   promptMessage: AgentMessage;
-} {
+}> {
   const { messages, text, model } = options;
-  const systemPrompt = messages[0]?.role === 'system' ? messages[0].content : '';
-  const nonSystemMessages = (
-    messages[0]?.role === 'system' ? messages.slice(1) : messages.slice()
-  ).filter(
-    (message): message is Exclude<ChatCompletionMessage, { role: 'system' }> =>
-      message.role !== 'system',
-  );
-  const lastMessage = nonSystemMessages[nonSystemMessages.length - 1];
-  const toolNameIndex = buildToolNameIndex(nonSystemMessages);
+  const lastMessage = messages[messages.length - 1];
+  const toolNameIndex = buildToolNameIndex(messages);
   const promptSource =
     lastMessage?.role === 'user' && lastMessage.content === text ? lastMessage : undefined;
-  const contextSource = promptSource ? nonSystemMessages.slice(0, -1) : nonSystemMessages;
-  const contextMessages = contextSource.map((message) =>
+  const contextSource = promptSource ? messages.slice(0, -1) : messages;
+  let contextMessages = contextSource.map((message) =>
     toPiAgentMessage({
       message,
       toolNameIndex,
       model,
     }),
   );
+  // Providers with mid-conversation system support use only a leading message
+  // for their top-level instructions. Older logs can start with conversation
+  // messages; give their model-facing view an effective checkpoint while leaving
+  // canonical messages in append-only order. Folding all patches also handles an
+  // initial tools-only declaration followed by configured instruction sections.
+  const { getCurrentSystemMessage, getCurrentSystemPrompt } = await import('@earendil-works/pi-ai');
+  if (!getCurrentSystemPrompt(contextMessages.slice(0, 1)).trim()) {
+    const checkpoint = getCurrentSystemMessage(contextMessages);
+    if (checkpoint) {
+      contextMessages = [
+        checkpoint,
+        ...contextMessages.filter((message) => message.role !== 'system'),
+      ];
+    }
+  }
   const promptMessage: AgentMessage = promptSource
     ? toPiAgentMessage({
         message: promptSource,
@@ -886,10 +902,73 @@ function buildPiAgentContext(options: {
         timestamp: Date.now(),
       };
   return {
-    systemPrompt,
     contextMessages,
     promptMessage,
   };
+}
+
+// Keep application instructions replaceable without rewriting earlier transcript instructions.
+const ASSISTANT_INSTRUCTIONS_SECTION = 'assistant_instructions';
+
+function toChatSystemMessage(
+  message: SystemMessage,
+): Extract<ChatCompletionMessage, { role: 'system' }> {
+  const content =
+    typeof message.content === 'string'
+      ? message.content
+      : message.content.map((block) => block.text).join('\n');
+  return {
+    role: 'system',
+    content: [content, ...Object.values(message.sections ?? {}).filter((value) => value !== null)]
+      .filter(Boolean)
+      .join('\n\n'),
+    historyTimestampMs: message.timestamp,
+    piSdkMessage: message,
+  };
+}
+
+function reconcilePiSystemInstructions(
+  messages: ChatCompletionMessage[],
+  configuredPrompt: string | undefined,
+  text: string,
+): ChatCompletionMessage[] {
+  const result = messages.slice();
+  const first = result[0];
+  if (first?.role === 'system' && !first.piSdkMessage) {
+    result[0] = toChatSystemMessage({
+      role: 'system',
+      content: '',
+      sections: { [ASSISTANT_INSTRUCTIONS_SECTION]: first.content },
+      timestamp: getMessageTimestampMs(first),
+    });
+  }
+  if (configuredPrompt === undefined) return result;
+
+  let currentPrompt: string | null | undefined;
+  for (const message of result) {
+    if (message.role === 'system') {
+      const value = message.piSdkMessage?.sections?.[ASSISTANT_INSTRUCTIONS_SECTION];
+      if (value !== undefined) currentPrompt = value;
+    }
+  }
+  if (currentPrompt !== configuredPrompt) {
+    const update = toChatSystemMessage({
+      role: 'system',
+      content: '',
+      sections: { [ASSISTANT_INSTRUCTIONS_SECTION]: configuredPrompt },
+      timestamp: Date.now(),
+    });
+    const last = result[result.length - 1];
+    const index =
+      last?.role === 'user' && last.content === text ? result.length - 1 : result.length;
+    result.splice(index, 0, update);
+  }
+  // The mutable application prompt stays available for the next config refresh; the
+  // immutable Pi payload retains the exact historical section contents for replay.
+  if (result[0]?.role === 'system') {
+    result[0] = { ...result[0], content: configuredPrompt };
+  }
+  return result;
 }
 
 function appendAssistantToolCallMessage(
@@ -930,6 +1009,7 @@ function appendToolResultMessage(
     tool_call_id: message.toolCallId,
     content: text,
     historyTimestampMs: message.timestamp,
+    piSdkMessage: message,
   });
 }
 
@@ -1359,12 +1439,16 @@ export async function runChatCompletionCore(
           lastCanonical.historyTimestampMs === currentUserMessage.historyTimestampMs
         );
       piReplayMessages = [
-        ...(systemMessage ? [systemMessage] : []),
         ...canonicalReplayMessages,
         ...(shouldAppendCurrentUser && currentUserMessage ? [currentUserMessage] : []),
       ];
     }
 
+    piReplayMessages = reconcilePiSystemInstructions(
+      piReplayMessages,
+      systemMessage?.content,
+      text,
+    );
     const agentModel = resolvedRuntime.runtimeModel;
     piContextWindow = agentModel.contextWindow;
     type PiRuntimeState = {
@@ -1380,13 +1464,6 @@ export async function runChatCompletionCore(
           agent: undefined as unknown as Agent,
         };
         runtime.agent = new Agent({
-          convertToLlm: async (messages) =>
-            messages.filter(
-              (message) =>
-                message.role === 'user' ||
-                message.role === 'assistant' ||
-                message.role === 'toolResult',
-            ) as PiSdkMessage[],
           streamFn: async (model, context, options) =>
             streamPiSdkModel(model, context, {
               ...options,
@@ -1428,23 +1505,23 @@ export async function runChatCompletionCore(
     piAgentRuntime.agent.state.tools = agentTools as never;
 
     let promptMessage: AgentMessage;
-    const configurePiAgentContext = (messages: ChatCompletionMessage[]): void => {
-      const context = buildPiAgentContext({
+    const configurePiAgentContext = async (messages: ChatCompletionMessage[]): Promise<void> => {
+      const context = await buildPiAgentContext({
         messages,
         text,
         model: agentModel,
       });
-      piAgentRuntime.agent.state.systemPrompt = context.systemPrompt;
       piAgentRuntime.agent.state.messages = context.contextMessages;
       promptMessage = context.promptMessage;
     };
-    configurePiAgentContext(piReplayMessages);
+    await configurePiAgentContext(piReplayMessages);
 
     const toolInputOffsets = new Map<string, number>();
     const toolOutputOffsets = new Map<string, number>();
     const toolOutputTexts = new Map<string, string>();
     piBaseReplayMessages = piReplayMessages.slice();
     let piReplayAccumulator = piReplayMessages.slice();
+    let promptStarted = false;
     let toolIterationCount = 0;
     let hitToolIterationLimit = false;
     let overflowRecoveryAttempted = false;
@@ -1594,7 +1671,23 @@ export async function runChatCompletionCore(
           return;
         }
         case 'message_end': {
-          if (event.message.role === 'assistant') {
+          if (event.message.role === 'system') {
+            const system = toChatSystemMessage(event.message);
+            // Pi declares tool changes immediately before the prompt. Our replay
+            // already contains that prompt, so insert the declaration before it.
+            const last = piReplayAccumulator[piReplayAccumulator.length - 1];
+            const index =
+              !promptStarted && last?.role === 'user' && last.content === text
+                ? piReplayAccumulator.length - 1
+                : piReplayAccumulator.length;
+            piReplayAccumulator.splice(index, 0, system);
+            if (!promptStarted) {
+              // Pre-prompt declarations belong to the committed run baseline too;
+              // otherwise interrupted-tail detection no longer sees a prefix.
+              piBaseReplayMessages = piReplayAccumulator.slice();
+            }
+            state.chatMessages = piReplayAccumulator.slice();
+          } else if (event.message.role === 'assistant') {
             lastPiSdkMessage = event.message;
             if (event.message.content.some((block) => block.type === 'toolCall')) {
               appendAssistantToolCallMessage(piReplayAccumulator, event.message);
@@ -1605,7 +1698,11 @@ export async function runChatCompletionCore(
           } else if (event.message.role === 'toolResult') {
             appendToolResultMessage(piReplayAccumulator, event.message);
             appendToolResultMessage(state.chatMessages, event.message);
-          } else if (event.message.role === 'user' && event.message !== promptMessage) {
+          } else if (event.message.role === 'user') {
+            if (event.message === promptMessage) {
+              promptStarted = true;
+              return;
+            }
             const content =
               typeof event.message.content === 'string'
                 ? event.message.content
@@ -1719,6 +1816,7 @@ export async function runChatCompletionCore(
             subscriptionError = error;
             piAgentRuntime.agent.abort();
           });
+        return subscriptionWork;
       });
     const subscription = subscribePiAgentEvents();
 
@@ -1726,6 +1824,7 @@ export async function runChatCompletionCore(
       piAgentRuntime.agent.abort();
     };
     const promptPiAgent = async (): Promise<void> => {
+      if (abortController.signal.aborted) return;
       let promptError: unknown = null;
       abortController.signal.addEventListener('abort', onAbort, { once: true });
       try {
@@ -1860,10 +1959,13 @@ export async function runChatCompletionCore(
           (await loadCanonicalPiReplayMessages({
             summary: state.summary,
           })) ?? state.chatMessages;
-        piReplayMessages = [
-          ...(systemMessage && retryMessages[0]?.role !== 'system' ? [systemMessage] : []),
-          ...retryMessages,
-        ];
+        piReplayMessages = [...retryMessages];
+        piReplayMessages = reconcilePiSystemInstructions(
+          piReplayMessages,
+          systemMessage?.content,
+          text,
+        );
+        promptStarted = false;
         piBaseReplayMessages = piReplayMessages.slice();
         piReplayAccumulator = piReplayMessages.slice();
         lastPiSdkMessage = undefined;
@@ -1874,7 +1976,7 @@ export async function runChatCompletionCore(
         }
         toolIterationCount = 0;
         hitToolIterationLimit = false;
-        configurePiAgentContext(piReplayMessages);
+        await configurePiAgentContext(piReplayMessages);
 
         const retrySubscription = subscribePiAgentEvents();
         try {
@@ -1891,9 +1993,13 @@ export async function runChatCompletionCore(
 
       piReplayMessages = piReplayAccumulator.slice();
       const retryPiMessage = (finalPiSdkMessage ?? lastPiSdkMessage) as PiSdkMessage | undefined;
-      if (retryPiMessage?.role !== 'assistant') {
+      if (abortController.signal.aborted) {
+        aborted = true;
+        abortReason = abortController.signal.reason === 'timeout' ? 'timeout' : 'aborted';
         finalPiSdkMessage = retryPiMessage;
-      } else if (retryPiMessage.stopReason === 'aborted' || abortController.signal.aborted) {
+      } else if (retryPiMessage?.role !== 'assistant') {
+        finalPiSdkMessage = retryPiMessage;
+      } else if (retryPiMessage.stopReason === 'aborted') {
         aborted = true;
         abortReason =
           abortController.signal.reason === 'timeout' || retryPiMessage.errorMessage === 'timeout'

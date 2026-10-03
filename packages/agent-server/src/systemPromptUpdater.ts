@@ -13,12 +13,7 @@ export async function updateSystemPromptWithTools(options: {
 }): Promise<void> {
   const { state, sessionHub, tools, skills } = options;
 
-  if (!state || state.chatMessages.length === 0) {
-    return;
-  }
-
-  const firstMessage = state.chatMessages[0];
-  if (firstMessage?.role !== 'system') {
+  if (!state) {
     return;
   }
 
@@ -26,7 +21,7 @@ export async function updateSystemPromptWithTools(options: {
   const agentRegistry = sessionHub.getAgentRegistry();
   const selectedInstructionSkillNames = getSelectedSessionSkillIds(state.summary.attributes);
 
-  firstMessage.content = buildSystemPrompt({
+  const content = buildSystemPrompt({
     agentRegistry,
     agentId,
     tools,
@@ -37,4 +32,12 @@ export async function updateSystemPromptWithTools(options: {
       ? { workingDir: state.summary.attributes.core.workingDir }
       : {}),
   });
+  const firstMessage = state.chatMessages[0];
+  if (firstMessage?.role === 'system') {
+    // Keep the canonical Pi payload unchanged. The runtime records any refreshed
+    // instructions as a section update at the current point in the transcript.
+    firstMessage.content = content;
+  } else {
+    state.chatMessages.unshift({ role: 'system', content });
+  }
 }

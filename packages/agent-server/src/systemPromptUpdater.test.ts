@@ -16,6 +16,61 @@ function createTempFile(prefix: string): string {
 }
 
 describe('updateSystemPromptWithTools', () => {
+  it.each([
+    { messages: [] },
+    { messages: [{ role: 'user' as const, content: 'Existing conversation' }] },
+  ])(
+    'initializes configured instructions when replay has no leading system message: %j',
+    async ({ messages }) => {
+      const agentRegistry = new AgentRegistry([
+        { agentId: 'pi', displayName: 'Pi', description: 'Pi agent' },
+      ]);
+      const sessionHub = new SessionHub({
+        sessionIndex: new SessionIndex(createTempFile('system-prompt-updater-initial')),
+        agentRegistry,
+      });
+      const state: LogicalSessionState = {
+        summary: { sessionId: 'session-1', agentId: 'pi', createdAt: '', updatedAt: '' },
+        chatMessages: messages.slice(),
+        messageQueue: [],
+      };
+      await updateSystemPromptWithTools({ state, sessionHub, tools: [] });
+      expect(state.chatMessages[0]).toMatchObject({ role: 'system', content: expect.any(String) });
+      expect(state.chatMessages[0]?.content.length).toBeGreaterThan(0);
+      expect(state.chatMessages.slice(1)).toEqual(messages);
+    },
+  );
+
+  it('refreshes configured instructions without mutating the historical Pi system payload', async () => {
+    const agentRegistry = new AgentRegistry([
+      { agentId: 'pi', displayName: 'Pi', description: 'Pi agent' },
+    ]);
+    const sessionHub = new SessionHub({
+      sessionIndex: new SessionIndex(createTempFile('system-prompt-updater-canonical')),
+      agentRegistry,
+    });
+    const historicalSystem = {
+      role: 'system' as const,
+      content: '',
+      timestamp: 1,
+      sections: { assistant_instructions: 'Previous instructions', project: 'Keep this section' },
+    };
+    const state: LogicalSessionState = {
+      summary: { sessionId: 'session-1', agentId: 'pi', createdAt: '', updatedAt: '' },
+      chatMessages: [
+        { role: 'system', content: 'Previous instructions', piSdkMessage: historicalSystem },
+      ],
+      messageQueue: [],
+    };
+    await updateSystemPromptWithTools({ state, sessionHub, tools: [] });
+    expect(state.chatMessages[0]?.content).not.toBe('Previous instructions');
+    expect(state.chatMessages[0]).toMatchObject({ piSdkMessage: historicalSystem });
+    expect(historicalSystem.sections).toEqual({
+      assistant_instructions: 'Previous instructions',
+      project: 'Keep this section',
+    });
+  });
+
   it('preserves project directory in the system prompt', async () => {
     const agentRegistry = new AgentRegistry([
       { agentId: 'general', displayName: 'General', description: 'General agent' },

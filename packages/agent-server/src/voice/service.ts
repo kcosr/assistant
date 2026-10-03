@@ -1,6 +1,6 @@
 import type { EnvConfig } from '../envConfig';
 import type { ToolContext, ToolHost } from '../tools';
-import { ToolError } from '../tools';
+import { getAgentToolResultError, ToolError } from '../tools';
 
 import {
   buildRealtimeInstructions,
@@ -512,10 +512,12 @@ export class VoiceService {
         toolCallId: callId,
         payload: output,
       });
+      const nativeError = getAgentToolResultError(output);
       await this.store.appendEvent(sessionId, {
         type: 'tool',
         name,
-        status: 'completed',
+        status: nativeError === undefined ? 'completed' : 'failed',
+        ...(nativeError !== undefined ? { detail: nativeError } : {}),
       });
     } catch (error) {
       const message =

@@ -4,13 +4,22 @@ import path from 'node:path';
 
 import { describe, expect, it, vi } from 'vitest';
 
-import type { AssistantMessage } from '@earendil-works/pi-ai';
+import type {
+  Api,
+  AssistantMessage,
+  Model,
+  SystemMessage,
+  ToolResultMessage,
+} from '@earendil-works/pi-ai';
+import type { SessionEntry } from '@earendil-works/pi-coding-agent';
 
 import type { ChatCompletionMessage } from '../chatCompletionTypes';
 import type { SessionSummary } from '../sessionIndex';
 import { resolveSessionThinkingForRun } from '../sessionModel';
 import { loadCanonicalPiReplayMessages } from './piSessionReplay';
 import { PiSessionWriter } from './piSessionWriter';
+import * as piSdkRuntime from '../llm/piSdkRuntime';
+import { mergeSessionAttributes } from '../sessionAttributes';
 
 async function createTempDir(prefix: string): Promise<string> {
   return fs.mkdtemp(path.join(os.tmpdir(), `${prefix}-`));
@@ -38,6 +47,389 @@ function extractMessageTexts(entries: Array<Record<string, unknown>>): string[] 
 }
 
 describe('PiSessionWriter', () => {
+  it.each(['message', 'custom_message'])(
+    'does not retain future system state when trimming a %s-leading session',
+    async (entryType) => {
+      const baseDir = await createTempDir('pi-trim-user-leading');
+      const timestamp = '2026-10-03T00:00:00.000Z';
+      const sessionId = 'pi-user-leading';
+      const directory = path.join(baseDir, '--project--');
+      const file = path.join(directory, `2026-10-03_${sessionId}.jsonl`);
+      const boundary = (requestId: string, kind: 'start' | 'end') => ({
+        type: 'custom',
+        customType: `assistant.request_${kind}`,
+        data: {
+          v: 1,
+          requestId,
+          ...(kind === 'end' ? { status: 'completed' } : { trigger: 'user' }),
+        },
+      });
+      const records = [
+        boundary('old', 'start'),
+        entryType === 'message'
+          ? { type: 'message', message: { role: 'user', content: 'Old question', timestamp: 1 } }
+          : {
+              type: 'custom_message',
+              customType: 'assistant.context',
+              content: 'Old context',
+              display: true,
+            },
+        boundary('old', 'end'),
+        boundary('future', 'start'),
+        {
+          type: 'message',
+          message: {
+            role: 'system',
+            content: '',
+            timestamp: 2,
+            sections: { assistant_instructions: 'Future instructions' },
+            toolsAdded: [
+              { name: 'future_tool', description: 'Future tool', parameters: { type: 'object' } },
+            ],
+          },
+        },
+        { type: 'message', message: { role: 'user', content: 'Future question', timestamp: 3 } },
+        boundary('future', 'end'),
+      ].map((entry, index) => ({
+        ...entry,
+        id: `entry-${index}`,
+        parentId: index ? `entry-${index - 1}` : null,
+        timestamp,
+      }));
+      const summary: SessionSummary = {
+        sessionId: 'assistant-user-leading',
+        agentId: 'pi',
+        createdAt: timestamp,
+        updatedAt: timestamp,
+        attributes: {
+          providers: { pi: { sessionId, cwd: '/project' } },
+          core: { workingDir: '/project' },
+        },
+      };
+      try {
+        await fs.mkdir(directory, { recursive: true });
+        await fs.writeFile(
+          file,
+          [{ type: 'session', version: 3, id: sessionId, timestamp, cwd: '/project' }, ...records]
+            .map((entry) => JSON.stringify(entry))
+            .join('\n') + '\n',
+        );
+        await new PiSessionWriter({ baseDir }).rewriteHistoryByRequest({
+          summary,
+          action: 'trim_after',
+          requestId: 'old',
+        });
+        const rewritten = parseJsonLines(await fs.readFile(file, 'utf8'));
+        expect(rewritten).toHaveLength(1);
+        expect(rewritten[0]).toMatchObject({ type: 'session', id: sessionId });
+        expect(await loadCanonicalPiReplayMessages({ summary, baseDir })).toEqual([]);
+      } finally {
+        await fs.rm(baseDir, { recursive: true, force: true });
+      }
+    },
+  );
+  it.each([
+    {
+      action: 'trim_before' as const,
+      requestId: 'request-2',
+      keptUsers: ['Question 2', 'Question 3'],
+    },
+    { action: 'trim_before' as const, requestId: 'request-3', keptUsers: ['Question 3'] },
+    {
+      action: 'delete_request' as const,
+      requestId: 'request-1',
+      keptUsers: ['Question 2', 'Question 3'],
+    },
+    {
+      action: 'delete_request' as const,
+      requestId: 'request-2',
+      keptUsers: ['Question 1', 'Question 3'],
+    },
+    { action: 'trim_after' as const, requestId: 'request-2', keptUsers: ['Question 1'] },
+    { action: 'trim_after' as const, requestId: 'request-1', keptUsers: [] },
+  ])(
+    'preserves prompt/tool state with the correct cutoff when $action removes $requestId',
+    async ({ action, requestId, keptUsers }) => {
+      const { getCurrentSystemMessage } = await import('@earendil-works/pi-ai');
+      const baseDir = await createTempDir('pi-history-system-state');
+      const now = () => new Date('2026-10-03T00:00:00.000Z');
+      const writer = new PiSessionWriter({ baseDir, now, log: () => undefined });
+      const summary: SessionSummary = {
+        sessionId: 'history-system-state',
+        agentId: 'pi',
+        createdAt: now().toISOString(),
+        updatedAt: now().toISOString(),
+        attributes: { core: { workingDir: '/project' } },
+      };
+      const updateAttributes = async (patch: Record<string, unknown>) => {
+        summary.attributes = mergeSessionAttributes(summary.attributes, patch);
+        return summary;
+      };
+      const systems: SystemMessage[] = [
+        {
+          role: 'system',
+          content: '',
+          sections: { assistant_instructions: 'Initial instructions' },
+          timestamp: 1,
+        },
+        { role: 'system', content: '', sections: { workspace: '/first' }, timestamp: 2 },
+        {
+          role: 'system',
+          content: '',
+          sections: { workspace: '/second' },
+          toolsRemoved: [{ name: 'read' }],
+          toolsAdded: [{ name: 'write', description: 'Write', parameters: { type: 'object' } }],
+          timestamp: 3,
+        },
+        {
+          role: 'system',
+          content: '',
+          sections: { assistant_instructions: 'Current instructions' },
+          timestamp: 4,
+        },
+      ];
+      const systemMessage = (piSdkMessage: SystemMessage): ChatCompletionMessage => ({
+        role: 'system',
+        content: '',
+        piSdkMessage,
+      });
+      const initialTools: SystemMessage = {
+        role: 'system',
+        content: '',
+        timestamp: 1,
+        toolsAdded: [{ name: 'read', description: 'Read', parameters: { type: 'object' } }],
+      };
+      const messages: ChatCompletionMessage[] = [
+        systemMessage(systems[0]!),
+        systemMessage(initialTools),
+      ];
+      try {
+        for (let turn = 1; turn <= 3; turn += 1) {
+          await writer.appendTurnStart({
+            summary,
+            turnId: `request-${turn}`,
+            trigger: 'user',
+            updateAttributes,
+          });
+          messages.push(
+            { role: 'user', content: `Question ${turn}` },
+            systemMessage(systems[turn]!),
+            { role: 'assistant', content: `Answer ${turn}` },
+          );
+          await writer.sync({ summary, messages, updateAttributes });
+          await writer.appendTurnEnd({
+            summary,
+            turnId: `request-${turn}`,
+            status: 'completed',
+            updateAttributes,
+          });
+        }
+        await writer.rewriteHistoryByRequest({ summary, action, requestId, updateAttributes });
+        const replay = (await loadCanonicalPiReplayMessages({ summary, baseDir }))!;
+        expect(replay[0]).toMatchObject({ role: 'system', piSdkMessage: systems[0] });
+        expect(
+          replay.filter((message) => message.role === 'user').map((message) => message.content),
+        ).toEqual(keptUsers);
+        const preservedSystems = replay.flatMap((message) =>
+          message.role === 'system' && message.piSdkMessage ? [message.piSdkMessage] : [],
+        );
+        const expectedPromptSystems =
+          action === 'trim_after' ? systems.slice(0, requestId === 'request-1' ? 1 : 2) : systems;
+        const expectedSystems = [
+          expectedPromptSystems[0]!,
+          initialTools,
+          ...expectedPromptSystems.slice(1),
+        ];
+        expect(preservedSystems).toEqual(expectedSystems);
+        expect(getCurrentSystemMessage(preservedSystems)).toEqual(
+          getCurrentSystemMessage(expectedSystems),
+        );
+        expect(getCurrentSystemMessage(preservedSystems)).toMatchObject(
+          action === 'trim_after'
+            ? {
+                sections: { assistant_instructions: 'Initial instructions' },
+                toolsAdded: [{ name: 'read' }],
+              }
+            : {
+                sections: { assistant_instructions: 'Current instructions', workspace: '/second' },
+                toolsAdded: [{ name: 'write' }],
+              },
+        );
+        const directory = path.join(baseDir, '--project--');
+        const file = path.join(directory, (await fs.readdir(directory))[0]!);
+        const beforeResume = await fs.readFile(file, 'utf8');
+        await new PiSessionWriter({ baseDir, now }).sync({ summary, messages: replay });
+        expect(await fs.readFile(file, 'utf8')).toBe(beforeResume);
+      } finally {
+        await fs.rm(baseDir, { recursive: true, force: true });
+      }
+    },
+    30_000,
+  );
+  it.each([false, true])(
+    'resumes existing conversations without system state (context edit: %s)',
+    async (edited) => {
+      const baseDir = await createTempDir('pi-existing-system-state');
+      const now = () => new Date('2026-10-03T00:00:00.000Z');
+      const log = vi.fn();
+      const writer = new PiSessionWriter({ baseDir, now, log });
+      const summary: SessionSummary = {
+        sessionId: 'existing-session',
+        agentId: 'pi',
+        createdAt: now().toISOString(),
+        updatedAt: now().toISOString(),
+        attributes: { core: { workingDir: '/project' } },
+      };
+      const updateAttributes = async (patch: Record<string, unknown>) => {
+        summary.attributes = mergeSessionAttributes(summary.attributes, patch);
+        return summary;
+      };
+      try {
+        await writer.sync({
+          summary,
+          updateAttributes,
+          messages: [
+            { role: 'user', content: 'Earlier question' },
+            { role: 'assistant', content: 'Earlier answer' },
+          ],
+        });
+        const directory = path.join(baseDir, '--project--');
+        const file = path.join(directory, (await fs.readdir(directory))[0]!);
+        const raw = parseJsonLines(await fs.readFile(file, 'utf8'));
+        if (edited) {
+          raw.push({
+            type: 'context_edit',
+            id: 'edit',
+            parentId: raw.at(-1)!['id'],
+            timestamp: now().toISOString(),
+            targetId: raw.find((entry) => entry['type'] === 'message')!['id'],
+            replacement: { content: 'Corrected question' },
+          });
+          await fs.writeFile(file, raw.map((entry) => JSON.stringify(entry)).join('\n') + '\n');
+        }
+        const replay = (await loadCanonicalPiReplayMessages({ summary, baseDir }))!;
+        expect(replay.map((message) => message.content)).toEqual([
+          edited ? 'Corrected question' : 'Earlier question',
+          'Earlier answer',
+        ]);
+        const system: SystemMessage = {
+          role: 'system',
+          content: '',
+          timestamp: 2,
+          sections: { assistant_instructions: 'Configured prompt' },
+          toolsAdded: [{ name: 'read', description: 'Read', parameters: { type: 'object' } }],
+        };
+        await new PiSessionWriter({ baseDir, now, log }).sync({
+          summary,
+          updateAttributes,
+          messages: [
+            ...replay,
+            { role: 'system', content: 'Configured prompt', piSdkMessage: system },
+            { role: 'user', content: 'Continue', historyTimestampMs: 3 },
+          ],
+        });
+        const after = parseJsonLines(await fs.readFile(file, 'utf8'));
+        expect(after.slice(0, raw.length)).toEqual(raw);
+        expect(after.slice(raw.length).map((entry) => entry['message'])).toEqual([
+          system,
+          { role: 'user', content: [{ type: 'text', text: 'Continue' }], timestamp: 3 },
+        ]);
+        expect(log).not.toHaveBeenCalledWith(
+          'Pi session sync rewriting history after unreconcilable message alignment',
+          expect.anything(),
+        );
+      } finally {
+        await fs.rm(baseDir, { recursive: true, force: true });
+      }
+    },
+  );
+  it('preserves prompt/tool checkpoints through compaction and resumed sync', async () => {
+    const { buildSessionProjection } = await import('@earendil-works/pi-coding-agent');
+    const { getCurrentSystemMessage } = await import('@earendil-works/pi-ai');
+    const baseDir = await createTempDir('pi-system-checkpoint');
+    const now = () => new Date('2026-10-03T00:00:00.000Z');
+    const log = vi.fn();
+    const writer = new PiSessionWriter({ baseDir, now, log });
+    const summary: SessionSummary = {
+      sessionId: 'checkpoint-session',
+      agentId: 'pi',
+      createdAt: now().toISOString(),
+      updatedAt: now().toISOString(),
+      attributes: { core: { workingDir: '/project' } },
+    };
+    const updateAttributes = async (patch: Record<string, unknown>) => {
+      summary.attributes = mergeSessionAttributes(summary.attributes, patch);
+      return summary;
+    };
+    const initial: SystemMessage = {
+      role: 'system',
+      content: '',
+      timestamp: 1,
+      sections: { assistant_instructions: 'Configured prompt', workspace: '/project' },
+      toolsAdded: [{ name: 'read', description: 'Read', parameters: { type: 'object' } }],
+    };
+    const patch: SystemMessage = {
+      role: 'system',
+      content: '',
+      timestamp: 3,
+      sections: { workspace: '/next' },
+      toolsRemoved: [{ name: 'read' }],
+      toolsAdded: [{ name: 'write', description: 'Write', parameters: { type: 'object' } }],
+    };
+    const complete = vi.spyOn(piSdkRuntime, 'completePiSdkModel').mockResolvedValue({
+      role: 'assistant',
+      content: [{ type: 'text', text: 'Earlier work' }],
+      stopReason: 'stop',
+    } as AssistantMessage);
+    try {
+      await writer.sync({
+        summary,
+        updateAttributes,
+        messages: [
+          { role: 'system', content: 'Configured prompt', piSdkMessage: initial },
+          { role: 'user', content: 'Earlier request '.repeat(100), historyTimestampMs: 2 },
+          { role: 'system', content: '/next', piSdkMessage: patch },
+          { role: 'user', content: 'Keep this request', historyTimestampMs: 4 },
+        ],
+      });
+      const result = await writer.compact({
+        summary,
+        updateAttributes,
+        model: { maxTokens: 512, reasoning: false } as Model<Api>,
+        settings: { enabled: true, reserveTokens: 32, keepRecentTokens: 2 },
+      });
+      const checkpoint = getCurrentSystemMessage([initial, patch]);
+      expect(result.result.systemMessage).toEqual(checkpoint);
+      const directory = path.join(baseDir, '--project--');
+      const file = path.join(directory, (await fs.readdir(directory))[0]!);
+      const raw = parseJsonLines(await fs.readFile(file, 'utf8'));
+      expect(raw.find((entry) => entry['type'] === 'compaction')?.['systemMessage']).toEqual(
+        checkpoint,
+      );
+      const projected = buildSessionProjection(raw.slice(1) as unknown as SessionEntry[]);
+      expect(projected.messages.filter((message) => message.role === 'system')).toEqual([
+        checkpoint,
+      ]);
+      const replay = (await loadCanonicalPiReplayMessages({ summary, baseDir }))!;
+      expect(replay[0]).toMatchObject({ role: 'system', piSdkMessage: checkpoint });
+      const resumed = new PiSessionWriter({ baseDir, now, log });
+      await resumed.sync({
+        summary,
+        messages: [...replay, { role: 'user', content: 'Continue', historyTimestampMs: 5 }],
+        updateAttributes,
+      });
+      const after = parseJsonLines(await fs.readFile(file, 'utf8'));
+      expect(after.slice(0, raw.length)).toEqual(raw);
+      expect(after).toHaveLength(raw.length + 1);
+      expect(log).not.toHaveBeenCalledWith(
+        'Pi session sync rewriting history after unreconcilable message alignment',
+        expect.anything(),
+      );
+    } finally {
+      complete.mockRestore();
+      await fs.rm(baseDir, { recursive: true, force: true });
+    }
+  }, 30_000);
   it.each(['medium', 'xhigh', 'none', 'max'])(
     'writes Pi-compatible session files with %s reasoning and tool calls',
     async (thinkingLevel) => {
@@ -106,6 +498,21 @@ describe('PiSessionWriter', () => {
           content: JSON.stringify({ ok: true, result: 'done' }),
         },
       ];
+      const nativeToolResult: ToolResultMessage = {
+        role: 'toolResult',
+        toolCallId: 'call-1',
+        toolName: 'read',
+        content: [{ type: 'text', text: 'Access denied' }],
+        isError: true,
+        details: { code: 'denied' },
+        timestamp: 1769904000011,
+      };
+      messages[3] = {
+        role: 'tool',
+        tool_call_id: 'call-1',
+        content: 'Access denied',
+        piSdkMessage: nativeToolResult,
+      };
 
       await writer.sync({
         summary,
@@ -153,18 +560,19 @@ describe('PiSessionWriter', () => {
       );
 
       const messageEntries = entries.filter((entry) => entry['type'] === 'message');
-      expect(messageEntries).toHaveLength(3);
+      expect(messageEntries).toHaveLength(4);
       expect(
         (messageEntries[0]?.['message'] as Record<string, unknown> | undefined)?.['role'],
-      ).toBe('user');
+      ).toBe('system');
       expect(
         (messageEntries[1]?.['message'] as Record<string, unknown> | undefined)?.['role'],
-      ).toBe('assistant');
+      ).toBe('user');
       expect(
         (messageEntries[2]?.['message'] as Record<string, unknown> | undefined)?.['role'],
-      ).toBe('toolResult');
+      ).toBe('assistant');
+      expect((messageEntries[3]?.['message'] as { role: string }).role).toBe('toolResult');
 
-      const assistantContent = (messageEntries[1]?.['message'] as AssistantMessage).content;
+      const assistantContent = (messageEntries[2]?.['message'] as AssistantMessage).content;
       expect(
         assistantContent.some(
           (block) => block.type === 'thinking' && block.thinkingSignature === 'sig-1',
@@ -175,8 +583,13 @@ describe('PiSessionWriter', () => {
         | undefined;
       expect(toolCallBlock?.name).toBe('read');
 
-      const toolResultMessage = messageEntries[2]?.['message'] as { toolName?: string } | undefined;
+      const toolResultMessage = messageEntries[3]?.['message'] as { toolName?: string } | undefined;
       expect(toolResultMessage?.toolName).toBe('read');
+      expect(toolResultMessage).toEqual(nativeToolResult);
+      const replayed = await loadCanonicalPiReplayMessages({ summary, baseDir });
+      expect(replayed?.find((message) => message.role === 'tool')).toMatchObject({
+        piSdkMessage: nativeToolResult,
+      });
       if (thinkingLevel === 'xhigh') {
         summary.model = 'local/plain';
         const selectedThinking = resolveSessionThinkingForRun({
@@ -649,10 +1062,10 @@ describe('PiSessionWriter', () => {
             sessionId: 'session-diverged',
             piSessionId: expect.any(String),
             sessionFile: expect.stringContaining(baseDir),
-            persistedMessageCount: 2,
-            currentMessageCount: 2,
+            persistedMessageCount: 3,
+            currentMessageCount: 3,
             diagnostics: expect.objectContaining({
-              firstMismatchIndex: 0,
+              firstMismatchIndex: 1,
               persistedWindow: expect.arrayContaining([
                 expect.objectContaining({
                   source: 'persisted',
@@ -1434,9 +1847,14 @@ describe('PiSessionWriter', () => {
     expect(JSON.stringify(entries)).not.toContain('turn-2');
     expect(JSON.stringify(entries)).not.toContain('first turn');
     expect(JSON.stringify(entries)).not.toContain('second turn');
-    expect(entries).toHaveLength(1);
+    expect(entries).toHaveLength(2);
     expect(entries[0]?.['type']).toBe('session');
     expect(entries[0]).not.toHaveProperty('parentId');
+    expect(entries[1]).toMatchObject({
+      type: 'message',
+      parentId: null,
+      message: { role: 'system', content: 'system' },
+    });
   });
 
   it('removes orphan tail entries when trimming after an explicit request', async () => {
@@ -1514,8 +1932,13 @@ describe('PiSessionWriter', () => {
 
     expect(JSON.stringify(entries)).not.toContain('turn-1');
     expect(JSON.stringify(entries)).not.toContain('"se"');
-    expect(entries).toHaveLength(1);
+    expect(entries).toHaveLength(2);
     expect(entries[0]?.['type']).toBe('session');
+    expect(entries[1]).toMatchObject({
+      type: 'message',
+      parentId: null,
+      message: { role: 'system', content: 'system' },
+    });
   });
 
   it('removes orphan conversational gaps left before the next surviving explicit request', async () => {

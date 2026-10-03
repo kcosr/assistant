@@ -7,11 +7,85 @@ import {
   compactPiMessages,
   DEFAULT_PI_COMPACTION_SETTINGS,
   estimatePiMessageTokens,
+  estimatePiContextTokens,
   preparePiCompaction,
   shouldCompactPiContext,
 } from './piCompaction';
 
 describe('piCompaction', () => {
+  it('compacts edited context with checkpoint token costs and a real retained entry', () => {
+    const timestamp = '2026-10-03T00:00:00.000Z';
+    const checkpoint = {
+      role: 'system' as const,
+      content: 'Instructions '.repeat(100),
+      sections: { assistant_instructions: 'Preserve this' },
+      timestamp: 1,
+      toolsAdded: [{ name: 'read', description: 'Read', parameters: { type: 'object' } }],
+    };
+    const entries = [
+      {
+        type: 'message' as const,
+        id: 'old',
+        parentId: null,
+        timestamp,
+        message: { role: 'user' as const, content: 'Old request', timestamp: 2 },
+      },
+      {
+        type: 'compaction' as const,
+        id: 'compaction',
+        parentId: 'old',
+        timestamp,
+        summary: 'Previous summary',
+        firstKeptEntryId: 'old',
+        tokensBefore: 500,
+        systemMessage: checkpoint,
+      },
+      {
+        type: 'message' as const,
+        id: 'kept',
+        parentId: 'compaction',
+        timestamp,
+        message: { role: 'user' as const, content: 'Recent', timestamp: 3 },
+      },
+      {
+        type: 'context_edit',
+        id: 'edit',
+        parentId: 'kept',
+        timestamp,
+        targetId: 'old',
+        replacement: { content: 'Corrected request' },
+      },
+    ];
+    const preparation = preparePiCompaction(entries, {
+      enabled: true,
+      reserveTokens: 16,
+      keepRecentTokens: 1,
+    })!;
+    expect(preparation.firstKeptEntryId).toBe('kept');
+    expect(preparation.messagesToSummarize).toEqual([
+      { role: 'user', content: 'Corrected request', timestamp: 2 },
+    ]);
+    expect(preparation.systemMessages).toEqual([checkpoint]);
+    expect(preparation.tokensBefore).toBe(
+      estimatePiContextTokens([
+        checkpoint,
+        {
+          role: 'compactionSummary',
+          summary: 'Previous summary',
+          tokensBefore: 500,
+          timestamp: Date.parse(timestamp),
+        },
+        { role: 'user', content: 'Corrected request', timestamp: 2 },
+        { role: 'user', content: 'Recent', timestamp: 3 },
+      ]),
+    );
+    expect(
+      preparePiCompaction(
+        [{ type: 'message', id: 'only-system', parentId: null, timestamp, message: checkpoint }],
+        DEFAULT_PI_COMPACTION_SETTINGS,
+      ),
+    ).toBeUndefined();
+  });
   it('uses the Pi threshold rule', () => {
     expect(
       shouldCompactPiContext({
@@ -86,7 +160,7 @@ describe('piCompaction', () => {
       firstKeptEntryId: 'kept',
       previousSummary: 'Previous summary.',
     });
-    expect(preparation?.messagesToSummarize).toHaveLength(1);
+    expect(preparation?.messagesToSummarize).toHaveLength(2);
     expect(estimatePiMessageTokens(entries[0]!.message!)).toBeGreaterThan(0);
   });
 });
@@ -109,6 +183,7 @@ describe('compaction reasoning and limits', () => {
             firstKeptEntryId: 'keep',
             messagesToSummarize: [],
             turnPrefixMessages: [],
+            systemMessages: [],
             isSplitTurn: false,
             tokensBefore: 100,
             fileOps: { read: new Set(), written: new Set(), edited: new Set() },

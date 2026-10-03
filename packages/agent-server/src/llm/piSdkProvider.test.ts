@@ -94,13 +94,16 @@ describe('buildPiContext', () => {
       model: { id: 'gpt-4o-mini', provider: 'openai', api: 'openai' } as never,
     });
 
-    expect(context.systemPrompt).toBe('System prompt');
-    expect(context.messages).toHaveLength(3);
-    expect(context.tools).toEqual([
-      { name: 'doThing', description: '', parameters: { type: 'object' } },
-    ]);
+    expect(context.systemPrompt).toBeUndefined();
+    expect(context.tools).toBeUndefined();
+    expect(context.messages).toHaveLength(5);
+    expect(context.messages[0]).toMatchObject({ role: 'system', content: 'System prompt' });
+    expect(context.messages[4]).toMatchObject({
+      role: 'system',
+      toolsAdded: [{ name: 'doThing', description: '', parameters: { type: 'object' } }],
+    });
 
-    const assistantMessage = context.messages[1] as {
+    const assistantMessage = context.messages[2] as {
       role: string;
       content: Array<{
         type: string;
@@ -119,7 +122,7 @@ describe('buildPiContext', () => {
       arguments: { foo: 'bar' },
     });
 
-    const toolResult = context.messages[2] as {
+    const toolResult = context.messages[3] as {
       role: string;
       toolCallId?: string;
       toolName?: string;
@@ -129,6 +132,50 @@ describe('buildPiContext', () => {
     expect(toolResult.toolCallId).toBe('call-1');
     expect(toolResult.toolName).toBe('doThing');
     expect(toolResult.isError).toBe(true);
+  });
+
+  it('preserves transcript sections and native tool results while applying the current tool set', async () => {
+    const { getCurrentSystemPrompt, getCurrentTools } = await import('@earendil-works/pi-ai');
+    const initial = {
+      role: 'system' as const,
+      content: 'Independent instructions',
+      timestamp: 1,
+      sections: { app: 'Old instructions' },
+      toolsAdded: [{ name: 'obsolete', description: 'Old tool', parameters: { type: 'object' } }],
+    };
+    const patch = {
+      role: 'system' as const,
+      content: '',
+      timestamp: 2,
+      sections: { app: 'Updated instructions' },
+    };
+    const toolResult = {
+      role: 'toolResult' as const,
+      toolCallId: 'failed',
+      toolName: 'obsolete',
+      content: [{ type: 'text' as const, text: 'Exit code 7' }],
+      isError: true,
+      details: { exitCode: 7 },
+      timestamp: 3,
+    };
+    const context = buildPiContext({
+      messages: [
+        { role: 'system', content: 'Rendered prompt', piSdkMessage: initial },
+        { role: 'system', content: 'Rendered update', piSdkMessage: patch },
+        { role: 'tool', tool_call_id: 'failed', content: 'Exit code 7', piSdkMessage: toolResult },
+        { role: 'user', content: 'Continue' },
+      ],
+      tools: [],
+      model: { id: 'local', provider: 'local', api: 'openai-completions' } as never,
+    });
+    expect(context.messages[0]).toBe(initial);
+    expect(context.messages[1]).toBe(patch);
+    expect(context.messages[2]).toEqual(toolResult);
+    expect(getCurrentSystemPrompt(context.messages)).toBe(
+      'Independent instructions\n\nUpdated instructions',
+    );
+    expect(getCurrentTools(context.messages)).toEqual([]);
+    expect(context.messages.at(-1)?.role).toBe('user');
   });
 
   it('preserves Pi SDK assistant content blocks (thinking + tool calls)', () => {

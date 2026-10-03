@@ -299,7 +299,8 @@ describe('createAgentTool', () => {
         toolCallId: 'tool-1',
       }),
     );
-    expect(result.details).toEqual({
+    expect(result.details).toBeUndefined();
+    expect(JSON.parse((result.content[0] as { text: string }).text)).toEqual({
       requestId: 'request-1',
       responseId: 'response-1',
       turnId: 'turn-1',
@@ -436,7 +437,7 @@ describe('BuiltInToolHost', () => {
           ),
         },
       ],
-      details: { updates: true, args: { foo: 'bar' }, sessionId: 'session-native' },
+      details: undefined,
     });
   });
 

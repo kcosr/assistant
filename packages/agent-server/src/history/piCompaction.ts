@@ -1,5 +1,5 @@
 import type { AgentMessage } from '@earendil-works/pi-agent-core';
-import type { Api, Model, Usage } from '@earendil-works/pi-ai';
+import type { Api, Model, SystemMessage, Usage } from '@earendil-works/pi-ai';
 
 import { calculateContextTokens } from '../contextUsage';
 import { isPiReasoningLevel } from '../sessionModel';
@@ -31,6 +31,7 @@ export type PiCompactionResult = {
   firstKeptEntryId: string;
   tokensBefore: number;
   details?: PiCompactionDetails;
+  systemMessage?: SystemMessage;
 };
 
 export type PiCompactionEntryLike = {
@@ -43,6 +44,7 @@ export type PiCompactionEntryLike = {
   tokensBefore: number;
   details?: unknown;
   fromHook?: boolean;
+  systemMessage?: SystemMessage;
 };
 
 export type PiSessionEntryRecordLike = Record<string, unknown> & {
@@ -108,6 +110,7 @@ export type PiCompactionPreparation = {
   previousSummary?: string;
   fileOps: FileOperations;
   settings: PiCompactionSettings;
+  systemMessages: SystemMessage[];
 };
 
 type FileOperations = {
@@ -358,29 +361,82 @@ export function buildEffectivePiSessionEntryPath<T extends PiSessionEntryRecordL
       break;
     }
   }
-  if (compactionIndex === -1) {
-    return pathEntries;
+  let selected = pathEntries;
+  if (compactionIndex >= 0) {
+    const compaction = pathEntries[compactionIndex]!;
+    const firstKeptIndex = pathEntries.findIndex(
+      (entry) => entry.id === compaction['firstKeptEntryId'],
+    );
+    const retained =
+      firstKeptIndex >= 0 && firstKeptIndex < compactionIndex
+        ? pathEntries
+            .slice(firstKeptIndex, compactionIndex)
+            .filter(
+              (entry) =>
+                !(
+                  entry.type === 'message' &&
+                  isRecord(entry['message']) &&
+                  entry['message']['role'] === 'system'
+                ),
+            )
+        : [];
+    selected = [compaction, ...retained, ...pathEntries.slice(compactionIndex + 1)];
   }
 
-  const compaction = pathEntries[compactionIndex]!;
-  const summaryEntry = options.createCompactionSummaryEntry?.(compaction);
-  const effective: T[] =
-    summaryEntry || options.includeRawCompactionEntry !== false ? [summaryEntry ?? compaction] : [];
-  const firstKeptEntryId = getString(compaction['firstKeptEntryId']);
-  let foundFirstKept = false;
-  for (let i = 0; i < compactionIndex; i += 1) {
-    const entry = pathEntries[i]!;
-    if (entry.id === firstKeptEntryId) {
-      foundFirstKept = true;
-    }
-    if (foundFirstKept) {
-      effective.push(entry);
-    }
+  // Context edits affect only the selected branch and retained range. Raw records
+  // stay unchanged so transcript display and later history rewrites retain provenance.
+  const edits = new Map<string, unknown>();
+  for (const entry of selected) {
+    if (entry.type === 'context_edit')
+      edits.set(getString(entry['targetId']), entry['replacement']);
   }
-  for (let i = compactionIndex + 1; i < pathEntries.length; i += 1) {
-    effective.push(pathEntries[i]!);
-  }
-  return effective;
+  return selected.flatMap((entry, index): T[] => {
+    if (entry.type === 'context_edit') return [];
+    if (entry.type === 'compaction') {
+      if (index > 0) return [];
+      const checkpoint = isRecord(entry['systemMessage'])
+        ? [
+            {
+              ...entry,
+              type: 'message',
+              id: `${entry.id}:system`,
+              message: entry['systemMessage'],
+            } as T,
+          ]
+        : [];
+      const summary = options.createCompactionSummaryEntry?.(entry);
+      return [
+        ...checkpoint,
+        ...(summary || options.includeRawCompactionEntry !== false ? [summary ?? entry] : []),
+      ];
+    }
+    const replacement = edits.get(entry.id);
+    if (replacement === null) return [];
+    if (!isRecord(replacement)) return [entry];
+    if (entry.type === 'custom_message') return [{ ...entry, content: replacement['content'] }];
+    const message = entry['message'];
+    if (
+      entry.type !== 'message' ||
+      !isRecord(message) ||
+      !['user', 'assistant', 'toolResult', 'custom'].includes(getString(message['role']))
+    ) {
+      return [entry];
+    }
+    const content = replacement['content'];
+    return [
+      {
+        ...entry,
+        message: {
+          ...message,
+          content:
+            (message['role'] === 'assistant' || message['role'] === 'toolResult') &&
+            typeof content === 'string'
+              ? [{ type: 'text', text: content }]
+              : content,
+        },
+      },
+    ];
+  });
 }
 
 function getMessageFromEntry(entry: PiSessionPathEntry): PiCompactionAgentMessage | undefined {
@@ -412,7 +468,14 @@ function estimateUsageTokensFromMessage(message: PiCompactionAgentMessage): Usag
 
 export function estimatePiMessageTokens(message: PiCompactionAgentMessage): number {
   let chars = 0;
-  if (message.role === 'user') {
+  if (message.role === 'system') {
+    chars = extractTextBlocks(message.content).length;
+    chars += Object.values(message.sections ?? {}).reduce(
+      (total, section) => total + (section?.length ?? 0),
+      0,
+    );
+    chars += message.toolsAdded ? JSON.stringify(message.toolsAdded).length : 0;
+  } else if (message.role === 'user') {
     chars = extractTextBlocks((message as { content?: unknown }).content).length;
   } else if (message.role === 'assistant') {
     for (const block of (message as { content?: unknown[] }).content ?? []) {
@@ -585,6 +648,11 @@ export function preparePiCompaction(
   if (pathEntries.length === 0 || pathEntries[pathEntries.length - 1]?.type === 'compaction') {
     return undefined;
   }
+  pathEntries = buildEffectivePiSessionEntryPath(pathEntries);
+  const systemMessages = pathEntries.flatMap((entry): SystemMessage[] => {
+    const message = getMessageFromEntry(entry);
+    return message?.role === 'system' ? [message] : [];
+  });
 
   let prevCompactionIndex = -1;
   for (let i = pathEntries.length - 1; i >= 0; i -= 1) {
@@ -596,8 +664,11 @@ export function preparePiCompaction(
 
   const boundaryStart = prevCompactionIndex + 1;
   const boundaryEnd = pathEntries.length;
+  if (findValidCutPoints(pathEntries, boundaryStart, boundaryEnd).length === 0) {
+    return undefined;
+  }
   const usageMessages: PiCompactionAgentMessage[] = [];
-  for (let i = prevCompactionIndex >= 0 ? prevCompactionIndex : 0; i < boundaryEnd; i += 1) {
+  for (let i = 0; i < boundaryEnd; i += 1) {
     const message = getMessageFromEntry(pathEntries[i]!);
     if (message) {
       usageMessages.push(message);
@@ -614,7 +685,7 @@ export function preparePiCompaction(
   const messagesToSummarize: PiCompactionAgentMessage[] = [];
   for (let i = boundaryStart; i < historyEnd; i += 1) {
     const message = getMessageFromEntry(pathEntries[i]!);
-    if (message) {
+    if (message && message.role !== 'system') {
       messagesToSummarize.push(message);
     }
   }
@@ -623,7 +694,7 @@ export function preparePiCompaction(
   if (cutPoint.isSplitTurn) {
     for (let i = cutPoint.turnStartIndex; i < cutPoint.firstKeptEntryIndex; i += 1) {
       const message = getMessageFromEntry(pathEntries[i]!);
-      if (message) {
+      if (message && message.role !== 'system') {
         turnPrefixMessages.push(message);
       }
     }
@@ -647,6 +718,7 @@ export function preparePiCompaction(
     ...(previousSummary ? { previousSummary } : {}),
     fileOps,
     settings,
+    systemMessages,
   };
 }
 
@@ -813,12 +885,15 @@ export async function compactPiMessages(options: {
   }
 
   const details = computeFileLists(preparation.fileOps);
+  const { getCurrentSystemMessage } = await import('@earendil-works/pi-ai');
+  const systemMessage = getCurrentSystemMessage(preparation.systemMessages);
   summary += formatFileOperations(details);
   return {
     summary,
     firstKeptEntryId: preparation.firstKeptEntryId,
     tokensBefore: preparation.tokensBefore,
     details,
+    ...(systemMessage ? { systemMessage } : {}),
   };
 }
 

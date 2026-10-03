@@ -47,6 +47,19 @@ function isNativeToolResult(value: unknown): value is AgentToolResult {
   return Array.isArray(candidate['content']) && 'details' in candidate;
 }
 
+export function getAgentToolResultError(value: unknown): string | undefined {
+  if (!isNativeToolResult(value) || value.isError !== true) {
+    return undefined;
+  }
+  return (
+    value.content
+      .flatMap((block) =>
+        block?.type === 'text' && typeof block['text'] === 'string' ? [block['text']] : [],
+      )
+      .join('\n') || 'Tool call returned failure'
+  );
+}
+
 function stringifyToolDetails(value: unknown): string {
   if (typeof value === 'string') {
     return value;
@@ -69,9 +82,10 @@ export function normalizeAgentToolResult(value: unknown): AgentToolResult {
 
   const text = stringifyToolDetails(value);
   const content = text ? [{ type: 'text' as const, text }] : [];
+  // Plain handler payloads are already in content; separate details belong to native tools.
   return {
     content,
-    details: value,
+    details: undefined,
   };
 }
 
