@@ -8,6 +8,7 @@
 
 - Removed `loadAgentDefinitionsFromFile()` from `agents.ts` — all agent loading now goes through `loadConfig()` in `config.ts`. ([#93](https://github.com/kcosr/assistant/pull/93))
 - Replaced inline Pi provider definitions and per-agent model menus with registry-backed models and named chat profiles; shared request overrides now own sampling defaults. ([#138](https://github.com/kcosr/assistant/pull/138))
+- Raised the minimum Node.js version to 22.19.0 for Pi SDK 1.0. ([#141](https://github.com/kcosr/assistant/pull/141))
 
 ### Added
 
@@ -75,6 +76,7 @@
 - Updated the Pi Agent SDK dependencies and runtime setup to use the newer mutable `agent.state` API. ([#97](https://github.com/kcosr/assistant/pull/97))
 - Changed Android share-to-list routing to use a searchable in-app list picker instead of the native select control. ([#97](https://github.com/kcosr/assistant/pull/97))
 - Temporarily changed the Android flavor deploy default to install only the default app flavor unless another flavor is requested explicitly. ([#97](https://github.com/kcosr/assistant/pull/97))
+- Updated the Earendil Pi SDK suite to 1.0.1, preserving transcript system/tool state through replay, history edits, and compaction, including context edits and system checkpoints. ([#141](https://github.com/kcosr/assistant/pull/141))
 
 ### Fixed
 
@@ -113,6 +115,7 @@
 - Fixed `agents_message` tool rendering so sync results show the returned `response` text and async callbacks surface a clearer completion indicator in the tool block UI. ([#93](https://github.com/kcosr/assistant/pull/93))
 - Fixed Pi replay around questionnaire submissions so the hidden follow-up turn indicator no longer renders an empty turn before the questionnaire submission marker. ([#93](https://github.com/kcosr/assistant/pull/93))
 - Preserved provider-specific authentication, model limits, and reasoning settings across model switches, tool/history round trips, and compaction. ([#138](https://github.com/kcosr/assistant/pull/138))
+- Restored Android headset button capture control through a device-persisted Headset button control toggle in Voice settings. ([#141](https://github.com/kcosr/assistant/pull/141))
 
 ### Removed
 
