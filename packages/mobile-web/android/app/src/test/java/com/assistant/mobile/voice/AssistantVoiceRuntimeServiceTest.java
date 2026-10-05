@@ -344,6 +344,7 @@ public final class AssistantVoiceRuntimeServiceTest {
             service,
             createConfig(AssistantVoiceConfig.AUDIO_MODE_TOOL, sessionTitles("session-1", "Assistant"))
         );
+        setPrivateField(service, "speechReady", true);
         setPrivateField(service, "activeTtsRequestId", "tts-active");
         List<AssistantVoiceQueueItem> queue = getQueuedVoiceItems(service);
         queue.add(AssistantVoiceQueueItem.fromManualText(

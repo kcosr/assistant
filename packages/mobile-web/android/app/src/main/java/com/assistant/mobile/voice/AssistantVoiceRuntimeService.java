@@ -677,7 +677,7 @@ public final class AssistantVoiceRuntimeService extends Service {
         boolean credentialBindingChanged = assistantUrlChanged
             || !previous.speechServerBaseUrl.equals(updated.speechServerBaseUrl);
         boolean speechCredentialChanged = false;
-        if (credentialBindingChanged || (credentialChanged && !isThreadSpeechPreferred())) {
+        if (credentialBindingChanged) {
             speechCredential = "";
             speechCredentialLoaded = false;
         } else if (credentialChanged) {
@@ -747,20 +747,16 @@ public final class AssistantVoiceRuntimeService extends Service {
         startInForeground();
         syncMediaSession();
 
-        if (speechConfigChanged || speechCredentialChanged || assistantUrlChanged
-            || (runtimeModeChanged && !isThreadSpeechPreferred())) {
+        if (speechConfigChanged || speechCredentialChanged || assistantUrlChanged) {
             // Fence admission before cleanup, so queued work cannot start on the old client.
             speechReady = false;
+            speechSetupError = "";
+            reportedSpeechSetupError = "";
             stopCurrentInteraction(false, "config_changed");
         }
 
-        if (speechConfigChanged || speechCredentialChanged || assistantUrlChanged
-            || (runtimeModeChanged && !isThreadSpeechPreferred())) {
+        if (speechConfigChanged || speechCredentialChanged || assistantUrlChanged) {
             disconnectSpeech();
-        }
-        if (!isThreadSpeechPreferred()) {
-            speechSetupError = "";
-            reportedSpeechSetupError = "";
         }
 
         if (assistantUrlChanged) {
@@ -769,8 +765,8 @@ public final class AssistantVoiceRuntimeService extends Service {
             syncAssistantSessionSubscriptions(previous.watchedSessionIds, updated.watchedSessionIds, true);
         }
 
-        if (isThreadSpeechPreferred() && !speechReady) {
-            updateState(STATE_CONNECTING, null);
+        if (!speechReady) {
+            if (isThreadSpeechPreferred()) updateState(STATE_CONNECTING, null);
             connectSpeechIfNeeded();
         }
 
@@ -1629,17 +1625,16 @@ public final class AssistantVoiceRuntimeService extends Service {
         speechSetupError = message;
         if (isThreadSpeechPreferred() && !isRealtimeActiveState(runtimeState)) {
             updateState(STATE_ERROR, message);
-            reportedSpeechSetupError = message;
         }
     }
 
     private void scheduleSpeechDiscoveryRetry() {
-        if (config.isEnabled() && isThreadSpeechPreferred())
+        if (config.isEnabled())
             mainHandler.postDelayed(reconnectRunnable, 30000L);
     }
 
     private void connectSpeechIfNeeded() {
-        if (destroyed || !config.isEnabled() || !isThreadSpeechPreferred() || speechClient != null) return;
+        if (destroyed || !config.isEnabled() || speechClient != null) return;
         mainHandler.removeCallbacks(reconnectRunnable);
         if (!speechCredentialLoaded) {
             String loadedCredential = readSpeechCredential();
@@ -1747,7 +1742,7 @@ public final class AssistantVoiceRuntimeService extends Service {
                     refreshDurableNotificationsAsync();
                     if (!hasActiveInteraction() && (isRuntimeConnected() || !isThreadSpeechPreferred())) {
                         updateState(resolveInactiveState(), null);
-                        if (isThreadSpeechPreferred()) drainVoiceQueueIfPossible();
+                        drainVoiceQueueIfPossible();
                     }
                 });
             }
@@ -2395,6 +2390,13 @@ public final class AssistantVoiceRuntimeService extends Service {
             // recovery is still allowed when Thread is live again (front used after resume).
             Log.d(TAG, "enqueueQueueItem dropped admission_paused " + describeQueueItem(item));
             return;
+        }
+        if (item.manual && !speechReady) {
+            connectSpeechIfNeeded();
+            if (!speechSetupError.isEmpty() || speechClient == null) {
+                emitRuntimeError(speechSetupError.isEmpty()
+                    ? "Speech server is not ready. Check Voice settings." : speechSetupError);
+            }
         }
         if (shouldDedupManualAutoListenQueueItem(item, activeQueueItem)) {
             Log.d(TAG, "enqueueQueueItem deduped active manual auto-listen item=" + describeQueueItem(item));
@@ -4288,6 +4290,7 @@ public final class AssistantVoiceRuntimeService extends Service {
             errorIntent.setPackage(getPackageName());
             errorIntent.putExtra(EXTRA_MESSAGE, normalizedError);
             sendBroadcast(errorIntent);
+            if (normalizedError.equals(speechSetupError)) reportedSpeechSetupError = normalizedError;
         }
     }
 

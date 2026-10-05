@@ -16,6 +16,7 @@ import java.util.function.BooleanSupplier;
 import javax.crypto.spec.SecretKeySpec;
 import okhttp3.mockwebserver.MockResponse;
 import okhttp3.mockwebserver.MockWebServer;
+import okhttp3.mockwebserver.SocketPolicy;
 import org.json.JSONObject;
 import org.junit.After;
 import org.junit.Before;
@@ -157,6 +158,8 @@ public final class AssistantSpeechRuntimeTest {
     }
 
     @Test public void removingTokenWithUnchangedSettingsCancelsActiveCapture() throws Exception {
+        set("config", ((AssistantVoiceConfig) get("config")).withVoiceSettings(
+            new JSONObject().put("voiceRuntimeMode", "realtime")));
         AssistantSpeechClient prior = newClient();
         set("speechClient", prior);
         // The persisted credential is absent; this is the in-memory credential used by the old client.
@@ -224,22 +227,113 @@ public final class AssistantSpeechRuntimeTest {
         assertEquals("", get("activeSttRequestId"));
     }
 
-    @Test public void realtimePreferenceSkipsSpeechTokenAndIgnoresOldThreadSetupError() throws Exception {
+    @Test public void realtimeIdleKeepsMissingSpeechTokenErrorQuietUntilExplicitPlay() throws Exception {
         AssistantVoiceConfig config = (AssistantVoiceConfig) get("config");
         set("speechReady", false);
-        set("speechSetupError", "Save a speech server token in Voice settings");
+        long errorsBefore = runtimeErrorBroadcastCount();
         invoke("applyConfig", new Class<?>[] {AssistantVoiceConfig.class},
             config.withVoiceSettings(new JSONObject().put("voiceRuntimeMode", "realtime")));
         assertEquals(AssistantVoiceRuntimeService.STATE_IDLE, get("runtimeState"));
-        assertEquals("", get("speechSetupError"));
+        assertEquals("Save a speech server token in Voice settings", get("speechSetupError"));
         assertNull(get("speechClient"));
-        assertFalse((Boolean) get("speechCredentialLoaded"));
-        invoke("connectSpeechIfNeeded", new Class<?>[0]);
-        assertFalse((Boolean) get("speechCredentialLoaded"));
-        invoke("applyConfig", new Class<?>[] {AssistantVoiceConfig.class}, config);
         assertTrue((Boolean) get("speechCredentialLoaded"));
+        assertEquals(errorsBefore, runtimeErrorBroadcastCount());
+        invoke("connectSpeechIfNeeded", new Class<?>[0]);
+        assertEquals(errorsBefore, runtimeErrorBroadcastCount());
+        service.onStartCommand(AssistantVoiceRuntimeService.playTextIntent(service,
+            "session-current", "Hello", "Play", "unready-play"), 0, 1);
+        assertEquals(errorsBefore + 1, runtimeErrorBroadcastCount());
+        assertEquals(AssistantVoiceRuntimeService.STATE_IDLE, get("runtimeState"));
+        assertEquals(1, queue().size());
+        queue().clear();
+        invoke("applyConfig", new Class<?>[] {AssistantVoiceConfig.class}, config);
         assertEquals(AssistantVoiceRuntimeService.STATE_ERROR, get("runtimeState"));
         assertEquals("Save a speech server token in Voice settings", get("speechSetupError"));
+        assertEquals(errorsBefore + 2, runtimeErrorBroadcastCount());
+    }
+
+    @Test public void realtimePreferenceAllowsQueuedPlayOnceLiveRealtimeOwnerReleasesAdmission() throws Exception {
+        try (MockWebServer server = new MockWebServer()) {
+            server.enqueue(AssistantSpeechClientTest.capabilities(2880000, 20));
+            server.enqueue(AssistantSpeechClientTest.capabilities(2880000, 20));
+            server.enqueue(new MockResponse().setResponseCode(503));
+            AssistantVoiceConfig config = (AssistantVoiceConfig) get("config");
+            set("config", config.withVoiceSettings(new JSONObject()
+                .put("voiceRuntimeMode", "realtime")
+                .put("speechServerBaseUrl", server.url("/speech/v1").toString())
+                .put("speechRecognitionModel", "asr").put("speechSynthesisModel", "tts").put("speechVoice", "voice")));
+            set("speechReady", false);
+            set("speechCredential", "loaded-token");
+            set("speechCredentialLoaded", true);
+            invoke("connectSpeechIfNeeded", new Class<?>[0]);
+            assertNotNull(server.takeRequest(5, TimeUnit.SECONDS));
+            waitUntil(() -> fieldEquals("speechReady", true));
+            assertEquals(AssistantVoiceRuntimeService.STATE_IDLE, get("runtimeState"));
+            AssistantSpeechClient connected = (AssistantSpeechClient) get("speechClient");
+            set("liveOwner", AssistantVoiceControllerPolicy.OWNER_REALTIME);
+            set("runtimeState", AssistantVoiceRuntimeService.STATE_REALTIME_ACTIVE);
+            service.pauseThreadAdmission();
+            service.onStartCommand(AssistantVoiceRuntimeService.playTextIntent(service,
+                "session-current", "Hello", "Play", "queued-realtime-play"), 0, 1);
+            assertEquals(1, queue().size());
+            assertEquals("", get("activeTtsRequestId"));
+            assertNull(server.takeRequest(200, TimeUnit.MILLISECONDS));
+            set("liveOwner", AssistantVoiceControllerPolicy.OWNER_THREAD);
+            set("runtimeState", AssistantVoiceRuntimeService.STATE_IDLE);
+            service.resumeThreadAdmission();
+            assertTrue(queue().isEmpty());
+            assertEquals(AssistantVoiceRuntimeService.STATE_SPEAKING, get("runtimeState"));
+            assertFalse(((String) get("activeTtsRequestId")).isEmpty());
+            assertEquals("queued-realtime-play", ((AssistantVoiceQueueItem) get("activeQueueItem")).sourceEventId);
+            assertSame(connected, get("speechClient"));
+            assertEquals("/speech/v1/audio/capabilities", server.takeRequest(5, TimeUnit.SECONDS).getPath());
+            assertEquals("/speech/v1/audio/speech", server.takeRequest(5, TimeUnit.SECONDS).getPath());
+            waitUntil(() -> fieldEquals("activeTtsRequestId", ""));
+            invoke("disconnectSpeech", new Class<?>[0]);
+        }
+    }
+
+    @Test public void manualPlayDuringInitialDiscoveryQueuesWithoutAnError() throws Exception {
+        try (MockWebServer server = new MockWebServer()) {
+            server.enqueue(new MockResponse().setSocketPolicy(SocketPolicy.NO_RESPONSE));
+            configurePendingDiscovery(server);
+            long errorsBefore = runtimeErrorBroadcastCount();
+            service.onStartCommand(AssistantVoiceRuntimeService.playTextIntent(service,
+                "session-current", "Hello", "Play", "cold-play"), 0, 1);
+            assertNotNull(server.takeRequest(5, TimeUnit.SECONDS));
+            assertNotNull(get("speechClient"));
+            assertEquals(1, queue().size());
+            assertEquals("cold-play", queue().get(0).sourceEventId);
+            assertEquals("", get("activeTtsRequestId"));
+            assertEquals(errorsBefore, runtimeErrorBroadcastCount());
+            assertEquals("", AssistantVoiceConfig.loadRuntimeError(service));
+            invoke("disconnectSpeech", new Class<?>[0]);
+        }
+    }
+
+    @Test public void newModelDiscoveryClearsOldSetupErrorAndQueuesManualPlayQuietly() throws Exception {
+        try (MockWebServer server = new MockWebServer()) {
+            server.enqueue(new MockResponse().setSocketPolicy(SocketPolicy.NO_RESPONSE));
+            configurePendingDiscovery(server);
+            invoke("reportSpeechSetupError", new Class<?>[] {String.class},
+                "Selected speech models or voice are unavailable");
+            long errorsBefore = runtimeErrorBroadcastCount();
+            assertEquals("Selected speech models or voice are unavailable", AssistantVoiceConfig.loadRuntimeError(service));
+            AssistantVoiceConfig config = (AssistantVoiceConfig) get("config");
+            invoke("applyConfig", new Class<?>[] {AssistantVoiceConfig.class},
+                config.withVoiceSettings(new JSONObject().put("speechRecognitionModel", "new-asr")));
+            assertNotNull(server.takeRequest(5, TimeUnit.SECONDS));
+            assertNotNull(get("speechClient"));
+            assertEquals("", get("speechSetupError"));
+            assertEquals("", get("reportedSpeechSetupError"));
+            assertEquals(AssistantVoiceRuntimeService.STATE_CONNECTING, get("runtimeState"));
+            service.onStartCommand(AssistantVoiceRuntimeService.playTextIntent(service,
+                "session-current", "Hello", "Play", "new-model-play"), 0, 1);
+            assertEquals(1, queue().size());
+            assertEquals(errorsBefore, runtimeErrorBroadcastCount());
+            assertEquals("", AssistantVoiceConfig.loadRuntimeError(service));
+            invoke("disconnectSpeech", new Class<?>[0]);
+        }
     }
 
     @Test public void unavailableCatalogRetriesQuietlyAndRecoversWhenRecognitionAloneBecomesReady() throws Exception {
@@ -399,6 +493,16 @@ public final class AssistantSpeechRuntimeTest {
     private long runtimeErrorBroadcastCount() {
         return Shadows.shadowOf(RuntimeEnvironment.getApplication()).getBroadcastIntents().stream()
             .filter(intent -> AssistantVoiceRuntimeService.BROADCAST_RUNTIME_ERROR.equals(intent.getAction())).count();
+    }
+
+    private void configurePendingDiscovery(MockWebServer server) throws Exception {
+        AssistantVoiceConfig config = (AssistantVoiceConfig) get("config");
+        set("config", config.withVoiceSettings(new JSONObject()
+            .put("speechServerBaseUrl", server.url("/speech/v1").toString())
+            .put("speechRecognitionModel", "asr").put("speechSynthesisModel", "tts").put("speechVoice", "voice")));
+        set("speechReady", false);
+        set("speechCredential", "loaded-token");
+        set("speechCredentialLoaded", true);
     }
 
     private boolean fieldEquals(String name, Object expected) {
