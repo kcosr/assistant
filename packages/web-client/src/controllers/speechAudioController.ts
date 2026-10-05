@@ -1098,7 +1098,9 @@ export class SpeechAudioController {
       this.currentVoiceSettings.standaloneNotificationPlaybackEnabled;
     this.options.notificationTitlePlaybackCheckboxEl.checked =
       this.currentVoiceSettings.notificationTitlePlaybackEnabled;
-    this.options.speechServerBaseUrlInputEl.value = this.currentVoiceSettings.speechServerBaseUrl;
+    if (!this.options.speechServerBaseUrlInputEl.validity.customError) {
+      this.options.speechServerBaseUrlInputEl.value = this.currentVoiceSettings.speechServerBaseUrl;
+    }
     this.options.speechVoiceInputEl.value = this.currentVoiceSettings.speechVoice;
     this.options.speechSynthesisModelInputEl.value = this.currentVoiceSettings.speechSynthesisModel;
     this.options.speechRecognitionModelInputEl.value =

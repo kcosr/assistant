@@ -2,6 +2,7 @@ package com.assistant.mobile.voice;
 
 import java.io.ByteArrayOutputStream;
 import java.io.Closeable;
+import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.URI;
@@ -11,6 +12,8 @@ import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.ScheduledThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
@@ -30,7 +33,7 @@ import okio.ByteString;
 import org.json.JSONObject;
 
 /** Authenticated local speech-server transport. Owns neither microphone nor playback hardware.
- * Callbacks are fenced against cancellation and run on network/timer threads. Keep callbacks short;
+ * Callbacks are fenced against cancellation and run on network, spool-reader, or timer threads. Keep callbacks short;
  * post runtime work to its handler, including cancellation of other operations.
  */
 public final class AssistantSpeechClient implements Closeable {
@@ -50,10 +53,15 @@ public final class AssistantSpeechClient implements Closeable {
     private static final long QUEUE_LIMIT = 512 * 1024;
     private static final long UTTERANCE_BYTES = 24000 * 2L * 60;
     private static final long SPEECH_BYTES = 24000 * 2L * 10 * 60;
-    private static final long RESULT_MS = 30000;
+    private static final long RESULT_MS = AssistantSpeechCapabilities.RESULT_TIMEOUT_MS;
+    private static final long SYNTHESIS_REQUEST_MS = 14 * 60 * 1000;
     private final String baseUrl, bearerToken, sttModel, ttsModel, voice;
     private final Clock clock;
-    private final OkHttpClient http, sockets;
+    private final OkHttpClient http, synthesisHttp, sockets;
+    private final File cacheDirectory;
+    private final ExecutorService playbackReaders = Executors.newCachedThreadPool(work -> {
+        Thread thread = new Thread(work, "assistant-speech-spool"); thread.setDaemon(true); return thread;
+    });
     private final ScheduledThreadPoolExecutor timers = new ScheduledThreadPoolExecutor(1, work -> {
         Thread thread = new Thread(work, "assistant-speech-deadlines"); thread.setDaemon(true); return thread;
     });
@@ -64,9 +72,16 @@ public final class AssistantSpeechClient implements Closeable {
         this(baseUrl, bearerToken, sttModel, ttsModel, voice, new OkHttpClient(), () -> TimeUnit.NANOSECONDS.toMillis(System.nanoTime()));
     }
     public AssistantSpeechClient(String baseUrl, String bearerToken, String sttModel, String ttsModel, String voice, Clock clock) {
-        this(baseUrl, bearerToken, sttModel, ttsModel, voice, new OkHttpClient(), clock);
+        this(baseUrl, bearerToken, sttModel, ttsModel, voice, clock, new File(System.getProperty("java.io.tmpdir")));
+    }
+    public AssistantSpeechClient(String baseUrl, String bearerToken, String sttModel, String ttsModel, String voice, Clock clock, File cacheDirectory) {
+        this(baseUrl, bearerToken, sttModel, ttsModel, voice, new OkHttpClient(), clock, cacheDirectory);
     }
     AssistantSpeechClient(String baseUrl, String bearerToken, String sttModel, String ttsModel, String voice, OkHttpClient client, Clock clock) {
+        this(baseUrl, bearerToken, sttModel, ttsModel, voice, client, clock, new File(System.getProperty("java.io.tmpdir")));
+    }
+    private AssistantSpeechClient(String baseUrl, String bearerToken, String sttModel, String ttsModel, String voice, OkHttpClient client, Clock clock, File cacheDirectory) {
+        this.cacheDirectory = java.util.Objects.requireNonNull(cacheDirectory);
         this.clock = java.util.Objects.requireNonNull(clock);
         try {
             if (baseUrl == null || baseUrl.length() > 2048) throw new IllegalArgumentException();
@@ -85,6 +100,8 @@ public final class AssistantSpeechClient implements Closeable {
         sockets = client.newBuilder().followRedirects(false).followSslRedirects(false).retryOnConnectionFailure(false)
             .connectTimeout(15, TimeUnit.SECONDS).readTimeout(0, TimeUnit.SECONDS).callTimeout(0, TimeUnit.SECONDS).build();
         http = sockets.newBuilder().readTimeout(30, TimeUnit.SECONDS).callTimeout(11, TimeUnit.MINUTES).build();
+        // Queue admission and first synthesis can take up to the server's 180-second deadline.
+        synthesisHttp = http.newBuilder().readTimeout(210, TimeUnit.SECONDS).build();
     }
     private static String configured(String value) {
         if (value == null || value.isEmpty() || value.length() > 256 || !value.equals(value.trim()) || value.chars().anyMatch(Character::isISOControl))
@@ -100,13 +117,13 @@ public final class AssistantSpeechClient implements Closeable {
         Speech work = new Speech(listener);
         if (register(work)) {
             if (text == null || text.trim().isEmpty() || text.length() > 65536) work.fail("speech_invalid_input");
-            else work.fetch(caps -> work.start(text, caps.maxTextLength));
+            else work.fetch(false, caps -> work.start(text, caps.maxTextLength));
         }
         return work;
     }
     public Recognition recognize(RecognitionListener listener) {
         Recording work = new Recording(listener);
-        if (register(work)) work.fetch(work::start);
+        if (register(work)) work.fetch(true, work::start);
         return work;
     }
     private boolean register(Work work) {
@@ -127,6 +144,7 @@ public final class AssistantSpeechClient implements Closeable {
         synchronized (this) { closed = true; pending = new ArrayList<>(active); }
         for (Work work : pending) work.cancel();
         timers.shutdownNow();
+        playbackReaders.shutdownNow();
     }
     private interface CatalogReady { void ready(JSONObject catalog); }
     private interface CapabilitiesReady { void ready(AssistantSpeechCapabilities capabilities); }
@@ -157,8 +175,10 @@ public final class AssistantSpeechClient implements Closeable {
         synchronized void fail(String safeMessage) { if (finish()) { stop(); failed(safeMessage); } }
         void stop() { if (call != null) call.cancel(); }
         abstract void failed(String safeMessage);
-        final synchronized void fetch(CapabilitiesReady callback) {
-            fetchCatalog(catalog -> callback.ready(AssistantSpeechCapabilities.parse(catalog, sttModel, ttsModel, voice)));
+        final synchronized void fetch(boolean recognition, CapabilitiesReady callback) {
+            fetchCatalog(catalog -> callback.ready(recognition
+                ? AssistantSpeechCapabilities.parseRecognition(catalog, sttModel)
+                : AssistantSpeechCapabilities.parseSynthesis(catalog, ttsModel, voice)));
         }
         final synchronized void fetchCatalog(CatalogReady callback) {
             if (ended) return;
@@ -191,14 +211,15 @@ public final class AssistantSpeechClient implements Closeable {
         private final SpeechListener listener;
         private List<String> chunks;
         private int index;
-        private long received;
+        private AssistantSpeechPcmSpool spool;
         Speech(SpeechListener listener) { this.listener = listener; }
         synchronized void start(String text, int maximum) {
             if (ended) return;
-            chunks = splitText(text, maximum); timer(11 * 60 * 1000, "speech_timeout"); next();
+            chunks = splitText(text, maximum); next();
         }
         synchronized void next() {
             if (ended) return;
+            timer(SYNTHESIS_REQUEST_MS, "speech_timeout");
             byte[] bytes = AssistantSpeechCapabilities.object("model", ttsModel, "voice", voice,
                 "input", chunks.get(index++), "response_format", "pcm").toString().getBytes(StandardCharsets.UTF_8);
             // One-shot requests prohibit transparent replays after ambiguous synthesis failures.
@@ -208,7 +229,7 @@ public final class AssistantSpeechClient implements Closeable {
                 @Override public boolean isOneShot() { return true; }
                 @Override public void writeTo(BufferedSink sink) throws IOException { sink.write(bytes); }
             };
-            call = http.newCall(request("/audio/speech").post(body).build()); call.enqueue(this);
+            call = synthesisHttp.newCall(request("/audio/speech").post(body).build()); call.enqueue(this);
         }
         @Override public void onFailure(Call request, IOException error) { fail("speech_network_error"); }
         @Override public void onResponse(Call request, Response response) {
@@ -216,6 +237,13 @@ public final class AssistantSpeechClient implements Closeable {
                 if (response.code() != 200) { fail(httpError(response.code())); return; }
                 ResponseBody body = response.body();
                 if (body == null || !validPcm(body.contentType()) || body.contentLength() > SPEECH_BYTES) { fail("speech_invalid_pcm_stream"); return; }
+                body.source().timeout().timeout(30, TimeUnit.SECONDS);
+                final AssistantSpeechPcmSpool current;
+                synchronized (this) {
+                    if (ended) return;
+                    spool = current = new AssistantSpeechPcmSpool(cacheDirectory, SPEECH_BYTES);
+                    playbackReaders.execute(() -> play(current));
+                }
                 long partBytes = 0; int pending = -1;
                 try (InputStream stream = body.byteStream()) {
                     byte[] buffer = new byte[8192];
@@ -224,28 +252,41 @@ public final class AssistantSpeechClient implements Closeable {
                         partBytes += count;
                         synchronized (this) {
                             if (ended) return;
-                            received += count;
-                            if (received > SPEECH_BYTES) { fail("speech_duration_limit"); return; }
-                            if (pending >= 0) { buffer[0] = (byte) pending; count++; }
-                            int aligned = count & ~1;
-                            pending = count == aligned ? -1 : buffer[count - 1] & 255;
+                            if (partBytes > SPEECH_BYTES) { fail("speech_duration_limit"); return; }
                         }
-                        // Playback may wait for bounded queue space. Cancellation must still close the request.
+                        if (pending >= 0) { buffer[0] = (byte) pending; count++; }
                         int aligned = count & ~1;
-                        if (aligned > 0) {
-                            synchronized (this) { if (ended) return; }
-                            listener.pcm(Arrays.copyOf(buffer, aligned), AssistantSpeechCapabilities.SAMPLE_RATE);
-                        }
+                        pending = count == aligned ? -1 : buffer[count - 1] & 255;
+                        if (aligned > 0) current.append(buffer, aligned);
                     }
                 }
                 synchronized (this) {
                     if (ended) return;
                     if (pending >= 0 || partBytes == 0) { fail("speech_invalid_pcm_stream"); return; }
-                    if (index < chunks.size()) next();
-                    else if (finish()) listener.completed();
+                    current.complete();
                 }
             } catch (IOException invalid) { fail("speech_network_error"); }
         }
+        private void play(AssistantSpeechPcmSpool current) {
+            try {
+                for (byte[] pcm; (pcm = current.read()) != null;) {
+                    synchronized (this) { if (ended) return; }
+                    // AudioTrack may block here, independently of the HTTP producer and its queue slot.
+                    listener.pcm(pcm, AssistantSpeechCapabilities.SAMPLE_RATE);
+                }
+                synchronized (this) {
+                    if (ended) return;
+                    current.close(); spool = null;
+                    if (index < chunks.size()) next();
+                    else if (finish()) listener.completed();
+                }
+            } catch (InterruptedException interrupted) {
+                Thread.currentThread().interrupt();
+                fail("speech_playback_interrupted");
+            } catch (IOException | RuntimeException failed) { fail("speech_playback_failed"); }
+            finally { current.close(); }
+        }
+        @Override void stop() { super.stop(); if (spool != null) spool.close(); }
         @Override void failed(String safeMessage) { listener.failed(safeMessage); }
     }
     private final class Recording extends Work implements Recognition {
@@ -357,7 +398,7 @@ public final class AssistantSpeechClient implements Closeable {
                             throw AssistantSpeechCapabilities.unsupported();
                         if (!ready) {
                             // Reserve microphone arming, one bounded utterance, and the result deadline.
-                            if (caps.maxSessionMs - (now() - openedAt) < 120000) { fail("recognition_session_timing_unsupported"); return; }
+                            if (caps.maxSessionMs - (now() - openedAt) < AssistantSpeechCapabilities.READY_SESSION_RESERVE_MS) { fail("recognition_session_timing_unsupported"); return; }
                             ready = true; watch(); listener.ready();
                         } break;
                     }

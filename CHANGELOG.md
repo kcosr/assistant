@@ -56,7 +56,7 @@
 
 ### Changed
 
-- Android Thread voice now uses 24 kHz Realtime transcription with local silence detection and bounded HTTP PCM speech playback; preserves notification queues, Auto Listen, cues, and headset controls.
+- Android Thread voice now uses 24 kHz Realtime transcription with local silence detection and bounded, spooled HTTP PCM speech playback; preserves notification queues, Auto Listen, cues, and headset controls.
 
 - Darkened the Dark and Auto theme backgrounds and surfaces to a near-black palette. ([#140](https://github.com/kcosr/assistant/pull/140))
 - Changed Focus and Pinned task creation to open the editor using the last successfully used list, and replaced Add/Edit list dropdowns with the shared searchable list picker in both Edit and Review modes. ([#140](https://github.com/kcosr/assistant/pull/140))

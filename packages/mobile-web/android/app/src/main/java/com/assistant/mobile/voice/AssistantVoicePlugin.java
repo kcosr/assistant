@@ -476,13 +476,13 @@ public final class AssistantVoicePlugin extends Plugin {
                 if (action.equals("save")) {
                     AssistantSpeechCredentialStore.validateToken(entered);
                     store.set(endpoint, entered);
-                    applyConfig(AssistantVoiceConfig.load(getContext()));
+                    applyConfig(AssistantVoiceConfig.load(getContext()), true);
                     reply.done(true);
                     return;
                 }
                 if (action.equals("remove")) {
                     store.remove(endpoint);
-                    applyConfig(AssistantVoiceConfig.load(getContext()));
+                    applyConfig(AssistantVoiceConfig.load(getContext()), true);
                     reply.done(false);
                     return;
                 }
@@ -663,6 +663,10 @@ public final class AssistantVoicePlugin extends Plugin {
     }
 
     private void applyConfig(AssistantVoiceConfig config) {
+        applyConfig(config, false);
+    }
+
+    private void applyConfig(AssistantVoiceConfig config, boolean credentialChanged) {
         synchronized (credentialStateLock) {
             AssistantVoiceConfig.save(getContext(), config);
         }
@@ -681,7 +685,7 @@ public final class AssistantVoicePlugin extends Plugin {
 
         ContextCompat.startForegroundService(
             getContext(),
-            AssistantVoiceRuntimeService.applyConfigIntent(getContext(), config)
+            AssistantVoiceRuntimeService.applyConfigIntent(getContext(), config, credentialChanged)
         );
     }
 

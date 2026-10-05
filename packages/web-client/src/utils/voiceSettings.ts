@@ -313,6 +313,24 @@ export function normalizeVoiceSettings(
   };
 }
 
+/** Apply independent edits while retaining the last valid endpoint for an invalid URL draft. */
+export function normalizeVoiceSettingsDraft(
+  current: VoiceSettings,
+  changes: Record<string, unknown>,
+): { settings: VoiceSettings; speechServerUrlInvalid: boolean } {
+  const endpoint = normalizeSpeechServerBaseUrl(
+    changes['speechServerBaseUrl'] ?? current.speechServerBaseUrl,
+  );
+  return {
+    settings: normalizeVoiceSettings({
+      ...current,
+      ...changes,
+      speechServerBaseUrl: endpoint ?? current.speechServerBaseUrl,
+    }),
+    speechServerUrlInvalid: endpoint === null,
+  };
+}
+
 export function areVoiceSettingsEqual(left: VoiceSettings, right: VoiceSettings): boolean {
   return (
     left.voiceRuntimeMode === right.voiceRuntimeMode &&

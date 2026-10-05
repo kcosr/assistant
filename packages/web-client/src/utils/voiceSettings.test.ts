@@ -8,6 +8,7 @@ import {
   formatTtsGainPercentLabel,
   normalizeStartupPreRollMs,
   normalizeVoiceSettings,
+  normalizeVoiceSettingsDraft,
   normalizeSpeechServerBaseUrl,
   recognitionCueGainPercentToValue,
   recognitionCueGainToPercent,
@@ -16,6 +17,26 @@ import {
 } from './voiceSettings';
 
 describe('voiceSettings', () => {
+  it('applies audio and Realtime edits while retaining the last valid speech endpoint', () => {
+    const current = normalizeVoiceSettings({ speechServerBaseUrl: 'https://custom/speech/v1' });
+    const draft = normalizeVoiceSettingsDraft(current, {
+      speechServerBaseUrl: 'https://host/v1?token=secret',
+      audioMode: 'manual',
+      voiceRuntimeMode: 'realtime',
+      realtimeMuteOnStart: true,
+    });
+    expect(draft.speechServerUrlInvalid).toBe(true);
+    expect(draft.settings.speechServerBaseUrl).toBe('https://custom/speech/v1');
+    expect(draft.settings.audioMode).toBe('manual');
+    expect(draft.settings.voiceRuntimeMode).toBe('realtime');
+    expect(draft.settings.realtimeMuteOnStart).toBe(true);
+    expect(JSON.stringify(draft.settings)).not.toContain('secret');
+    const corrected = normalizeVoiceSettingsDraft(draft.settings, {
+      speechServerBaseUrl: 'https://new/speech/v1/',
+    });
+    expect(corrected.speechServerUrlInvalid).toBe(false);
+    expect(corrected.settings.speechServerBaseUrl).toBe('https://new/speech/v1');
+  });
   it('canonicalizes API roots without changing their path case', () => {
     expect(normalizeSpeechServerBaseUrl(' HTTPS://Assistant:443/speech/v1/// ')).toBe(
       'https://assistant/speech/v1',

@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { bindVoiceSettingsBlurResetHandlers } from './voiceSettingsBlurReset';
 
 describe('bindVoiceSettingsBlurResetHandlers', () => {
-  it('resets timeout inputs on blur without resetting the adapter URL input', () => {
+  it('resets timeout inputs on blur without resetting the speech URL input', () => {
     const resetVoiceSettingsInputs = vi.fn();
     const speechServerBaseUrlInputEl = document.createElement('input');
     const voiceRecognitionStartTimeoutInputEl = document.createElement('input');

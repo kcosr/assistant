@@ -11,17 +11,21 @@ import org.json.JSONObject;
 final class AssistantSpeechCapabilities {
     static final int SAMPLE_RATE = 24000;
     static final int PACKET_BYTES = 4800;
+    static final long RESULT_TIMEOUT_MS = 240000;
+    static final long READY_SESSION_RESERVE_MS = 30000 + 60000 + RESULT_TIMEOUT_MS;
     final long maxBufferBytes, maxMessageBytes, maxOutputBytes, idleTimeoutMs, maxSessionMs;
     final int maxTextLength;
 
     private AssistantSpeechCapabilities(JSONObject recognition, JSONObject speech) {
-        maxBufferBytes = integer(recognition, "max_buffer_bytes", PACKET_BYTES, 9007199254740991L);
-        maxMessageBytes = integer(recognition, "max_message_bytes", 8192, 9007199254740991L);
-        maxOutputBytes = integer(recognition, "max_output_bytes", 1024, 9007199254740991L);
-        idleTimeoutMs = timeout(recognition, "idle_timeout_seconds");
-        maxSessionMs = timeout(recognition, "max_session_seconds");
-        if ((maxBufferBytes & 1) != 0 || idleTimeoutMs < 40000 || maxSessionMs < 125000) throw unsupported();
-        maxTextLength = (int) integer(speech, "max_text_length", 2, Integer.MAX_VALUE);
+        maxBufferBytes = recognition == null ? 0 : integer(recognition, "max_buffer_bytes", PACKET_BYTES, 9007199254740991L);
+        maxMessageBytes = recognition == null ? 0 : integer(recognition, "max_message_bytes", 8192, 9007199254740991L);
+        maxOutputBytes = recognition == null ? 0 : integer(recognition, "max_output_bytes", 1024, 9007199254740991L);
+        idleTimeoutMs = recognition == null ? 0 : timeout(recognition, "idle_timeout_seconds");
+        maxSessionMs = recognition == null ? 0 : timeout(recognition, "max_session_seconds");
+        if (recognition != null && ((maxBufferBytes & 1) != 0 || idleTimeoutMs < 40000
+            || maxSessionMs < READY_SESSION_RESERVE_MS + 20000)) throw unsupported();
+        maxTextLength = speech == null ? 0 : (int) integer(speech, "max_text_length", 2, Integer.MAX_VALUE);
+        if (speech == null) return;
         JSONObject audio = speech.optJSONObject("audio");
         integer(audio, "sample_rate", SAMPLE_RATE, SAMPLE_RATE);
         integer(audio, "channels", 1, 1);
@@ -34,39 +38,43 @@ final class AssistantSpeechCapabilities {
         if (!pcm || !Boolean.TRUE.equals(speech.opt("streams"))) throw unsupported();
     }
 
-    static AssistantSpeechCapabilities parse(JSONObject listing, String sttModel, String ttsModel, String voice) {
-        try {
-            JSONArray data = listing.optJSONArray("data");
-            if (!"list".equals(listing.optString("object")) || data == null || data.length() > 1000) throw unsupported();
-            JSONObject recognition = null, speech = null;
-            Set<String> identifiers = new HashSet<>();
-            for (int i = 0; i < data.length(); i++) {
-                JSONObject model = data.optJSONObject(i);
-                String id = identifier(model, "id");
-                if (!identifiers.add(id)) throw unsupported();
-                if ("transcription".equals(model.optString("task"))) {
-                    if (id.equals(sttModel)) {
-                        if (!Boolean.TRUE.equals(model.opt("ready"))) throw unsupported();
-                        recognition = model.optJSONObject("realtime");
-                    }
-                } else if ("speech".equals(model.optString("task"))) {
-                    if (id.equals(ttsModel)) {
-                        if (!Boolean.TRUE.equals(model.opt("ready"))) throw unsupported();
-                        speech = model;
-                    }
-                }
-            }
-            if (recognition == null || speech == null) throw unsupported();
-            boolean selectedVoice = false;
-            JSONArray advertised = speech.optJSONArray("voices");
-            if (advertised == null || advertised.length() > 1000) throw unsupported();
-            for (int i = 0; i < advertised.length(); i++) {
-                String id = identifier(advertised.optJSONObject(i), "id");
-                selectedVoice |= voice.equals(id);
-            }
-            if (!selectedVoice) throw unsupported();
-            return new AssistantSpeechCapabilities(recognition, speech);
-        } catch (RuntimeException invalid) { throw unsupported(); }
+    static AssistantSpeechCapabilities parseRecognition(JSONObject listing, String model) {
+        JSONObject selected = selectedModel(listing, model, "transcription");
+        JSONObject realtime = selected.optJSONObject("realtime");
+        if (realtime == null) throw unsupported();
+        return new AssistantSpeechCapabilities(realtime, null);
+    }
+
+    static AssistantSpeechCapabilities parseSynthesis(JSONObject listing, String model, String voice) {
+        JSONObject selected = selectedModel(listing, model, "speech");
+        JSONArray voices = selected.optJSONArray("voices");
+        if (voices == null || voices.length() > 1000) throw unsupported();
+        boolean available = false;
+        for (int i = 0; i < voices.length(); i++) available |= voice.equals(identifier(voices.optJSONObject(i), "id"));
+        if (!available) throw unsupported();
+        return new AssistantSpeechCapabilities(null, selected);
+    }
+
+    /** A healthy operation remains usable while the other model warms up or is unauthorized. */
+    static void validateAvailable(JSONObject listing, String sttModel, String ttsModel, String voice) {
+        try { parseRecognition(listing, sttModel); return; } catch (IllegalArgumentException unavailable) { }
+        parseSynthesis(listing, ttsModel, voice);
+    }
+
+    private static JSONObject selectedModel(JSONObject listing, String selected, String task) {
+        if (listing == null || !"list".equals(listing.optString("object"))) throw unsupported();
+        JSONArray data = listing.optJSONArray("data");
+        if (data == null || data.length() > 1000) throw unsupported();
+        Set<String> identifiers = new HashSet<>();
+        JSONObject match = null;
+        for (int i = 0; i < data.length(); i++) {
+            JSONObject model = data.optJSONObject(i);
+            String id = identifier(model, "id");
+            if (!identifiers.add(id)) throw unsupported();
+            if (id.equals(selected) && task.equals(model.optString("task"))) match = model;
+        }
+        if (match == null || !Boolean.TRUE.equals(match.opt("ready"))) throw unsupported();
+        return match;
     }
 
     /** Expose public picker metadata only, never arbitrary backend fields. */

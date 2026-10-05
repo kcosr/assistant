@@ -23,7 +23,7 @@ public class AssistantSpeechClientTest {
     static JSONObject object(Object... values) { return AssistantSpeechCapabilities.object(values); }
     static JSONObject listing(long maxBuffer, int maxText) {
         JSONObject limits = object("max_buffer_bytes", maxBuffer, "max_message_bytes", 65536, "max_output_bytes", 1048576,
-            "idle_timeout_seconds", 60, "max_session_seconds", 180);
+            "idle_timeout_seconds", 60, "max_session_seconds", 3600);
         return object("object", "list", "data", new JSONArray()
             .put(object("id", "asr", "task", "transcription", "ready", true, "realtime", limits))
             .put(object("id", "tts", "task", "speech", "ready", true, "voices", new JSONArray().put(object("id", "voice")),
@@ -162,7 +162,7 @@ public class AssistantSpeechClientTest {
         try (MockWebServer server = new MockWebServer(); AssistantSpeechClient speech = new AssistantSpeechClient(server.url("/v1").toString(), "secret-token", "asr", "tts", "voice", clock::get)) {
             server.enqueue(capabilities(2880000, 20)); server.enqueue(new MockResponse().withWebSocketUpgrade(new Wire(true)));
             RecognitionEvents events = new RecognitionEvents(); AssistantSpeechClient.Recognition recording = speech.recognize(events);
-            assertEquals("ready", events.events.poll(5, TimeUnit.SECONDS)); clock.addAndGet(180001);
+            assertEquals("ready", events.events.poll(5, TimeUnit.SECONDS)); clock.addAndGet(3600001);
             assertFalse(recording.append(new byte[4800])); assertEquals("failed:recognition_session_expired", events.events.poll(5, TimeUnit.SECONDS));
         }
     }
@@ -182,6 +182,89 @@ public class AssistantSpeechClientTest {
             release.countDown(); assertNull(terminal.poll(200, TimeUnit.MILLISECONDS));
         }
     }
+    @Test public void httpResponseDrainsWhilePlaybackIsBlocked() throws Exception {
+        byte[] audio = new byte[2 * 1024 * 1024];
+        CountDownLatch received = new CountDownLatch(1), entered = new CountDownLatch(1), release = new CountDownLatch(1);
+        okhttp3.OkHttpClient network = new okhttp3.OkHttpClient.Builder().eventListener(new okhttp3.EventListener() {
+            @Override public void responseBodyEnd(okhttp3.Call call, long count) {
+                if (count == audio.length) received.countDown();
+            }
+        }).build();
+        try (MockWebServer server = new MockWebServer(); AssistantSpeechClient speech = new AssistantSpeechClient(
+            server.url("/speech/v1").toString(), "secret-token", "asr", "tts", "voice", network, () -> System.nanoTime()/1000000)) {
+            server.enqueue(capabilities(2880000, 20));
+            server.enqueue(new MockResponse().setHeader("Content-Type", "audio/pcm; rate=24000; channels=1; format=s16le")
+                .setBody(new Buffer().write(audio)));
+            AssistantSpeechClient.Operation work = speech.speak("hello", new AssistantSpeechClient.SpeechListener() {
+                public void pcm(byte[] bytes, int rate) { entered.countDown(); try { release.await(5, TimeUnit.SECONDS); } catch (InterruptedException error) { Thread.currentThread().interrupt(); } }
+                public void completed() { }
+                public void failed(String error) { }
+            });
+            try {
+                assertTrue(entered.await(5, TimeUnit.SECONDS));
+                assertTrue("HTTP reader must not wait for AudioTrack capacity", received.await(3, TimeUnit.SECONDS));
+                work.cancel();
+            } finally { release.countDown(); }
+        }
+    }
+
+    @Test public void pcmLimitAppliesPerSynthesisRequestRatherThanAcrossLongText() throws Exception {
+        byte[] audio = new byte[15000000];
+        try (MockWebServer server = new MockWebServer(); AssistantSpeechClient speech = client(server)) {
+            server.enqueue(capabilities(2880000, 6));
+            for (int i = 0; i < 2; i++) server.enqueue(new MockResponse()
+                .setHeader("Content-Type", "audio/pcm; rate=24000; channels=1; format=s16le").setBody(new Buffer().write(audio)));
+            java.util.concurrent.atomic.AtomicLong played = new java.util.concurrent.atomic.AtomicLong();
+            BlockingQueue<String> done = new LinkedBlockingQueue<>();
+            speech.speak("hello world", new AssistantSpeechClient.SpeechListener() {
+                public void pcm(byte[] bytes, int rate) { played.addAndGet(bytes.length); }
+                public void completed() { done.add("done"); }
+                public void failed(String error) { done.add(error); }
+            });
+            assertEquals("done", done.poll(15, TimeUnit.SECONDS));
+            assertEquals(30000000, played.get());
+        }
+    }
+
+    @Test public void speechAndRecognitionDoNotRequireTheOtherModel() throws Exception {
+        try (MockWebServer server = new MockWebServer(); AssistantSpeechClient speech = client(server)) {
+            JSONObject synthesisOnly = listing(2880000, 20);
+            synthesisOnly.getJSONArray("data").remove(0);
+            server.enqueue(new MockResponse().setBody(synthesisOnly.toString()));
+            server.enqueue(new MockResponse().setHeader("Content-Type", "audio/pcm; rate=24000; channels=1; format=s16le")
+                .setBody(new Buffer().write(new byte[]{1,2})));
+            SpeechEvents spoken = new SpeechEvents(); speech.speak("hello", spoken);
+            assertEquals("done", spoken.events.poll(5, TimeUnit.SECONDS));
+            JSONObject recognitionOnly = listing(2880000, 20);
+            recognitionOnly.getJSONArray("data").getJSONObject(1).put("ready", false);
+            server.enqueue(new MockResponse().setBody(recognitionOnly.toString()));
+            server.enqueue(new MockResponse().withWebSocketUpgrade(new Wire(true)));
+            RecognitionEvents heard = new RecognitionEvents();
+            AssistantSpeechClient.Recognition recording = speech.recognize(heard);
+            assertEquals("ready", heard.events.poll(5, TimeUnit.SECONDS));
+            recording.cancel();
+        }
+    }
+
+    @Test public void committedRecognitionAllowsQueueAndInferenceWaitButStillTimesOut() throws Exception {
+        AtomicLong clock = new AtomicLong(1000);
+        try (MockWebServer server = new MockWebServer(); AssistantSpeechClient speech = new AssistantSpeechClient(
+            server.url("/speech/v1").toString(), "secret-token", "asr", "tts", "voice", clock::get)) {
+            for (boolean expired : new boolean[]{false, true}) {
+                Wire wire = new Wire(true);
+                server.enqueue(capabilities(2880000, 20)); server.enqueue(new MockResponse().withWebSocketUpgrade(wire));
+                RecognitionEvents events = new RecognitionEvents(); AssistantSpeechClient.Recognition recording = speech.recognize(events);
+                assertEquals("ready", events.events.poll(5, TimeUnit.SECONDS));
+                assertTrue(recording.append(new byte[4800])); recording.commit();
+                while (!"input_audio_buffer.commit".equals(wire.messages.poll(5, TimeUnit.SECONDS).getString("type"))) { }
+                clock.addAndGet(expired ? 240001 : 60000);
+                wire.socket.send(object("type", "input_audio_buffer.committed", "item_id", "item-a", "previous_item_id", null).toString());
+                if (!expired) wire.completed("item-a", "hello");
+                assertEquals(expired ? "failed:recognition_result_timeout" : "done:hello:100", events.events.poll(5, TimeUnit.SECONDS));
+            }
+        }
+    }
+
     @Test public void textSplittingPreservesUnicodeAndBoundsEveryRequest() {
         String text = "abcd\uD83D\uDE00xyz more"; List<String> chunks = AssistantSpeechClient.splitText(text, 5);
         assertEquals(text, String.join("", chunks));
@@ -189,12 +272,12 @@ public class AssistantSpeechClientTest {
     }
     @Test public void obsoleteOrIncompatibleCapabilitiesFailBeforeMicrophoneOrSynthesis() throws Exception {
         JSONObject old = listing(2880000, 20); old.getJSONArray("data").getJSONObject(0).remove("realtime");
-        assertThrows(IllegalArgumentException.class, () -> AssistantSpeechCapabilities.parse(old, "asr", "tts", "voice"));
+        assertThrows(IllegalArgumentException.class, () -> AssistantSpeechCapabilities.parseRecognition(old, "asr"));
         JSONObject stereo = listing(2880000, 20); stereo.getJSONArray("data").getJSONObject(1).getJSONObject("audio").put("channels", 2);
-        assertThrows(IllegalArgumentException.class, () -> AssistantSpeechCapabilities.parse(stereo, "asr", "tts", "voice"));
+        assertThrows(IllegalArgumentException.class, () -> AssistantSpeechCapabilities.parseSynthesis(stereo, "tts", "voice"));
         JSONObject unavailable = listing(2880000,20); unavailable.getJSONArray("data").getJSONObject(0).put("ready", false);
-        assertThrows(IllegalArgumentException.class, () -> AssistantSpeechCapabilities.parse(unavailable, "asr", "tts", "voice"));
+        assertThrows(IllegalArgumentException.class, () -> AssistantSpeechCapabilities.parseRecognition(unavailable, "asr"));
         JSONObject shortLifetime = listing(2880000,20); shortLifetime.getJSONArray("data").getJSONObject(0).getJSONObject("realtime").put("max_session_seconds", 120);
-        assertThrows(IllegalArgumentException.class, () -> AssistantSpeechCapabilities.parse(shortLifetime, "asr", "tts", "voice"));
+        assertThrows(IllegalArgumentException.class, () -> AssistantSpeechCapabilities.parseRecognition(shortLifetime, "asr"));
     }
 }

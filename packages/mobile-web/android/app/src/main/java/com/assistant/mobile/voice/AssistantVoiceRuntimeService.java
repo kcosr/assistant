@@ -67,6 +67,7 @@ public final class AssistantVoiceRuntimeService extends Service {
     public static final String STATE_ERROR = "error";
 
     static final String ACTION_APPLY_CONFIG = "com.assistant.mobile.voice.APPLY_CONFIG";
+    static final String EXTRA_SPEECH_CREDENTIAL_CHANGED = "speechCredentialChanged";
     static final String ACTION_STOP_SERVICE = "com.assistant.mobile.voice.STOP_SERVICE";
     static final String ACTION_STOP_CURRENT_INTERACTION = "com.assistant.mobile.voice.STOP_CURRENT_INTERACTION";
     static final String ACTION_SKIP_CURRENT_PLAYBACK = "com.assistant.mobile.voice.SKIP_CURRENT_PLAYBACK";
@@ -184,7 +185,9 @@ public final class AssistantVoiceRuntimeService extends Service {
     private AssistantSpeechClient.Recognition recognition;
     private AssistantSpeechCapturePolicy capturePolicy;
     private String speechCredential = "";
+    private boolean speechCredentialLoaded;
     private String speechSetupError = "";
+    private String reportedSpeechSetupError = "";
     private long speechConnectionGeneration;
     private boolean recognitionCommitted;
     private Runnable captureTimeout;
@@ -247,8 +250,13 @@ public final class AssistantVoiceRuntimeService extends Service {
     private final Runnable playbackDrainTimeoutRunnable = this::handlePlaybackDrainTimeout;
 
     public static Intent applyConfigIntent(Context context, AssistantVoiceConfig config) {
+        return applyConfigIntent(context, config, false);
+    }
+
+    static Intent applyConfigIntent(Context context, AssistantVoiceConfig config, boolean credentialChanged) {
         Intent intent = new Intent(context, AssistantVoiceRuntimeService.class);
         intent.setAction(ACTION_APPLY_CONFIG);
+        intent.putExtra(EXTRA_SPEECH_CREDENTIAL_CHANGED, credentialChanged);
         return config.applyToIntent(intent);
     }
 
@@ -562,7 +570,7 @@ public final class AssistantVoiceRuntimeService extends Service {
         }
         if (ACTION_APPLY_CONFIG.equals(action)) {
             AssistantVoiceConfig updated = AssistantVoiceConfig.fromIntent(intent, config);
-            applyConfig(updated);
+            applyConfig(updated, intent.getBooleanExtra(EXTRA_SPEECH_CREDENTIAL_CHANGED, false));
             return START_STICKY;
         }
         if (ACTION_START_REALTIME.equals(action)) {
@@ -640,6 +648,10 @@ public final class AssistantVoiceRuntimeService extends Service {
     }
 
     private void applyConfig(AssistantVoiceConfig updated) {
+        applyConfig(updated, false);
+    }
+
+    private void applyConfig(AssistantVoiceConfig updated, boolean credentialChanged) {
         AssistantVoiceConfig previous = config;
         config = updated;
         AssistantVoiceConfig.save(this, updated);
@@ -661,9 +673,24 @@ public final class AssistantVoiceRuntimeService extends Service {
             || !previous.speechRecognitionModel.equals(updated.speechRecognitionModel)
             || !previous.speechSynthesisModel.equals(updated.speechSynthesisModel)
             || !previous.speechVoice.equals(updated.speechVoice);
-        String updatedCredential = readSpeechCredential();
-        boolean speechCredentialChanged = !speechCredential.equals(updatedCredential);
         boolean assistantUrlChanged = !previous.assistantBaseUrl.equals(updated.assistantBaseUrl);
+        boolean credentialBindingChanged = assistantUrlChanged
+            || !previous.speechServerBaseUrl.equals(updated.speechServerBaseUrl);
+        boolean speechCredentialChanged = false;
+        if (credentialBindingChanged || (credentialChanged && !isThreadSpeechPreferred())) {
+            speechCredential = "";
+            speechCredentialLoaded = false;
+        } else if (credentialChanged) {
+            String updatedCredential = readSpeechCredential();
+            if (updatedCredential != null) {
+                speechCredentialChanged = !speechCredential.equals(updatedCredential);
+                speechCredential = updatedCredential;
+                speechCredentialLoaded = true;
+            } else {
+                // A failed read must not turn a valid, loaded credential into a removal.
+                emitRuntimeError("Speech token storage is unavailable");
+            }
+        }
 
         // Leaving Realtime preference (or an active Realtime owner) must fully stop the call —
         // owner fence alone leaves WebRTC/media live and the next mic press can race.
@@ -720,14 +747,20 @@ public final class AssistantVoiceRuntimeService extends Service {
         startInForeground();
         syncMediaSession();
 
-        if (speechConfigChanged || speechCredentialChanged || assistantUrlChanged) {
+        if (speechConfigChanged || speechCredentialChanged || assistantUrlChanged
+            || (runtimeModeChanged && !isThreadSpeechPreferred())) {
             // Fence admission before cleanup, so queued work cannot start on the old client.
             speechReady = false;
             stopCurrentInteraction(false, "config_changed");
         }
 
-        if (speechConfigChanged || speechCredentialChanged || assistantUrlChanged) {
+        if (speechConfigChanged || speechCredentialChanged || assistantUrlChanged
+            || (runtimeModeChanged && !isThreadSpeechPreferred())) {
             disconnectSpeech();
+        }
+        if (!isThreadSpeechPreferred()) {
+            speechSetupError = "";
+            reportedSpeechSetupError = "";
         }
 
         if (assistantUrlChanged) {
@@ -736,7 +769,7 @@ public final class AssistantVoiceRuntimeService extends Service {
             syncAssistantSessionSubscriptions(previous.watchedSessionIds, updated.watchedSessionIds, true);
         }
 
-        if (!speechReady) {
+        if (isThreadSpeechPreferred() && !speechReady) {
             updateState(STATE_CONNECTING, null);
             connectSpeechIfNeeded();
         }
@@ -1584,43 +1617,64 @@ public final class AssistantVoiceRuntimeService extends Service {
             String token = new AssistantSpeechCredentialStore(this).get(config.speechServerBaseUrl);
             return token == null ? "" : token;
         } catch (Exception error) {
-            speechSetupError = "Speech token storage is unavailable";
-            emitRuntimeError(speechSetupError);
-            return "";
+            return null;
         }
     }
 
+    private boolean isThreadSpeechPreferred() {
+        return !AssistantVoiceControllerPolicy.isRealtimeRuntimeMode(config.voiceRuntimeMode);
+    }
+
+    private void reportSpeechSetupError(String message) {
+        speechSetupError = message;
+        if (isThreadSpeechPreferred() && !isRealtimeActiveState(runtimeState)) {
+            updateState(STATE_ERROR, message);
+            reportedSpeechSetupError = message;
+        }
+    }
+
+    private void scheduleSpeechDiscoveryRetry() {
+        if (config.isEnabled() && isThreadSpeechPreferred())
+            mainHandler.postDelayed(reconnectRunnable, 30000L);
+    }
+
     private void connectSpeechIfNeeded() {
-        if (destroyed || !config.isEnabled() || speechClient != null) return;
+        if (destroyed || !config.isEnabled() || !isThreadSpeechPreferred() || speechClient != null) return;
         mainHandler.removeCallbacks(reconnectRunnable);
-        speechSetupError = "";
-        speechCredential = readSpeechCredential();
+        if (!speechCredentialLoaded) {
+            String loadedCredential = readSpeechCredential();
+            if (loadedCredential == null) {
+                reportSpeechSetupError("Speech token storage is unavailable");
+                scheduleSpeechDiscoveryRetry();
+                return;
+            }
+            speechCredential = loadedCredential;
+            speechCredentialLoaded = true;
+        }
         if (speechCredential.isEmpty()) {
-            if (speechSetupError.isEmpty()) speechSetupError = "Save a speech server token in Voice settings";
-            if (!isRealtimeActiveState(runtimeState))
-                updateState(STATE_ERROR, speechSetupError);
+            reportSpeechSetupError("Save a speech server token in Voice settings");
             return;
         }
         final long generation = ++speechConnectionGeneration;
         try {
             speechClient = new AssistantSpeechClient(config.speechServerBaseUrl, speechCredential,
-                config.speechRecognitionModel, config.speechSynthesisModel, config.speechVoice, android.os.SystemClock::elapsedRealtime);
+                config.speechRecognitionModel, config.speechSynthesisModel, config.speechVoice,
+                android.os.SystemClock::elapsedRealtime, getCacheDir());
             speechClient.discover(new AssistantSpeechClient.DiscoveryListener() {
                 @Override public void ready(JSONObject catalog) {
                     mainHandler.post(() -> {
                         if (destroyed || generation != speechConnectionGeneration) return;
                         try {
-                            AssistantSpeechCapabilities.parse(catalog, config.speechRecognitionModel,
+                            AssistantSpeechCapabilities.validateAvailable(catalog, config.speechRecognitionModel,
                                 config.speechSynthesisModel, config.speechVoice);
                         } catch (IllegalArgumentException unsupported) {
                             disconnectSpeech();
-                            speechSetupError = "Selected speech models or voice are unavailable";
-                            if (!isRealtimeActiveState(runtimeState))
-                                updateState(STATE_ERROR, speechSetupError);
-                            emitRuntimeError("Selected speech models or voice are unavailable");
+                            reportSpeechSetupError("Selected speech models or voice are unavailable");
+                            scheduleSpeechDiscoveryRetry();
                             return;
                         }
                         speechSetupError = "";
+                        reportedSpeechSetupError = "";
                         speechReady = true;
                         if (!hasActiveInteraction() && !isRealtimeActiveState(runtimeState)) {
                             updateState(resolveInactiveState(), null);
@@ -1632,22 +1686,16 @@ public final class AssistantVoiceRuntimeService extends Service {
                     mainHandler.post(() -> {
                         if (destroyed || generation != speechConnectionGeneration) return;
                         disconnectSpeech();
-                        String description = describeSpeechFailure(message);
-                        speechSetupError = description;
-                        if (!isRealtimeActiveState(runtimeState)) updateState(STATE_ERROR, description);
-                        emitRuntimeError(description);
+                        reportSpeechSetupError(describeSpeechFailure(message));
                         // A manual settings/credential update reconnects immediately. Network
                         // recovery refreshes only discovery; it never replays media or input.
-                        if (config.isEnabled()) mainHandler.postDelayed(reconnectRunnable, 30000L);
+                        scheduleSpeechDiscoveryRetry();
                     });
                 }
             });
         } catch (IllegalArgumentException invalid) {
             disconnectSpeech();
-            speechSetupError = "Speech server configuration is invalid";
-            if (!isRealtimeActiveState(runtimeState))
-                updateState(STATE_ERROR, speechSetupError);
-            emitRuntimeError("Speech server configuration is invalid");
+            reportSpeechSetupError("Speech server configuration is invalid");
         }
     }
 
@@ -1697,9 +1745,9 @@ public final class AssistantVoiceRuntimeService extends Service {
                     );
                     refreshWatchedSessionsAsync();
                     refreshDurableNotificationsAsync();
-                    if (!hasActiveInteraction() && isRuntimeConnected()) {
-                        updateState(STATE_IDLE, null);
-                        drainVoiceQueueIfPossible();
+                    if (!hasActiveInteraction() && (isRuntimeConnected() || !isThreadSpeechPreferred())) {
+                        updateState(resolveInactiveState(), null);
+                        if (isThreadSpeechPreferred()) drainVoiceQueueIfPossible();
                     }
                 });
             }
@@ -1783,8 +1831,8 @@ public final class AssistantVoiceRuntimeService extends Service {
         if (!subscribedSessionId.isEmpty()) {
             Log.d(TAG, "assistant socket subscribed sessionId=" + subscribedSessionId);
             assistantSubscribedSessionIds.add(subscribedSessionId);
-            if (!hasActiveInteraction() && isRuntimeConnected()) {
-                updateState(STATE_IDLE, null);
+            if (!hasActiveInteraction() && (isRuntimeConnected() || !isThreadSpeechPreferred())) {
+                updateState(resolveInactiveState(), null);
             }
             return;
         }
@@ -3432,6 +3480,8 @@ public final class AssistantVoiceRuntimeService extends Service {
             return;
         }
 
+        // Recognition owns the Stop control while discovery and the session handshake run.
+        updateState(STATE_LISTENING, null);
         recognitionCommitted = false;
         recognition = speechClient.recognize(new AssistantSpeechClient.RecognitionListener() {
             @Override public void ready() {
@@ -4104,6 +4154,7 @@ public final class AssistantVoiceRuntimeService extends Service {
         if (!config.isEnabled()) {
             return STATE_DISABLED;
         }
+        if (!isThreadSpeechPreferred()) return assistantSocketConnected ? STATE_IDLE : STATE_CONNECTING;
         if (!speechReady && !speechSetupError.isEmpty()) return STATE_ERROR;
         return isRuntimeConnected() ? STATE_IDLE : STATE_CONNECTING;
     }
@@ -4145,7 +4196,7 @@ public final class AssistantVoiceRuntimeService extends Service {
         AssistantVoiceConfig.saveRuntimeSnapshot(
             this,
             runtimeState,
-            STATE_ERROR.equals(runtimeState) ? speechSetupError : null,
+            STATE_ERROR.equals(runtimeState) && isThreadSpeechPreferred() ? speechSetupError : null,
             activeVoiceSessionId,
             resolveActiveDisplayTitle()
         );
@@ -4178,13 +4229,16 @@ public final class AssistantVoiceRuntimeService extends Service {
         if (normalizedState.isEmpty()) {
             normalizedState = STATE_DISABLED;
         }
-        if (config.isEnabled() && !speechReady && !speechSetupError.isEmpty()
+        if (config.isEnabled() && isThreadSpeechPreferred() && !speechReady && !speechSetupError.isEmpty()
             && !isRealtimeActiveState(previousState)
             && (STATE_CONNECTING.equals(normalizedState)
                 || (STATE_ERROR.equals(normalizedState) && normalizedError.isEmpty()))) {
             normalizedState = STATE_ERROR;
             normalizedError = speechSetupError;
         }
+        // Repeated discovery retries and socket reconnects keep the same setup error quiet.
+        if (STATE_ERROR.equals(runtimeState) && STATE_ERROR.equals(normalizedState)
+            && !reportedSpeechSetupError.isEmpty() && reportedSpeechSetupError.equals(normalizedError)) return;
         // While a Realtime call is live, ignore Thread-path idle/connecting/speaking/listening
         // stomps from speech/assistant connection lifecycle (reconnects during a live call).
         if (!shouldAcceptStateUpdateWhileRealtimeOwner(

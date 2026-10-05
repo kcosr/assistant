@@ -32,28 +32,6 @@ final class AssistantVoiceUrlUtils {
         return builder.build().toString();
     }
 
-    static String speechRealtimeUrl(String baseUrl) {
-        Uri base = Uri.parse(AssistantSpeechCredentialStore.normalizeEndpoint(baseUrl));
-        return base.buildUpon()
-            .scheme("https".equalsIgnoreCase(base.getScheme()) ? "wss" : "ws")
-            .encodedPath(joinPath(base.getEncodedPath(), "realtime"))
-            .appendQueryParameter("intent", "transcription")
-            .build().toString();
-    }
-
-    static String speechSynthesisUrl(String baseUrl) {
-        return joinSpeechPath(baseUrl, "audio/speech");
-    }
-
-    static String speechModelsUrl(String baseUrl) {
-        return joinSpeechPath(baseUrl, "audio/capabilities");
-    }
-
-    private static String joinSpeechPath(String baseUrl, String suffix) {
-        Uri base = Uri.parse(AssistantSpeechCredentialStore.normalizeEndpoint(baseUrl));
-        return base.buildUpon().encodedPath(joinPath(base.getEncodedPath(), suffix)).build().toString();
-    }
-
     static String assistantWebSocketUrl(String baseUrl) {
         Uri base = Uri.parse(normalizeBaseUrl(baseUrl, AssistantVoiceConfig.DEFAULT_ASSISTANT_BASE_URL));
         String scheme = base.getScheme();

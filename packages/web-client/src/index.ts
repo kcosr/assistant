@@ -108,7 +108,7 @@ import {
 import {
   areVoiceSettingsEqual,
   DEFAULT_SPEECH_SERVER_BASE_URL,
-  normalizeSpeechServerBaseUrl,
+  normalizeVoiceSettingsDraft,
   SPEECH_SERVER_URL_ERROR,
   formatStartupPreRollMsLabel,
   formatRecognitionCueGainPercentLabel,
@@ -4204,16 +4204,6 @@ async function main(): Promise<void> {
     audioModeSelectEl.focus();
   };
   const syncVoiceSettingsFromInputs = (overrides?: Partial<VoiceSettings>): void => {
-    const speechEndpoint = normalizeSpeechServerBaseUrl(
-      overrides?.speechServerBaseUrl ?? speechServerBaseUrlInputEl.value,
-    );
-    if (speechEndpoint === null) {
-      speechServerBaseUrlInputEl.setCustomValidity(SPEECH_SERVER_URL_ERROR);
-      const speechStatus = document.getElementById('speech-credential-status');
-      if (speechStatus) speechStatus.textContent = SPEECH_SERVER_URL_ERROR;
-      return;
-    }
-    speechServerBaseUrlInputEl.setCustomValidity('');
     const currentSettings = getCurrentVoiceSettings();
     const realtimeMuteOnStartCheckbox = document.getElementById(
       'realtime-mute-on-start-checkbox',
@@ -4221,42 +4211,52 @@ async function main(): Promise<void> {
     const realtimeSpeakerphoneCheckbox = document.getElementById(
       'realtime-speakerphone-checkbox',
     ) as HTMLInputElement | null;
-    const nextSettings = normalizeVoiceSettings({
-      ...currentSettings,
-      voiceRuntimeMode: voiceRuntimeModeSelectEl.value,
-      realtimeMuteOnStart:
-        realtimeMuteOnStartCheckbox?.checked ?? currentSettings.realtimeMuteOnStart,
-      realtimeSpeakerphone:
-        realtimeSpeakerphoneCheckbox?.checked ?? currentSettings.realtimeSpeakerphone,
-      audioMode: audioModeSelectEl.value,
-      autoListenEnabled: autoListenCheckboxEl.checked,
-      mediaButtonsEnabled: voiceMediaButtonsCheckboxEl.checked,
-      localResponseVoiceOnlyEnabled: localResponseVoiceOnlyCheckboxEl.checked,
-      standaloneNotificationPlaybackEnabled: standaloneNotificationPlaybackCheckboxEl.checked,
-      notificationTitlePlaybackEnabled: notificationTitlePlaybackCheckboxEl.checked,
-      speechServerBaseUrl: speechEndpoint,
-      speechRecognitionModel: speechRecognitionModelInputEl.value,
-      speechSynthesisModel: speechSynthesisModelInputEl.value,
-      speechVoice: speechVoiceInputEl.value,
-      selectedMicDeviceId: voiceMicInputSelectEl.value,
-      recognitionStartTimeoutMs: voiceRecognitionStartTimeoutInputEl.value,
-      recognitionCompletionTimeoutMs: voiceRecognitionCompletionTimeoutInputEl.value,
-      recognitionEndSilenceMs: voiceRecognitionEndSilenceInputEl.value,
-      recognizeStopCommandEnabled: voiceRecognizeStopCommandCheckboxEl.checked,
-      preferredVoiceSessionId: currentSettings.preferredVoiceSessionId,
-      ttsPreferredSessionOnly: voiceTtsPreferredSessionOnlyCheckboxEl.checked,
-      recognitionCueEnabled: voiceRecognitionCueCheckboxEl.checked,
-      recognitionCueGain: recognitionCueGainPercentToValue(
-        voiceRecognitionCueGainSliderEl.value,
-        currentSettings.recognitionCueGain,
-      ),
-      startupPreRollMs: normalizeStartupPreRollMs(
-        voiceStartupPreRollSliderEl.value,
-        currentSettings.startupPreRollMs,
-      ),
-      ttsGain: ttsGainPercentToValue(voiceTtsGainSliderEl.value, currentSettings.ttsGain),
-      ...overrides,
-    });
+    const { settings: nextSettings, speechServerUrlInvalid } = normalizeVoiceSettingsDraft(
+      currentSettings,
+      {
+        ...currentSettings,
+        voiceRuntimeMode: voiceRuntimeModeSelectEl.value,
+        realtimeMuteOnStart:
+          realtimeMuteOnStartCheckbox?.checked ?? currentSettings.realtimeMuteOnStart,
+        realtimeSpeakerphone:
+          realtimeSpeakerphoneCheckbox?.checked ?? currentSettings.realtimeSpeakerphone,
+        audioMode: audioModeSelectEl.value,
+        autoListenEnabled: autoListenCheckboxEl.checked,
+        mediaButtonsEnabled: voiceMediaButtonsCheckboxEl.checked,
+        localResponseVoiceOnlyEnabled: localResponseVoiceOnlyCheckboxEl.checked,
+        standaloneNotificationPlaybackEnabled: standaloneNotificationPlaybackCheckboxEl.checked,
+        notificationTitlePlaybackEnabled: notificationTitlePlaybackCheckboxEl.checked,
+        speechServerBaseUrl: speechServerBaseUrlInputEl.value,
+        speechRecognitionModel: speechRecognitionModelInputEl.value,
+        speechSynthesisModel: speechSynthesisModelInputEl.value,
+        speechVoice: speechVoiceInputEl.value,
+        selectedMicDeviceId: voiceMicInputSelectEl.value,
+        recognitionStartTimeoutMs: voiceRecognitionStartTimeoutInputEl.value,
+        recognitionCompletionTimeoutMs: voiceRecognitionCompletionTimeoutInputEl.value,
+        recognitionEndSilenceMs: voiceRecognitionEndSilenceInputEl.value,
+        recognizeStopCommandEnabled: voiceRecognizeStopCommandCheckboxEl.checked,
+        preferredVoiceSessionId: currentSettings.preferredVoiceSessionId,
+        ttsPreferredSessionOnly: voiceTtsPreferredSessionOnlyCheckboxEl.checked,
+        recognitionCueEnabled: voiceRecognitionCueCheckboxEl.checked,
+        recognitionCueGain: recognitionCueGainPercentToValue(
+          voiceRecognitionCueGainSliderEl.value,
+          currentSettings.recognitionCueGain,
+        ),
+        startupPreRollMs: normalizeStartupPreRollMs(
+          voiceStartupPreRollSliderEl.value,
+          currentSettings.startupPreRollMs,
+        ),
+        ttsGain: ttsGainPercentToValue(voiceTtsGainSliderEl.value, currentSettings.ttsGain),
+        ...overrides,
+      },
+    );
+    speechServerBaseUrlInputEl.setCustomValidity(
+      speechServerUrlInvalid ? SPEECH_SERVER_URL_ERROR : '',
+    );
+    if (speechServerUrlInvalid) {
+      const speechStatus = document.getElementById('speech-credential-status');
+      if (speechStatus) speechStatus.textContent = SPEECH_SERVER_URL_ERROR;
+    }
     if (areVoiceSettingsEqual(currentSettings, nextSettings)) {
       syncPreferredVoiceSessionControl();
       return;
@@ -4375,7 +4375,9 @@ async function main(): Promise<void> {
     standaloneNotificationPlaybackCheckboxEl.checked =
       settings.standaloneNotificationPlaybackEnabled;
     notificationTitlePlaybackCheckboxEl.checked = settings.notificationTitlePlaybackEnabled;
-    speechServerBaseUrlInputEl.value = settings.speechServerBaseUrl;
+    if (!speechServerBaseUrlInputEl.validity.customError) {
+      speechServerBaseUrlInputEl.value = settings.speechServerBaseUrl;
+    }
     speechVoiceInputEl.value = settings.speechVoice;
     speechSynthesisModelInputEl.value = settings.speechSynthesisModel;
     speechRecognitionModelInputEl.value = settings.speechRecognitionModel;

@@ -20,7 +20,11 @@ vi.mock('../utils/audio', () => {
 
 import type { AssistantNativeVoiceBridgeTarget } from './speechAudioController';
 import { AssistantNativeVoiceBridge, SpeechAudioController } from './speechAudioController';
-import type { VoiceSettings } from '../utils/voiceSettings';
+import {
+  normalizeVoiceSettingsDraft,
+  SPEECH_SERVER_URL_ERROR,
+  type VoiceSettings,
+} from '../utils/voiceSettings';
 
 afterEach(() => {
   vi.useRealTimers();
@@ -161,6 +165,59 @@ function dispatchPointerEvent(
 }
 
 describe('AssistantNativeVoiceBridge', () => {
+  it('preserves an invalid endpoint draft through unrelated settings and native acknowledgments', () => {
+    ensureWebSocketGlobal();
+    const inputs = createVoiceSettingsInputs();
+    const initialSettings = createInitialVoiceSettings({
+      speechServerBaseUrl: 'https://custom/speech/v1',
+    });
+    const controller = new SpeechAudioController({
+      speechFeaturesEnabled: false,
+      speechInputController: null,
+      micButtonEl: document.createElement('button'),
+      ...inputs,
+      inputEl: document.createElement('textarea'),
+      getSocket: () => null,
+      getSessionId: () => 'session-a',
+      setStatus: vi.fn(),
+      setTtsStatus: vi.fn(),
+      sendUserText: vi.fn(),
+      updateInputPresentation: vi.fn(),
+      sendModesUpdate: vi.fn(),
+      supportsAudioOutput: () => true,
+      isOutputActive: () => false,
+      updateScrollButtonVisibility: vi.fn(),
+      voiceSettingsStorageKey: 'endpoint-draft-test',
+      continuousListeningLongPressMs: 250,
+      initialVoiceSettings: initialSettings,
+      useNativeVoiceRuntime: true,
+    });
+    inputs.speechServerBaseUrlInputEl.value = 'https://host/v1?token=secret';
+    const draft = normalizeVoiceSettingsDraft(initialSettings, {
+      speechServerBaseUrl: inputs.speechServerBaseUrlInputEl.value,
+      audioMode: 'manual',
+      voiceRuntimeMode: 'realtime',
+    });
+    inputs.speechServerBaseUrlInputEl.setCustomValidity(
+      draft.speechServerUrlInvalid ? SPEECH_SERVER_URL_ERROR : '',
+    );
+    controller.setVoiceSettings(draft.settings);
+    controller.setVoiceSettingsFromExternal(draft.settings);
+    expect(controller.voiceSettings.audioMode).toBe('manual');
+    expect(controller.voiceSettings.voiceRuntimeMode).toBe('realtime');
+    expect(controller.voiceSettings.speechServerBaseUrl).toBe('https://custom/speech/v1');
+    expect(inputs.speechServerBaseUrlInputEl.value).toBe('https://host/v1?token=secret');
+    expect(inputs.speechServerBaseUrlInputEl.validity.customError).toBe(true);
+    expect(localStorage.getItem('endpoint-draft-test')).not.toContain('secret');
+    inputs.speechServerBaseUrlInputEl.setCustomValidity('');
+    controller.setVoiceSettings({
+      ...draft.settings,
+      speechServerBaseUrl: 'https://fixed/speech/v1',
+    });
+    expect(inputs.speechServerBaseUrlInputEl.value).toBe('https://fixed/speech/v1');
+    localStorage.removeItem('endpoint-draft-test');
+  });
+
   it('calls the direct AssistantNativeVoice bridge when available', async () => {
     const target = {
       setVoiceSettings: vi.fn(),
@@ -438,49 +495,52 @@ describe('AssistantNativeVoiceBridge', () => {
     });
   });
 
-  it.each([true, false])('syncs headset control with native runtime %s', (useNativeVoiceRuntime) => {
-    ensureWebSocketGlobal();
-    const inputs = createVoiceSettingsInputs();
-    const controller = new SpeechAudioController({
-      speechFeaturesEnabled: false,
-      speechInputController: null,
-      micButtonEl: document.createElement('button'),
-      ...inputs,
-      inputEl: document.createElement('textarea'),
-      getSocket: () => null,
-      getSessionId: () => 'session-a',
-      setStatus: vi.fn(),
-      setTtsStatus: vi.fn(),
-      sendUserText: vi.fn(),
-      updateInputPresentation: vi.fn(),
-      sendModesUpdate: vi.fn(),
-      supportsAudioOutput: () => true,
-      isOutputActive: () => false,
-      updateScrollButtonVisibility: vi.fn(),
-      voiceSettingsStorageKey: 'test-voice-settings',
-      continuousListeningLongPressMs: 250,
-      initialVoiceSettings: createInitialVoiceSettings({ mediaButtonsEnabled: true }),
-      useNativeVoiceRuntime,
-      nativeVoiceBridge: {} as AssistantNativeVoiceBridge,
-    });
-    controller.attach();
-    expect(inputs.voiceMediaButtonsCheckboxEl.checked).toBe(true);
-    expect(inputs.voiceMediaButtonsCheckboxEl.disabled).toBe(!useNativeVoiceRuntime);
+  it.each([true, false])(
+    'syncs headset control with native runtime %s',
+    (useNativeVoiceRuntime) => {
+      ensureWebSocketGlobal();
+      const inputs = createVoiceSettingsInputs();
+      const controller = new SpeechAudioController({
+        speechFeaturesEnabled: false,
+        speechInputController: null,
+        micButtonEl: document.createElement('button'),
+        ...inputs,
+        inputEl: document.createElement('textarea'),
+        getSocket: () => null,
+        getSessionId: () => 'session-a',
+        setStatus: vi.fn(),
+        setTtsStatus: vi.fn(),
+        sendUserText: vi.fn(),
+        updateInputPresentation: vi.fn(),
+        sendModesUpdate: vi.fn(),
+        supportsAudioOutput: () => true,
+        isOutputActive: () => false,
+        updateScrollButtonVisibility: vi.fn(),
+        voiceSettingsStorageKey: 'test-voice-settings',
+        continuousListeningLongPressMs: 250,
+        initialVoiceSettings: createInitialVoiceSettings({ mediaButtonsEnabled: true }),
+        useNativeVoiceRuntime,
+        nativeVoiceBridge: {} as AssistantNativeVoiceBridge,
+      });
+      controller.attach();
+      expect(inputs.voiceMediaButtonsCheckboxEl.checked).toBe(true);
+      expect(inputs.voiceMediaButtonsCheckboxEl.disabled).toBe(!useNativeVoiceRuntime);
 
-    const handler = vi.fn();
-    controller.setVoiceSettingsChangeHandler(handler);
-    for (const enabled of [false, true]) {
-      controller.setVoiceSettings({ ...controller.voiceSettings, mediaButtonsEnabled: enabled });
-      expect(inputs.voiceMediaButtonsCheckboxEl.checked).toBe(enabled);
-      expect(handler).toHaveBeenLastCalledWith(
-        expect.objectContaining({ mediaButtonsEnabled: enabled }),
-      );
-      expect(
-        JSON.parse(localStorage.getItem('test-voice-settings') ?? '{}').mediaButtonsEnabled,
-      ).toBe(enabled);
-    }
-    expect(handler).toHaveBeenCalledTimes(2);
-  });
+      const handler = vi.fn();
+      controller.setVoiceSettingsChangeHandler(handler);
+      for (const enabled of [false, true]) {
+        controller.setVoiceSettings({ ...controller.voiceSettings, mediaButtonsEnabled: enabled });
+        expect(inputs.voiceMediaButtonsCheckboxEl.checked).toBe(enabled);
+        expect(handler).toHaveBeenLastCalledWith(
+          expect.objectContaining({ mediaButtonsEnabled: enabled }),
+        );
+        expect(
+          JSON.parse(localStorage.getItem('test-voice-settings') ?? '{}').mediaButtonsEnabled,
+        ).toBe(enabled);
+      }
+      expect(handler).toHaveBeenCalledTimes(2);
+    },
+  );
 
   it('syncs the native tts gain slider and persists gain changes', () => {
     ensureWebSocketGlobal();
