@@ -8,6 +8,7 @@ import {
   formatTtsGainPercentLabel,
   normalizeStartupPreRollMs,
   normalizeVoiceSettings,
+  normalizeSpeechServerBaseUrl,
   recognitionCueGainPercentToValue,
   recognitionCueGainToPercent,
   ttsGainPercentToValue,
@@ -15,6 +16,56 @@ import {
 } from './voiceSettings';
 
 describe('voiceSettings', () => {
+  it('canonicalizes API roots without changing their path case', () => {
+    expect(normalizeSpeechServerBaseUrl(' HTTPS://Assistant:443/speech/v1/// ')).toBe(
+      'https://assistant/speech/v1',
+    );
+    expect(normalizeSpeechServerBaseUrl('http://LOCALHOST:8000/V1')).toBe(
+      'http://localhost:8000/V1',
+    );
+    expect(normalizeSpeechServerBaseUrl('http://[::1]:80/v1')).toBe('http://[::1]/v1');
+  });
+
+  it.each([
+    '',
+    'ftp://host/v1',
+    'https://user:secret@host/v1',
+    'https://host/v1?token=secret',
+    'https://host/v1#secret',
+    'https://host/v1?',
+    'https://host/v1#',
+    'https://host/../v1',
+    'https://host/./v1',
+    'https://host/%2e%2e/v1',
+    'https://host/v1%2fpath',
+    'https://host:0/v1',
+    'https://host:65536/v1',
+    'https://host/v1\\path',
+  ])('rejects unsafe speech API root %s before settings storage', (value) => {
+    expect(normalizeSpeechServerBaseUrl(value)).toBeNull();
+    const settings = normalizeVoiceSettings({ speechServerBaseUrl: value });
+    expect(settings.speechServerBaseUrl).toBe('https://assistant/speech/v1');
+    expect(JSON.stringify(settings)).not.toContain('secret');
+  });
+  it('normalizes speech settings without persisting credentials or retired adapter fields', () => {
+    const settings = normalizeVoiceSettings({
+      speechServerBaseUrl: ' https://assistant/speech/v1 ',
+      speechRecognitionModel: ' custom-stt ',
+      speechSynthesisModel: 'custom-tts',
+      speechVoice: 'custom-voice',
+      speechToken: 'secret',
+      voiceAdapterBaseUrl: 'https://retired',
+    });
+    expect(settings.speechServerBaseUrl).toBe('https://assistant/speech/v1');
+    expect(settings.speechRecognitionModel).toBe('custom-stt');
+    expect(settings.speechSynthesisModel).toBe('custom-tts');
+    expect(settings.speechVoice).toBe('custom-voice');
+    expect(settings).not.toHaveProperty('speechToken');
+    expect(settings).not.toHaveProperty('voiceAdapterBaseUrl');
+    expect(areVoiceSettingsEqual(settings, { ...settings, speechVoice: 'other' })).toBe(false);
+    expect(createDefaultVoiceSettings().speechRecognitionModel).toBe('parakeet-local');
+    expect(normalizeVoiceSettings({ speechVoice: ' ' }).speechVoice).toBe('af_heart');
+  });
   it('preserves headset button control and detects changes to it', () => {
     const defaults = createDefaultVoiceSettings({ isCapacitorAndroid: true });
     expect(defaults.mediaButtonsEnabled).toBe(false);

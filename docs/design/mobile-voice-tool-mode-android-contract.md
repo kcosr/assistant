@@ -1,5 +1,9 @@
 # Mobile Voice Tool Mode Android Contract
 
+> The adapter transport described here is retired. Current Android Thread speech uses the
+> OpenAI-compatible speech server; see [Native Voice Runtime](../../packages/mobile-web/README.md#native-voice-runtime)
+> for the implemented transport and configuration.
+
 ## Scope
 
 This document defines the Android-native-side contract for the tool-driven mobile voice model in

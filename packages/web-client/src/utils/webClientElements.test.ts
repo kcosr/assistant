@@ -39,7 +39,7 @@ describe('getWebClientElements', () => {
     expect(elements?.notificationTitlePlaybackCheckbox?.id).toBe(
       'notification-title-playback-checkbox',
     );
-    expect(elements?.voiceAdapterBaseUrlInput.id).toBe('voice-adapter-base-url-input');
+    expect(elements?.speechServerBaseUrlInput.id).toBe('speech-server-base-url-input');
     expect(elements?.voicePreferredSessionButton.id).toBe('voice-preferred-session-button');
     expect(elements?.voicePreferredSessionLabel.id).toBe('voice-preferred-session-label');
     expect(document.getElementById('voice-preferred-session-select')).toBeNull();

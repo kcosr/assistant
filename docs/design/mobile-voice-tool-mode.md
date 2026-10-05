@@ -1,5 +1,9 @@
 # Mobile Voice Tool Mode
 
+> The adapter transport described here is retired. Current Android Thread speech uses the
+> OpenAI-compatible speech server; see [Native Voice Runtime](../../packages/mobile-web/README.md#native-voice-runtime)
+> for the implemented transport and configuration.
+
 Companion implementation artifacts:
 
 - [mobile-voice-tool-mode-backend-contract.md](/home/kevin/worktrees/assistant/docs/design/mobile-voice-tool-mode-backend-contract.md)

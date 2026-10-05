@@ -6,7 +6,7 @@ import { bindVoiceSettingsBlurResetHandlers } from './voiceSettingsBlurReset';
 describe('bindVoiceSettingsBlurResetHandlers', () => {
   it('resets timeout inputs on blur without resetting the adapter URL input', () => {
     const resetVoiceSettingsInputs = vi.fn();
-    const voiceAdapterBaseUrlInputEl = document.createElement('input');
+    const speechServerBaseUrlInputEl = document.createElement('input');
     const voiceRecognitionStartTimeoutInputEl = document.createElement('input');
     const voiceRecognitionCompletionTimeoutInputEl = document.createElement('input');
     const voiceRecognitionEndSilenceInputEl = document.createElement('input');
@@ -18,7 +18,7 @@ describe('bindVoiceSettingsBlurResetHandlers', () => {
       resetVoiceSettingsInputs,
     });
 
-    voiceAdapterBaseUrlInputEl.dispatchEvent(new FocusEvent('blur'));
+    speechServerBaseUrlInputEl.dispatchEvent(new FocusEvent('blur'));
     expect(resetVoiceSettingsInputs).not.toHaveBeenCalled();
 
     voiceRecognitionStartTimeoutInputEl.dispatchEvent(new FocusEvent('blur'));

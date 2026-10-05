@@ -4,6 +4,8 @@
 
 ### Breaking Changes
 
+- Replaced the retired Android voice-adapter contract with authenticated OpenAI-compatible speech-server settings; configure a native speech token, models, and voice after upgrading.
+
 - Require `expectedRevision` from `notes_read` or a successful mutation when replacing existing notes with `notes_write`; creation still omits it. ([#139](https://github.com/kcosr/assistant/pull/139))
 
 - Removed `loadAgentDefinitionsFromFile()` from `agents.ts` — all agent loading now goes through `loadConfig()` in `config.ts`. ([#93](https://github.com/kcosr/assistant/pull/93))
@@ -53,6 +55,8 @@
 - Added self-contained HTML export from chat panels, preserving rendered chat formatting, offline tool expand/collapse behavior, and embedded attachment previews/downloads. ([#97](https://github.com/kcosr/assistant/pull/97))
 
 ### Changed
+
+- Android Thread voice now uses 24 kHz Realtime transcription with local silence detection and bounded HTTP PCM speech playback; preserves notification queues, Auto Listen, cues, and headset controls.
 
 - Darkened the Dark and Auto theme backgrounds and surfaces to a near-black palette. ([#140](https://github.com/kcosr/assistant/pull/140))
 - Changed Focus and Pinned task creation to open the editor using the last successfully used list, and replaced Add/Edit list dropdowns with the shared searchable list picker in both Edit and Review modes. ([#140](https://github.com/kcosr/assistant/pull/140))

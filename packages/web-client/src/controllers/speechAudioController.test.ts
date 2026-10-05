@@ -51,7 +51,10 @@ function createVoiceSettingsInputs(): {
   localResponseVoiceOnlyCheckboxEl: HTMLInputElement;
   standaloneNotificationPlaybackCheckboxEl: HTMLInputElement;
   notificationTitlePlaybackCheckboxEl: HTMLInputElement;
-  voiceAdapterBaseUrlInputEl: HTMLInputElement;
+  speechServerBaseUrlInputEl: HTMLInputElement;
+  speechVoiceInputEl: HTMLInputElement;
+  speechSynthesisModelInputEl: HTMLInputElement;
+  speechRecognitionModelInputEl: HTMLInputElement;
   voiceMicInputSelectEl: HTMLSelectElement;
   voiceRecognitionStartTimeoutInputEl: HTMLInputElement;
   voiceRecognitionCompletionTimeoutInputEl: HTMLInputElement;
@@ -95,7 +98,10 @@ function createVoiceSettingsInputs(): {
     localResponseVoiceOnlyCheckboxEl: document.createElement('input'),
     standaloneNotificationPlaybackCheckboxEl: document.createElement('input'),
     notificationTitlePlaybackCheckboxEl: document.createElement('input'),
-    voiceAdapterBaseUrlInputEl: document.createElement('input'),
+    speechServerBaseUrlInputEl: document.createElement('input'),
+    speechVoiceInputEl: document.createElement('input'),
+    speechSynthesisModelInputEl: document.createElement('input'),
+    speechRecognitionModelInputEl: document.createElement('input'),
     voiceMicInputSelectEl,
     voiceRecognitionStartTimeoutInputEl: document.createElement('input'),
     voiceRecognitionCompletionTimeoutInputEl: document.createElement('input'),
@@ -124,7 +130,10 @@ function createInitialVoiceSettings(overrides?: Partial<VoiceSettings>): VoiceSe
     localResponseVoiceOnlyEnabled: false,
     standaloneNotificationPlaybackEnabled: false,
     notificationTitlePlaybackEnabled: false,
-    voiceAdapterBaseUrl: 'https://assistant/agent-voice-adapter',
+    speechServerBaseUrl: 'https://assistant/speech/v1',
+    speechRecognitionModel: 'parakeet-local',
+    speechSynthesisModel: 'kokoro-local',
+    speechVoice: 'af_heart',
     preferredVoiceSessionId: '',
     ttsPreferredSessionOnly: false,
     selectedMicDeviceId: '',
@@ -931,7 +940,10 @@ describe('SpeechAudioController.micButtonState', () => {
       localResponseVoiceOnlyCheckboxEl: document.createElement('input'),
       standaloneNotificationPlaybackCheckboxEl: document.createElement('input'),
       notificationTitlePlaybackCheckboxEl: document.createElement('input'),
-      voiceAdapterBaseUrlInputEl: document.createElement('input'),
+      speechServerBaseUrlInputEl: document.createElement('input'),
+      speechVoiceInputEl: document.createElement('input'),
+      speechSynthesisModelInputEl: document.createElement('input'),
+      speechRecognitionModelInputEl: document.createElement('input'),
       voiceMicInputSelectEl: document.createElement('select'),
       voiceRecognitionStartTimeoutInputEl: document.createElement('input'),
       voiceRecognitionCompletionTimeoutInputEl: document.createElement('input'),

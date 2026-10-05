@@ -100,7 +100,19 @@ interface AssistantNativeVoiceListenerHandle {
   remove?: () => void | Promise<void>;
 }
 
+export interface AssistantSpeechDiscoveryResult {
+  credentialConfigured: boolean;
+  catalog?: { object: string; data: unknown[] };
+  error?: string;
+}
+
 export interface AssistantNativeVoiceBridgeTarget {
+  manageSpeechCredential?: () =>
+    | AssistantSpeechDiscoveryResult
+    | Promise<AssistantSpeechDiscoveryResult>;
+  discoverSpeechModels?: () =>
+    | AssistantSpeechDiscoveryResult
+    | Promise<AssistantSpeechDiscoveryResult>;
   setVoiceSettings?: (args: AssistantNativeVoiceSettingsArgs) => void | Promise<void>;
   setInputContext?: (args: AssistantNativeVoiceInputContextArgs) => void | Promise<void>;
   setSelectedSession?: (args: AssistantNativeVoiceSelectionArgs) => void | Promise<void>;
@@ -165,6 +177,27 @@ export class AssistantNativeVoiceBridge {
 
   setAssistantBaseUrl(url: string): Promise<boolean> {
     return this.invokeAsync('setAssistantBaseUrl', { url });
+  }
+
+  manageSpeechCredential(): Promise<AssistantSpeechDiscoveryResult> {
+    return this.speechRequest('manageSpeechCredential');
+  }
+
+  discoverSpeechModels(): Promise<AssistantSpeechDiscoveryResult> {
+    return this.speechRequest('discoverSpeechModels');
+  }
+
+  private async speechRequest(
+    method: 'manageSpeechCredential' | 'discoverSpeechModels',
+  ): Promise<AssistantSpeechDiscoveryResult> {
+    const target = this.getTarget();
+    if (!target?.[method])
+      return { credentialConfigured: false, error: 'Native speech settings are unavailable.' };
+    try {
+      return await target[method]();
+    } catch {
+      return { credentialConfigured: false, error: 'Could not access speech settings.' };
+    }
   }
 
   async listInputDevices(): Promise<AssistantNativeVoiceInputDevice[]> {
@@ -409,7 +442,10 @@ export interface SpeechAudioControllerOptions {
   localResponseVoiceOnlyCheckboxEl: HTMLInputElement;
   standaloneNotificationPlaybackCheckboxEl: HTMLInputElement;
   notificationTitlePlaybackCheckboxEl: HTMLInputElement;
-  voiceAdapterBaseUrlInputEl: HTMLInputElement;
+  speechServerBaseUrlInputEl: HTMLInputElement;
+  speechVoiceInputEl: HTMLInputElement;
+  speechSynthesisModelInputEl: HTMLInputElement;
+  speechRecognitionModelInputEl: HTMLInputElement;
   voiceMicInputSelectEl: HTMLSelectElement;
   voiceRecognitionStartTimeoutInputEl: HTMLInputElement;
   voiceRecognitionCompletionTimeoutInputEl: HTMLInputElement;
@@ -1054,14 +1090,19 @@ export class SpeechAudioController {
   private syncVoiceSettingsInputs(): void {
     this.options.audioModeSelectEl.value = this.currentVoiceSettings.audioMode;
     this.options.autoListenCheckboxEl.checked = this.currentVoiceSettings.autoListenEnabled;
-    this.options.voiceMediaButtonsCheckboxEl.checked = this.currentVoiceSettings.mediaButtonsEnabled;
+    this.options.voiceMediaButtonsCheckboxEl.checked =
+      this.currentVoiceSettings.mediaButtonsEnabled;
     this.options.localResponseVoiceOnlyCheckboxEl.checked =
       this.currentVoiceSettings.localResponseVoiceOnlyEnabled;
     this.options.standaloneNotificationPlaybackCheckboxEl.checked =
       this.currentVoiceSettings.standaloneNotificationPlaybackEnabled;
     this.options.notificationTitlePlaybackCheckboxEl.checked =
       this.currentVoiceSettings.notificationTitlePlaybackEnabled;
-    this.options.voiceAdapterBaseUrlInputEl.value = this.currentVoiceSettings.voiceAdapterBaseUrl;
+    this.options.speechServerBaseUrlInputEl.value = this.currentVoiceSettings.speechServerBaseUrl;
+    this.options.speechVoiceInputEl.value = this.currentVoiceSettings.speechVoice;
+    this.options.speechSynthesisModelInputEl.value = this.currentVoiceSettings.speechSynthesisModel;
+    this.options.speechRecognitionModelInputEl.value =
+      this.currentVoiceSettings.speechRecognitionModel;
     this.syncNativeInputDeviceOptions();
     this.options.voiceRecognitionStartTimeoutInputEl.value = String(
       this.currentVoiceSettings.recognitionStartTimeoutMs,
@@ -1105,7 +1146,10 @@ export class SpeechAudioController {
     this.options.localResponseVoiceOnlyCheckboxEl.disabled = !supportsNativeVoiceSettings;
     this.options.standaloneNotificationPlaybackCheckboxEl.disabled = !supportsNativeVoiceSettings;
     this.options.notificationTitlePlaybackCheckboxEl.disabled = !supportsNativeVoiceSettings;
-    this.options.voiceAdapterBaseUrlInputEl.disabled = !supportsNativeVoiceSettings;
+    this.options.speechServerBaseUrlInputEl.disabled = !supportsNativeVoiceSettings;
+    this.options.speechVoiceInputEl.disabled = !supportsNativeVoiceSettings;
+    this.options.speechSynthesisModelInputEl.disabled = !supportsNativeVoiceSettings;
+    this.options.speechRecognitionModelInputEl.disabled = !supportsNativeVoiceSettings;
     this.options.voiceMicInputSelectEl.disabled = !supportsNativeVoiceSettings;
     this.options.voiceRecognitionStartTimeoutInputEl.disabled = !supportsNativeVoiceSettings;
     this.options.voiceRecognitionCompletionTimeoutInputEl.disabled = !supportsNativeVoiceSettings;

@@ -1,5 +1,9 @@
 # Mobile Native Voice Mode
 
+> The adapter transport described here is retired. Current Android Thread speech uses the
+> OpenAI-compatible speech server; see [Native Voice Runtime](../../packages/mobile-web/README.md#native-voice-runtime)
+> for the implemented transport and configuration.
+
 ## Overview
 
 Assistant mobile is a Capacitor app with a web UI and a generated native Android shell. For voice,
