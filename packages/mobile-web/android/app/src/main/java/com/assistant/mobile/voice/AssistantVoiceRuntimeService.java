@@ -67,6 +67,7 @@ public final class AssistantVoiceRuntimeService extends Service {
     public static final String STATE_ERROR = "error";
 
     static final String ACTION_APPLY_CONFIG = "com.assistant.mobile.voice.APPLY_CONFIG";
+    static final String EXTRA_SPEECH_CREDENTIAL_CHANGED = "speechCredentialChanged";
     static final String ACTION_STOP_SERVICE = "com.assistant.mobile.voice.STOP_SERVICE";
     static final String ACTION_STOP_CURRENT_INTERACTION = "com.assistant.mobile.voice.STOP_CURRENT_INTERACTION";
     static final String ACTION_SKIP_CURRENT_PLAYBACK = "com.assistant.mobile.voice.SKIP_CURRENT_PLAYBACK";
@@ -123,7 +124,7 @@ public final class AssistantVoiceRuntimeService extends Service {
     static final int NOTIFICATION_LOCKSCREEN_VISIBILITY = Notification.VISIBILITY_PUBLIC;
     static final String NOTIFICATION_CATEGORY = NotificationCompat.CATEGORY_SERVICE;
     private static final int NOTIFICATION_ID = 4302;
-    private static final long ADAPTER_RECONNECT_DELAY_MS = 2000L;
+    private static final long ASSISTANT_RECONNECT_DELAY_MS = 2000L;
     private static final int MAX_RECOGNITION_CUE_RETRIES = 2;
     private static final long RECOGNITION_CUE_RETRY_DELAY_MS = 90L;
     private static final long RECOGNITION_CUE_POST_ARMING_DELAY_MS = 120L;
@@ -153,8 +154,9 @@ public final class AssistantVoiceRuntimeService extends Service {
     private final OkHttpClient httpClient = new OkHttpClient.Builder()
         .readTimeout(30, TimeUnit.SECONDS)
         .build();
-    private final OkHttpClient adapterSocketClient = new OkHttpClient.Builder()
+    private final OkHttpClient assistantSocketClient = new OkHttpClient.Builder()
         .readTimeout(0, TimeUnit.MILLISECONDS)
+        .pingInterval(20, TimeUnit.SECONDS)
         .retryOnConnectionFailure(true)
         .build();
     private AssistantVoicePcmPlayer player;
@@ -175,15 +177,24 @@ public final class AssistantVoiceRuntimeService extends Service {
     /** When true, automatic Thread queue admission is paused (Realtime live owner). */
     private boolean threadAdmissionPaused = false;
 
-    private final Runnable reconnectRunnable = this::connectAdapterSocketIfNeeded;
+    private final Runnable reconnectRunnable = this::connectSpeechIfNeeded;
     private final Runnable assistantReconnectRunnable = this::connectAssistantSocketIfNeeded;
 
     private AssistantVoiceConfig config;
-    private WebSocket adapterSocket;
+    private AssistantSpeechClient speechClient;
+    private AssistantSpeechClient.Operation speechPlayback;
+    private AssistantSpeechClient.Recognition recognition;
+    private AssistantSpeechCapturePolicy capturePolicy;
+    private String speechCredential = "";
+    private boolean speechCredentialLoaded;
+    private String speechSetupError = "";
+    private String reportedSpeechSetupError = "";
+    private long speechConnectionGeneration;
+    private boolean recognitionCommitted;
+    private Runnable captureTimeout;
     private WebSocket assistantSocket;
-    private boolean adapterSocketConnected = false;
+    private boolean speechReady = false;
     private boolean assistantSocketConnected = false;
-    private String adapterClientId = "";
     private final Set<String> assistantSubscribedSessionIds = new LinkedHashSet<>();
     private final AssistantVoiceRequestTracker interactionEndTracker =
         new AssistantVoiceRequestTracker(MAX_INTERACTION_END_REQUESTS);
@@ -220,8 +231,9 @@ public final class AssistantVoiceRuntimeService extends Service {
         enqueuePendingManualPreemptQueueItem("manual_preempt_timeout:" + safe(requestId));
     };
     private String activeSttRequestId = "";
+    private String microphoneRequestId = "";
     private String pendingRecognitionArmingCueRequestId = "";
-    private String adapterStoppedSttRequestId = "";
+    private String finishedSttRequestId = "";
     private String pendingRecognitionCompletionCueRequestId = "";
     private String pendingRecognitionCompletionCuePlaybackRequestId = "";
     private String pendingRecognitionCompletionPlaybackRequestId = "";
@@ -239,8 +251,13 @@ public final class AssistantVoiceRuntimeService extends Service {
     private final Runnable playbackDrainTimeoutRunnable = this::handlePlaybackDrainTimeout;
 
     public static Intent applyConfigIntent(Context context, AssistantVoiceConfig config) {
+        return applyConfigIntent(context, config, false);
+    }
+
+    static Intent applyConfigIntent(Context context, AssistantVoiceConfig config, boolean credentialChanged) {
         Intent intent = new Intent(context, AssistantVoiceRuntimeService.class);
         intent.setAction(ACTION_APPLY_CONFIG);
+        intent.putExtra(EXTRA_SPEECH_CREDENTIAL_CHANGED, credentialChanged);
         return config.applyToIntent(intent);
     }
 
@@ -475,7 +492,7 @@ public final class AssistantVoiceRuntimeService extends Service {
             return;
         }
         updateState(STATE_CONNECTING, null);
-        connectAdapterSocketIfNeeded();
+        connectSpeechIfNeeded();
         refreshWatchedSessionsAsync();
         connectAssistantSocketIfNeeded();
     }
@@ -554,7 +571,7 @@ public final class AssistantVoiceRuntimeService extends Service {
         }
         if (ACTION_APPLY_CONFIG.equals(action)) {
             AssistantVoiceConfig updated = AssistantVoiceConfig.fromIntent(intent, config);
-            applyConfig(updated);
+            applyConfig(updated, intent.getBooleanExtra(EXTRA_SPEECH_CREDENTIAL_CHANGED, false));
             return START_STICKY;
         }
         if (ACTION_START_REALTIME.equals(action)) {
@@ -601,7 +618,7 @@ public final class AssistantVoiceRuntimeService extends Service {
         destroyed = true;
         mainHandler.removeCallbacksAndMessages(null);
         stopCurrentInteraction(false, "service_destroy");
-        disconnectAdapterSocket();
+        disconnectSpeech();
         disconnectAssistantSocket();
         releaseMediaSession();
         cancelAllDurableNotifications();
@@ -620,8 +637,8 @@ public final class AssistantVoiceRuntimeService extends Service {
         networkExecutor.shutdownNow();
         httpClient.dispatcher().cancelAll();
         httpClient.dispatcher().executorService().shutdownNow();
-        adapterSocketClient.dispatcher().cancelAll();
-        adapterSocketClient.dispatcher().executorService().shutdownNow();
+        assistantSocketClient.dispatcher().cancelAll();
+        assistantSocketClient.dispatcher().executorService().shutdownNow();
         updateState(STATE_DISABLED, null);
         super.onDestroy();
     }
@@ -632,6 +649,10 @@ public final class AssistantVoiceRuntimeService extends Service {
     }
 
     private void applyConfig(AssistantVoiceConfig updated) {
+        applyConfig(updated, false);
+    }
+
+    private void applyConfig(AssistantVoiceConfig updated, boolean credentialChanged) {
         AssistantVoiceConfig previous = config;
         config = updated;
         AssistantVoiceConfig.save(this, updated);
@@ -648,8 +669,29 @@ public final class AssistantVoiceRuntimeService extends Service {
             !previous.selectedSessionId.equals(updated.selectedSessionId);
         boolean audioModeChanged = !previous.audioMode.equals(updated.audioMode);
         boolean runtimeModeChanged = !previous.voiceRuntimeMode.equals(updated.voiceRuntimeMode);
-        boolean adapterUrlChanged = !previous.voiceAdapterBaseUrl.equals(updated.voiceAdapterBaseUrl);
+        boolean speechConfigChanged =
+            !previous.speechServerBaseUrl.equals(updated.speechServerBaseUrl)
+            || !previous.speechRecognitionModel.equals(updated.speechRecognitionModel)
+            || !previous.speechSynthesisModel.equals(updated.speechSynthesisModel)
+            || !previous.speechVoice.equals(updated.speechVoice);
         boolean assistantUrlChanged = !previous.assistantBaseUrl.equals(updated.assistantBaseUrl);
+        boolean credentialBindingChanged = assistantUrlChanged
+            || !previous.speechServerBaseUrl.equals(updated.speechServerBaseUrl);
+        boolean speechCredentialChanged = false;
+        if (credentialBindingChanged) {
+            speechCredential = "";
+            speechCredentialLoaded = false;
+        } else if (credentialChanged) {
+            String updatedCredential = readSpeechCredential();
+            if (updatedCredential != null) {
+                speechCredentialChanged = !speechCredential.equals(updatedCredential);
+                speechCredential = updatedCredential;
+                speechCredentialLoaded = true;
+            } else {
+                // A failed read must not turn a valid, loaded credential into a removal.
+                emitRuntimeError("Speech token storage is unavailable");
+            }
+        }
 
         // Leaving Realtime preference (or an active Realtime owner) must fully stop the call —
         // owner fence alone leaves WebRTC/media live and the next mic press can race.
@@ -674,7 +716,7 @@ public final class AssistantVoiceRuntimeService extends Service {
         if (!updated.isEnabled()) {
             clearQueuedVoiceItems();
             stopCurrentInteraction(false, "voice_mode_disabled");
-            disconnectAdapterSocket();
+            disconnectSpeech();
             disconnectAssistantSocket();
             syncMediaSession();
             updateState(STATE_DISABLED, null);
@@ -706,12 +748,16 @@ public final class AssistantVoiceRuntimeService extends Service {
         startInForeground();
         syncMediaSession();
 
-        if (adapterUrlChanged || assistantUrlChanged) {
+        if (speechConfigChanged || speechCredentialChanged || assistantUrlChanged) {
+            // Fence admission before cleanup, so queued work cannot start on the old client.
+            speechReady = false;
+            speechSetupError = "";
+            reportedSpeechSetupError = "";
             stopCurrentInteraction(false, "config_changed");
         }
 
-        if (adapterUrlChanged) {
-            disconnectAdapterSocket();
+        if (speechConfigChanged || speechCredentialChanged || assistantUrlChanged) {
+            disconnectSpeech();
         }
 
         if (assistantUrlChanged) {
@@ -720,9 +766,9 @@ public final class AssistantVoiceRuntimeService extends Service {
             syncAssistantSessionSubscriptions(previous.watchedSessionIds, updated.watchedSessionIds, true);
         }
 
-        if (!adapterSocketConnected) {
-            updateState(STATE_CONNECTING, null);
-            connectAdapterSocketIfNeeded();
+        if (!speechReady) {
+            if (isThreadSpeechPreferred()) updateState(STATE_CONNECTING, null);
+            connectSpeechIfNeeded();
         }
 
         if (!assistantSocketConnected) {
@@ -1563,86 +1609,101 @@ public final class AssistantVoiceRuntimeService extends Service {
         }
     }
 
-    private void connectAdapterSocketIfNeeded() {
-        if (destroyed || !config.isEnabled() || adapterSocket != null) {
-            return;
-        }
-        if (config != null
-            && !AssistantVoiceControllerPolicy.isRealtimeRuntimeMode(config.voiceRuntimeMode)) {
-            recoverStaleRealtimeOwnerIfNeeded("adapter_connect");
-        }
-        mainHandler.removeCallbacks(reconnectRunnable);
-        updateState(hasActiveInteraction() ? runtimeState : STATE_CONNECTING, null);
-        Request request = new Request.Builder()
-            .url(AssistantVoiceUrlUtils.adapterWebSocketUrl(config.voiceAdapterBaseUrl))
-            .build();
-        adapterSocket = adapterSocketClient.newWebSocket(request, new WebSocketListener() {
-            @Override
-            public void onOpen(WebSocket webSocket, Response response) {
-                mainHandler.post(() -> {
-                    if (adapterSocket != webSocket || destroyed) {
-                        return;
-                    }
-                    Log.d(TAG, "adapter socket opened");
-                    adapterSocketConnected = true;
-                    sendAdapterClientState();
-                    if (!hasActiveInteraction() && isRuntimeConnected()) {
-                        updateState(STATE_IDLE, null);
-                        drainVoiceQueueIfPossible();
-                    }
-                });
-            }
-
-            @Override
-            public void onMessage(WebSocket webSocket, String text) {
-                mainHandler.post(() -> handleAdapterMessage(webSocket, text));
-            }
-
-            @Override
-            public void onClosed(WebSocket webSocket, int code, String reason) {
-                Log.d(TAG, "adapter socket closed code=" + code + " reason=" + safe(reason));
-                mainHandler.post(() -> handleAdapterSocketClosed(webSocket, "closed"));
-            }
-
-            @Override
-            public void onFailure(WebSocket webSocket, Throwable t, Response response) {
-                Log.w(
-                    TAG,
-                    "adapter socket failure responseCode=" + (response == null ? 0 : response.code()),
-                    t
-                );
-                mainHandler.post(() -> handleAdapterSocketClosed(
-                    webSocket,
-                    t == null ? "adapter_connection_failed" : t.getMessage()
-                ));
-            }
-        });
-    }
-
-    private void disconnectAdapterSocket() {
-        mainHandler.removeCallbacks(reconnectRunnable);
-        WebSocket socket = adapterSocket;
-        adapterSocket = null;
-        adapterSocketConnected = false;
-        adapterClientId = "";
-        if (socket != null) {
-            socket.close(1000, "config update");
+    private String readSpeechCredential() {
+        try {
+            String token = new AssistantSpeechCredentialStore(this).get(config.speechServerBaseUrl);
+            return token == null ? "" : token;
+        } catch (Exception error) {
+            return null;
         }
     }
 
-    private void handleAdapterSocketClosed(WebSocket webSocket, String reason) {
-        if (adapterSocket != webSocket) {
+    private boolean isThreadSpeechPreferred() {
+        return !AssistantVoiceControllerPolicy.isRealtimeRuntimeMode(config.voiceRuntimeMode);
+    }
+
+    private void reportSpeechSetupError(String message) {
+        speechSetupError = message;
+        if (isThreadSpeechPreferred() && !isRealtimeActiveState(runtimeState)) {
+            updateState(STATE_ERROR, message);
+        }
+    }
+
+    private void scheduleSpeechDiscoveryRetry() {
+        if (config.isEnabled())
+            mainHandler.postDelayed(reconnectRunnable, 30000L);
+    }
+
+    private void connectSpeechIfNeeded() {
+        if (destroyed || !config.isEnabled() || speechClient != null) return;
+        mainHandler.removeCallbacks(reconnectRunnable);
+        if (!speechCredentialLoaded) {
+            String loadedCredential = readSpeechCredential();
+            if (loadedCredential == null) {
+                reportSpeechSetupError("Speech token storage is unavailable");
+                scheduleSpeechDiscoveryRetry();
+                return;
+            }
+            speechCredential = loadedCredential;
+            speechCredentialLoaded = true;
+        }
+        if (speechCredential.isEmpty()) {
+            reportSpeechSetupError("Save a speech server token in Voice settings");
             return;
         }
-        adapterSocket = null;
-        adapterSocketConnected = false;
-        adapterClientId = "";
-        if (config.isEnabled() && !destroyed) {
-            stopCurrentInteraction(false, "adapter_disconnect");
-            updateState(STATE_CONNECTING, reason);
-            mainHandler.removeCallbacks(reconnectRunnable);
-            mainHandler.postDelayed(reconnectRunnable, ADAPTER_RECONNECT_DELAY_MS);
+        final long generation = ++speechConnectionGeneration;
+        try {
+            speechClient = new AssistantSpeechClient(config.speechServerBaseUrl, speechCredential,
+                config.speechRecognitionModel, config.speechSynthesisModel, config.speechVoice,
+                android.os.SystemClock::elapsedRealtime, getCacheDir());
+            speechClient.discover(new AssistantSpeechClient.DiscoveryListener() {
+                @Override public void ready(JSONObject catalog) {
+                    mainHandler.post(() -> {
+                        if (destroyed || generation != speechConnectionGeneration) return;
+                        try {
+                            AssistantSpeechCapabilities.validateAvailable(catalog, config.speechRecognitionModel,
+                                config.speechSynthesisModel, config.speechVoice);
+                        } catch (IllegalArgumentException unsupported) {
+                            disconnectSpeech();
+                            reportSpeechSetupError("Selected speech models or voice are unavailable");
+                            scheduleSpeechDiscoveryRetry();
+                            return;
+                        }
+                        speechSetupError = "";
+                        reportedSpeechSetupError = "";
+                        speechReady = true;
+                        if (!hasActiveInteraction() && !isRealtimeActiveState(runtimeState)) {
+                            updateState(resolveInactiveState(), null);
+                            drainVoiceQueueIfPossible();
+                        }
+                    });
+                }
+                @Override public void failed(String message) {
+                    mainHandler.post(() -> {
+                        if (destroyed || generation != speechConnectionGeneration) return;
+                        disconnectSpeech();
+                        reportSpeechSetupError(describeSpeechFailure(message));
+                        // A manual settings/credential update reconnects immediately. Network
+                        // recovery refreshes only discovery; it never replays media or input.
+                        scheduleSpeechDiscoveryRetry();
+                    });
+                }
+            });
+        } catch (IllegalArgumentException invalid) {
+            disconnectSpeech();
+            reportSpeechSetupError("Speech server configuration is invalid");
         }
+    }
+
+    private void disconnectSpeech() {
+        ++speechConnectionGeneration;
+        mainHandler.removeCallbacks(reconnectRunnable);
+        speechReady = false;
+        if (speechClient != null) speechClient.close();
+        speechClient = null;
+        speechPlayback = null;
+        recognition = null;
+        capturePolicy = null;
     }
 
     private void connectAssistantSocketIfNeeded() {
@@ -1662,7 +1723,7 @@ public final class AssistantVoiceRuntimeService extends Service {
         Request request = new Request.Builder()
             .url(AssistantVoiceUrlUtils.assistantWebSocketUrl(config.assistantBaseUrl))
             .build();
-        assistantSocket = adapterSocketClient.newWebSocket(request, new WebSocketListener() {
+        assistantSocket = assistantSocketClient.newWebSocket(request, new WebSocketListener() {
             @Override
             public void onOpen(WebSocket webSocket, Response response) {
                 mainHandler.post(() -> {
@@ -1680,8 +1741,8 @@ public final class AssistantVoiceRuntimeService extends Service {
                     );
                     refreshWatchedSessionsAsync();
                     refreshDurableNotificationsAsync();
-                    if (!hasActiveInteraction() && isRuntimeConnected()) {
-                        updateState(STATE_IDLE, null);
+                    if (!hasActiveInteraction() && (isRuntimeConnected() || !isThreadSpeechPreferred())) {
+                        updateState(resolveInactiveState(), null);
                         drainVoiceQueueIfPossible();
                     }
                 });
@@ -1690,6 +1751,14 @@ public final class AssistantVoiceRuntimeService extends Service {
             @Override
             public void onMessage(WebSocket webSocket, String text) {
                 mainHandler.post(() -> handleAssistantSocketMessage(webSocket, text));
+            }
+
+            @Override
+            public void onClosing(WebSocket webSocket, int code, String reason) {
+                // OkHttp waits for our close acknowledgment before invoking onClosed.
+                // Release the socket now so a peer close cannot strand automatic speech.
+                webSocket.close(1000, null);
+                mainHandler.post(() -> handleAssistantSocketClosed(webSocket, "closed"));
             }
 
             @Override
@@ -1736,7 +1805,7 @@ public final class AssistantVoiceRuntimeService extends Service {
                 updateState(STATE_CONNECTING, reason);
             }
             mainHandler.removeCallbacks(assistantReconnectRunnable);
-            mainHandler.postDelayed(assistantReconnectRunnable, ADAPTER_RECONNECT_DELAY_MS);
+            mainHandler.postDelayed(assistantReconnectRunnable, ASSISTANT_RECONNECT_DELAY_MS);
         }
     }
 
@@ -1766,8 +1835,8 @@ public final class AssistantVoiceRuntimeService extends Service {
         if (!subscribedSessionId.isEmpty()) {
             Log.d(TAG, "assistant socket subscribed sessionId=" + subscribedSessionId);
             assistantSubscribedSessionIds.add(subscribedSessionId);
-            if (!hasActiveInteraction() && isRuntimeConnected()) {
-                updateState(STATE_IDLE, null);
+            if (!hasActiveInteraction() && (isRuntimeConnected() || !isThreadSpeechPreferred())) {
+                updateState(resolveInactiveState(), null);
             }
             return;
         }
@@ -2293,7 +2362,6 @@ public final class AssistantVoiceRuntimeService extends Service {
                 notification
             );
         if (!config.isEnabled()
-            || !isRuntimeConnected()
             || notification == null
             || (!shouldAutoplayNotification && !shouldAutoListenAfterManualAssistantNotification)) {
             return;
@@ -2330,6 +2398,13 @@ public final class AssistantVoiceRuntimeService extends Service {
             // recovery is still allowed when Thread is live again (front used after resume).
             Log.d(TAG, "enqueueQueueItem dropped admission_paused " + describeQueueItem(item));
             return;
+        }
+        if (item.manual && !speechReady) {
+            connectSpeechIfNeeded();
+            if (!speechSetupError.isEmpty() || speechClient == null) {
+                emitRuntimeError(speechSetupError.isEmpty()
+                    ? "Speech server is not ready. Check Voice settings." : speechSetupError);
+            }
         }
         if (shouldDedupManualAutoListenQueueItem(item, activeQueueItem)) {
             Log.d(TAG, "enqueueQueueItem deduped active manual auto-listen item=" + describeQueueItem(item));
@@ -2433,7 +2508,7 @@ public final class AssistantVoiceRuntimeService extends Service {
 
     /**
      * Waits for Thread media to become idle after stop. Phase 1 is synchronous: stop releases
-     * local player/mic immediately; adapter ACKs for stale generations are ignored via fencing.
+     * local player/mic immediately; stale transport callbacks are ignored via request fencing.
      */
     boolean awaitMediaQuiescence() {
         if (hasActiveInteraction()) {
@@ -2846,97 +2921,13 @@ public final class AssistantVoiceRuntimeService extends Service {
         return false;
     }
 
-    private void sendAdapterClientState() {
-        if (!adapterSocketConnected || adapterSocket == null) {
-            return;
-        }
-        JSONObject payload = new JSONObject();
-        putJson(payload, "type", "client_state_update");
-        putJson(payload, "acceptingTurns", false);
-        putJson(payload, "speechEnabled", true);
-        putJson(payload, "listeningEnabled", false);
-        putJson(payload, "inTurn", false);
-        putJson(payload, "turnModeEnabled", false);
-        putJson(payload, "directTtsEnabled", true);
-        putJson(payload, "directSttEnabled", true);
-        adapterSocket.send(payload.toString());
-    }
-
-    private void handleAdapterMessage(WebSocket webSocket, String rawText) {
-        if (adapterSocket != webSocket || destroyed) {
-            return;
-        }
-        try {
-            JSONObject message = new JSONObject(rawText);
-            String type = message.optString("type");
-            if ("client_identity".equals(type)) {
-                adapterClientId = trim(message.optString("clientId"));
-                Log.d(TAG, "adapter client_identity clientIdPresent=" + !adapterClientId.isEmpty());
-                if (!hasActiveInteraction()) {
-                    updateState(STATE_IDLE, null);
-                    drainVoiceQueueIfPossible();
-                }
-                return;
-            }
-            if ("media_tts_audio_chunk".equals(type)) {
-                String requestId = trim(message.optString("requestId"));
-                String chunkBase64 = message.optString("chunkBase64");
-                int decodedBytes = estimateBase64DecodedBytes(chunkBase64);
-                Log.d(
-                    TAG,
-                    "adapter media_tts_audio_chunk requestId=" + requestId
-                        + " active=" + activeTtsRequestId
-                        + " chunkLength=" + trim(chunkBase64).length()
-                        + " decodedBytes=" + decodedBytes
-                );
-                if (requestId.equals(activeTtsRequestId)) {
-                    activeTtsSampleRate = Math.max(0, message.optInt("sampleRate", 0));
-                    activeTtsAudioChunkCount += 1;
-                    activeTtsAudioBytes += decodedBytes;
-                    player.enqueueChunk(
-                        requestId,
-                        chunkBase64,
-                        message.optInt("sampleRate", 24000)
-                    );
-                }
-                return;
-            }
-            if ("media_tts_end".equals(type)) {
-                handleTtsEnd(message);
-                return;
-            }
-            if ("media_stt_stopped".equals(type)) {
-                String requestId = trim(message.optString("requestId"));
-                Log.d(TAG, "adapter media_stt_stopped requestId=" + requestId + " active=" + activeSttRequestId);
-                if (requestId.equals(activeSttRequestId) && micStreamer != null) {
-                    adapterStoppedSttRequestId = requestId;
-                    micStreamer.stop(requestId);
-                }
-                return;
-            }
-            if ("media_stt_result".equals(type)) {
-                Log.d(
-                    TAG,
-                    "adapter media_stt_result requestId=" + trim(message.optString("requestId"))
-                        + " active=" + activeSttRequestId
-                        + " success=" + message.optBoolean("success", false)
-                        + " error=" + trim(message.optString("error"))
-                );
-                handleSttResult(message);
-            }
-        } catch (Exception error) {
-            emitRuntimeError("Invalid adapter response");
-        }
-    }
-
-    private void handleTtsEnd(JSONObject message) {
-        String requestId = trim(message.optString("requestId"));
+    private void handleTtsEnd(String requestId, String status, String error) {
         boolean matchesActiveRequest = requestId.equals(activeTtsRequestId);
         boolean matchesManualPreemptStop = requestId.equals(pendingManualPreemptStopRequestId);
         if (!matchesActiveRequest && !matchesManualPreemptStop) {
             Log.d(
                 TAG,
-                "ignoring media_tts_end requestId=" + requestId
+                "ignoring speech_end requestId=" + requestId
                     + " active=" + activeTtsRequestId
                     + " pendingPreemptStop=" + pendingManualPreemptStopRequestId
             );
@@ -2945,14 +2936,12 @@ public final class AssistantVoiceRuntimeService extends Service {
         if (threadAdmissionPaused && !matchesManualPreemptStop && activeMediaGeneration != controllerGeneration) {
             Log.d(
                 TAG,
-                "ignoring media_tts_end stale generation requestId=" + requestId
+                "ignoring speech_end stale generation requestId=" + requestId
                     + " mediaGeneration=" + activeMediaGeneration
                     + " controllerGeneration=" + controllerGeneration
             );
             return;
         }
-        String status = trim(message.optString("status"));
-        String error = trim(message.optString("error"));
         boolean startsListening =
             activeQueueItem != null
                 ? activeQueueItem.startsListeningAfterPlayback()
@@ -2981,7 +2970,7 @@ public final class AssistantVoiceRuntimeService extends Service {
         if (matchesManualPreemptStop && !matchesActiveRequest) {
             pendingManualPreemptStopRequestId = "";
             mainHandler.removeCallbacks(manualPreemptStopTimeoutRunnable);
-            enqueuePendingManualPreemptQueueItem("media_tts_end:" + safe(status));
+            enqueuePendingManualPreemptQueueItem("speech_end:" + safe(status));
             return;
         }
         activeTtsRequestId = "";
@@ -3086,19 +3075,16 @@ public final class AssistantVoiceRuntimeService extends Service {
         }
     }
 
-    private void handleSttResult(JSONObject message) {
-        String requestId = trim(message.optString("requestId"));
+    private void handleSttResult(String requestId, boolean success, boolean canceled,
+        String text, String error, int durationMs) {
         if (!requestId.equals(activeSttRequestId)) {
-            Log.d(TAG, "ignoring media_stt_result requestId=" + requestId + " active=" + activeSttRequestId);
+            Log.d(TAG, "ignoring recognition_result requestId=" + requestId + " active=" + activeSttRequestId);
             return;
         }
 
         String sessionId = resolveRecognitionSubmitSessionId(activeVoiceSessionId);
-        boolean success = message.optBoolean("success", false);
-        boolean canceled = message.optBoolean("canceled", false);
-        String text = trim(message.optString("text"));
-        String error = trim(message.optString("error"));
-        int durationMs = Math.max(0, message.optInt("durationMs", 0));
+        cancelRecognition(requestId);
+        text = trim(text);
         boolean localStopCommand = shouldHandleRecognizedStopCommand(
             success,
             text,
@@ -3112,7 +3098,8 @@ public final class AssistantVoiceRuntimeService extends Service {
         );
         boolean positiveCue = shouldUsePositiveRecognitionCue(success, text);
         boolean captureAlreadyStopped =
-            shouldScheduleQueuedRecognitionCompletionCueAfterResult(
+            !requestId.equals(microphoneRequestId)
+            || shouldScheduleQueuedRecognitionCompletionCueAfterResult(
                 stoppedRecognitionRequestId,
                 requestId
             );
@@ -3127,9 +3114,10 @@ public final class AssistantVoiceRuntimeService extends Service {
         );
         if (captureAlreadyStopped) {
             stoppedRecognitionRequestId = "";
+            player.endRecognitionCaptureFocus();
             scheduleQueuedRecognitionCompletionCueIfNeeded(requestId);
         } else if (micStreamer != null) {
-            adapterStoppedSttRequestId = requestId;
+            finishedSttRequestId = requestId;
             micStreamer.stop(requestId);
         }
 
@@ -3198,7 +3186,50 @@ public final class AssistantVoiceRuntimeService extends Service {
             case "canceled":
                 return "Voice recognition was canceled";
             default:
-                return error.trim().isEmpty() ? "Voice recognition failed" : "Voice recognition failed: " + error.trim();
+                return describeSpeechFailure(error);
+        }
+    }
+
+    static String describeSpeechFailure(String code) {
+        switch (trim(code)) {
+            case "speech_authentication_failed":
+                return "The speech server rejected the token. Manage the token in Voice settings.";
+            case "speech_server_configuration_unsupported":
+            case "speech_discovery_invalid":
+            case "speech_invalid_base_url":
+            case "recognition_session_timing_unsupported":
+                return "The speech server does not support the selected configuration. Check its models and API root.";
+            case "speech_rate_limited":
+            case "speech_request_limit":
+                return "The speech server is busy. Try again shortly.";
+            case "speech_discovery_unavailable":
+            case "speech_network_error":
+            case "speech_service_unavailable":
+            case "recognition_network_error":
+            case "recognition_disconnected":
+                return "The speech server connection failed. Check the API root and network connection.";
+            case "speech_timeout":
+            case "speech_discovery_timeout":
+            case "recognition_handshake_timeout":
+            case "recognition_result_timeout":
+            case "recognition_idle_timeout":
+            case "recognition_session_expired":
+                return "The speech server did not finish in time. Try recording again.";
+            case "recognition_buffer_limit":
+            case "recognition_transport_overflow":
+            case "recognition_message_limit":
+            case "speech_duration_limit":
+            case "speech_invalid_input":
+                return "The speech exceeded the supported size or duration.";
+            case "microphone_read_failed":
+            case "microphone_capture_failed":
+            case "Microphone capture is unavailable":
+            case "Microphone capture timed out":
+                return "Microphone capture failed. Check microphone permissions and the selected input device.";
+            case "Audio focus is unavailable":
+                return "Microphone access is busy. Stop other audio and try again.";
+            default:
+                return "Speech processing failed. Check Voice settings and try again.";
         }
     }
 
@@ -3219,8 +3250,8 @@ public final class AssistantVoiceRuntimeService extends Service {
             Log.d(TAG, "beginQueuedPlayback skipped no speech " + describeQueueItem(item));
             return;
         }
-        if (!adapterSocketConnected) {
-            Log.d(TAG, "beginQueuedPlayback waiting for adapter socket " + describeQueueItem(item));
+        if (!speechReady) {
+            Log.d(TAG, "beginQueuedPlayback waiting for speech server " + describeQueueItem(item));
             return;
         }
 
@@ -3228,7 +3259,6 @@ public final class AssistantVoiceRuntimeService extends Service {
         Log.d(
             TAG,
             "beginQueuedPlayback requestId=" + requestId
-                + " adapterClientIdPresent=" + !adapterClientId.isEmpty()
                 + " " + describeQueueItem(item)
         );
         JSONObject details = AssistantVoiceEventLog.details();
@@ -3253,34 +3283,30 @@ public final class AssistantVoiceRuntimeService extends Service {
         player.startStream(requestId);
         updateState(STATE_SPEAKING, null);
 
-        networkExecutor.execute(() -> {
-            try {
-                JSONObject body = buildAdapterTtsRequestBody(
-                    adapterClientId,
-                    requestId,
-                    item.spokenText,
-                    item.sessionId
-                );
-                Log.d(
-                    TAG,
-                    "dispatching adapter TTS requestId=" + requestId
-                        + " clientIdPresent=" + body.has("clientId")
-                        + " textLength=" + trim(item.spokenText).length()
-                );
-                postJson(AssistantVoiceUrlUtils.adapterTtsUrl(config.voiceAdapterBaseUrl), body);
-            } catch (Exception error) {
-                Log.w(TAG, "adapter TTS request failed requestId=" + requestId, error);
+        speechPlayback = speechClient.speak(item.spokenText, new AssistantSpeechClient.SpeechListener() {
+            @Override public void pcm(byte[] chunk, int sampleRate) {
+                // This callback runs on the HTTP producer. AudioTrack backpressure bounds
+                // queued PCM and cancellation releases a producer waiting for capacity.
+                if (!player.writeStreamPcm(requestId, chunk, sampleRate)) return;
                 mainHandler.post(() -> {
-                    if (!requestId.equals(activeTtsRequestId)) {
-                        return;
-                    }
-                    activeTtsRequestId = "";
-                    clearActivePromptContext();
-                    finishActiveQueueItem(true);
-                    player.stop();
-                    updateStateIfNoActiveInteraction();
-                    clearPendingManualPreemptState("tts_request_failure");
-                    emitRuntimeError("Voice playback request failed");
+                    if (!requestId.equals(activeTtsRequestId) || destroyed) return;
+                    activeTtsSampleRate = sampleRate;
+                    activeTtsAudioChunkCount++;
+                    activeTtsAudioBytes += chunk.length;
+                });
+            }
+            @Override public void completed() {
+                mainHandler.post(() -> {
+                    if (!requestId.equals(activeTtsRequestId) || destroyed) return;
+                    speechPlayback = null;
+                    handleTtsEnd(requestId, "completed", "");
+                });
+            }
+            @Override public void failed(String message) {
+                mainHandler.post(() -> {
+                    if (!requestId.equals(activeTtsRequestId) || destroyed) return;
+                    speechPlayback = null;
+                    handleTtsEnd(requestId, "failed", describeSpeechFailure(message));
                 });
             }
         });
@@ -3331,7 +3357,7 @@ public final class AssistantVoiceRuntimeService extends Service {
             } else {
                 clearPendingManualPreemptState("stop_current_interaction:" + reason);
             }
-            requestAdapterTtsStop(ttsRequestId);
+            cancelSpeechPlayback(ttsRequestId);
         } else if (!"manual_notification_preempt".equals(reason)) {
             clearPendingManualPreemptState("stop_current_interaction_no_tts:" + reason);
         }
@@ -3339,7 +3365,7 @@ public final class AssistantVoiceRuntimeService extends Service {
         if (!listeningRequestId.isEmpty()) {
             activeSttRequestId = "";
             if (playManualStopCue) {
-                if (pendingArmingCue) {
+                if (pendingArmingCue || !listeningRequestId.equals(microphoneRequestId)) {
                     playRecognitionCompletionCueIfNeeded(false);
                 } else {
                     queueRecognitionCompletionCue(listeningRequestId, false);
@@ -3348,7 +3374,7 @@ public final class AssistantVoiceRuntimeService extends Service {
             if (micStreamer != null) {
                 micStreamer.stop(listeningRequestId);
             }
-            sendAdapterSttCancel(listeningRequestId);
+            cancelRecognition(listeningRequestId);
         }
 
         if (transitionToRecognition && !speakingSessionId.isEmpty()) {
@@ -3427,22 +3453,8 @@ public final class AssistantVoiceRuntimeService extends Service {
             recordVoiceEvent("recognition_start_skipped_empty_session", details);
             return;
         }
-        if (!config.isEnabled() || !adapterSocketConnected || adapterSocket == null) {
-            Log.d(
-                TAG,
-                "startRecognition blocked reason=" + reason
-                    + " enabled=" + config.isEnabled()
-                    + " adapterSocketConnected=" + adapterSocketConnected
-                    + " adapterSocketPresent=" + (adapterSocket != null)
-                    + " sessionId=" + trim(sessionId)
-            );
-            JSONObject details = AssistantVoiceEventLog.details();
-            AssistantVoiceEventLog.put(details, "sessionId", trim(sessionId));
-            AssistantVoiceEventLog.put(details, "reason", safe(reason));
-            AssistantVoiceEventLog.put(details, "adapterSocketConnected", adapterSocketConnected);
-            AssistantVoiceEventLog.put(details, "adapterSocketPresent", adapterSocket != null);
-            recordVoiceEvent("recognition_start_blocked", details);
-            updateState(STATE_CONNECTING, null);
+        if (!config.isEnabled() || !speechReady || speechClient == null) {
+            updateState(STATE_ERROR, "Speech server is not ready. Check Voice settings.");
             return;
         }
         if (!activeSttRequestId.isEmpty()) {
@@ -3478,13 +3490,37 @@ public final class AssistantVoiceRuntimeService extends Service {
             return;
         }
 
-        pendingRecognitionArmingCueRequestId = requestId;
-        boolean playedArmingCue = playRecognitionReadyCueIfNeeded();
-        if (playedArmingCue) {
-            return;
-        }
-        pendingRecognitionArmingCueRequestId = "";
-        startRecognitionCapture(requestId);
+        // Recognition owns the Stop control while discovery and the session handshake run.
+        updateState(STATE_LISTENING, null);
+        recognitionCommitted = false;
+        recognition = speechClient.recognize(new AssistantSpeechClient.RecognitionListener() {
+            @Override public void ready() {
+                mainHandler.post(() -> {
+                    if (!requestId.equals(activeSttRequestId) || destroyed || recognition == null) return;
+                    capturePolicy = new AssistantSpeechCapturePolicy(config.recognitionStartTimeoutMs,
+                        config.recognitionCompletionTimeoutMs, config.recognitionEndSilenceMs,
+                        recognition.maxBufferBytes());
+                    pendingRecognitionArmingCueRequestId = requestId;
+                    if (!playRecognitionReadyCueIfNeeded()) {
+                        pendingRecognitionArmingCueRequestId = "";
+                        startRecognitionCapture(requestId);
+                    }
+                });
+            }
+            @Override public void completed(String text, int durationMs) {
+                mainHandler.post(() -> {
+                    if (!requestId.equals(activeSttRequestId) || destroyed) return;
+                    handleSttResult(requestId, !trim(text).isEmpty(), false, text,
+                        trim(text).isEmpty() ? "empty_transcript" : "", durationMs);
+                });
+            }
+            @Override public void failed(String message) {
+                mainHandler.post(() -> {
+                    if (!requestId.equals(activeSttRequestId) || destroyed) return;
+                    handleSttResult(requestId, false, false, "", message, 0);
+                });
+            }
+        });
     }
 
     private void startRecognitionCapture(String requestId) {
@@ -3499,7 +3535,22 @@ public final class AssistantVoiceRuntimeService extends Service {
         }
 
         pendingRecognitionArmingCueRequestId = "";
-        player.beginRecognitionCaptureFocus();
+        if (recognition == null || capturePolicy == null) return;
+        final AssistantSpeechClient.Recognition currentRecognition = recognition;
+        final AssistantSpeechCapturePolicy currentPolicy = capturePolicy;
+        final java.util.concurrent.atomic.AtomicBoolean ended = new java.util.concurrent.atomic.AtomicBoolean();
+        if (!player.beginRecognitionCaptureFocus()) {
+            handleSttResult(requestId, false, false, "", "Audio focus is unavailable", 0);
+            return;
+        }
+        captureTimeout = () -> {
+            if (requestId.equals(activeSttRequestId) && !recognitionCommitted) {
+                handleSttResult(requestId, false, false, "", "Microphone capture timed out", 0);
+            }
+        };
+        mainHandler.postDelayed(captureTimeout,
+            Math.min(120000L, currentRecognition.maxBufferBytes() * 1000L / 48000L + 30000L));
+        microphoneRequestId = requestId;
         boolean started = micStreamer.start(requestId, new AssistantVoiceMicStreamer.Listener() {
             @Override
             public void onStarted(int sampleRate, int channels, String encoding) {
@@ -3513,79 +3564,62 @@ public final class AssistantVoiceRuntimeService extends Service {
 
             @Override
             public void onChunk(byte[] chunk) {
-                JSONObject message = new JSONObject();
-                putJson(message, "type", "media_stt_chunk");
-                putJson(message, "requestId", requestId);
-                putJson(
-                    message,
-                    "chunkBase64",
-                    android.util.Base64.encodeToString(chunk, android.util.Base64.NO_WRAP)
-                );
-                sendAdapterMessage(message);
+                if (ended.get()) return;
+                AssistantSpeechCapturePolicy.End endpoint = currentPolicy.accept(chunk);
+                int accepted = currentPolicy.acceptedBytes();
+                if (accepted > 0 && !currentRecognition.append(
+                    accepted == chunk.length ? chunk : java.util.Arrays.copyOf(chunk, accepted))) {
+                    ended.set(true);
+                    mainHandler.post(() -> {
+                        if (!requestId.equals(activeSttRequestId)) return;
+                        handleSttResult(requestId, false, false, "", "Speech upload failed", 0);
+                    });
+                    return;
+                }
+                if (endpoint != AssistantSpeechCapturePolicy.End.CONTINUE && ended.compareAndSet(false, true)) {
+                    mainHandler.post(() -> {
+                        if (!requestId.equals(activeSttRequestId)) return;
+                        micStreamer.stop(requestId);
+                    });
+                }
+            }
+
+            @Override
+            public void onError(String message) {
+                ended.set(true);
+                mainHandler.post(() -> {
+                    if (requestId.equals(activeSttRequestId))
+                        handleSttResult(requestId, false, false, "", message, 0);
+                });
             }
 
             @Override
             public void onStopped() {
+                ended.set(true);
                 mainHandler.post(() -> handleMicCaptureStopped(requestId));
             }
         });
 
         if (!started) {
+            microphoneRequestId = "";
             Log.w(TAG, "startRecognitionCapture failed requestId=" + requestId);
-            player.endRecognitionCaptureFocus();
-            activeSttRequestId = "";
-            playRecognitionCompletionCueIfNeeded(false);
-            resetRecognitionCueState();
-            clearActivePromptContext();
-            updateState(resolveInactiveState(), null);
-            emitRuntimeError("Microphone capture is unavailable");
+            handleSttResult(requestId, false, false, "", "Microphone capture is unavailable", 0);
         }
     }
 
-    private void requestAdapterTtsStop(String requestId) {
-        if (!adapterSocketConnected || requestId == null || requestId.trim().isEmpty()) {
-            Log.d(
-                TAG,
-                "requestAdapterTtsStop skipped requestId=" + safe(requestId)
-                    + " adapterSocketConnected=" + adapterSocketConnected
-            );
-            return;
+    private void cancelSpeechPlayback(String requestId) {
+        if (speechPlayback != null) speechPlayback.cancel();
+        speechPlayback = null;
+        // Cancellation is local and final. The server has no separate stop route.
+        if (requestId.equals(pendingManualPreemptStopRequestId)) {
+            // Advance after stopCurrentInteraction has released the old queue owner.
+            mainHandler.post(() -> {
+                if (destroyed || !requestId.equals(pendingManualPreemptStopRequestId)) return;
+                pendingManualPreemptStopRequestId = "";
+                mainHandler.removeCallbacks(manualPreemptStopTimeoutRunnable);
+                enqueuePendingManualPreemptQueueItem("speech_cancelled");
+            });
         }
-        networkExecutor.execute(() -> {
-            try {
-                JSONObject body = buildAdapterTtsStopRequestBody(adapterClientId, requestId);
-                Log.d(
-                    TAG,
-                    "dispatching adapter TTS stop requestId=" + requestId
-                        + " clientIdPresent=" + body.has("clientId")
-                );
-                postJson(AssistantVoiceUrlUtils.adapterTtsStopUrl(config.voiceAdapterBaseUrl), body);
-                mainHandler.post(() -> handleAdapterTtsStopAcknowledged(requestId));
-            } catch (Exception error) {
-                Log.w(TAG, "adapter TTS stop request failed requestId=" + requestId, error);
-                mainHandler.post(() -> {
-                    if (requestId.equals(pendingManualPreemptStopRequestId)) {
-                        clearPendingManualPreemptState("tts_stop_failure");
-                    }
-                });
-            }
-        });
-    }
-
-    private void handleAdapterTtsStopAcknowledged(String requestId) {
-        if (!requestId.equals(pendingManualPreemptStopRequestId)) {
-            Log.d(
-                TAG,
-                "handleAdapterTtsStopAcknowledged ignored requestId=" + safe(requestId)
-                    + " pending=" + safe(pendingManualPreemptStopRequestId)
-            );
-            return;
-        }
-        Log.d(
-            TAG,
-            "handleAdapterTtsStopAcknowledged requestId=" + requestId
-                + " waitingForMediaTtsEnd=true"
-        );
     }
 
     private void cancelAllDurableNotifications() {
@@ -3600,77 +3634,24 @@ public final class AssistantVoiceRuntimeService extends Service {
         durableNotificationMutationVersion += 1;
     }
 
-    static JSONObject buildAdapterTtsRequestBody(
-        String adapterClientId,
-        String requestId,
-        String text,
-        String sessionId
-    ) {
-        JSONObject body = new JSONObject();
-        putJson(body, "requestId", trim(requestId));
-        putJson(body, "text", trim(text));
-        String normalizedSessionId = trim(sessionId);
-        if (!normalizedSessionId.isEmpty()) {
-            putJson(body, "sessionId", normalizedSessionId);
-        }
-        String normalizedClientId = trim(adapterClientId);
-        if (!normalizedClientId.isEmpty()) {
-            putJson(body, "clientId", normalizedClientId);
-        }
-        return body;
+    private void cancelRecognition(String requestId) {
+        if (captureTimeout != null) mainHandler.removeCallbacks(captureTimeout);
+        captureTimeout = null;
+        if (recognition != null) recognition.cancel();
+        recognition = null;
+        capturePolicy = null;
     }
 
-    static JSONObject buildAdapterTtsStopRequestBody(String adapterClientId, String requestId) {
-        JSONObject body = new JSONObject();
-        putJson(body, "requestId", trim(requestId));
-        String normalizedClientId = trim(adapterClientId);
-        if (!normalizedClientId.isEmpty()) {
-            putJson(body, "clientId", normalizedClientId);
-        }
-        return body;
-    }
-
-    private void sendAdapterSttCancel(String requestId) {
-        if (requestId == null || requestId.trim().isEmpty()) {
+    private void commitRecognition(String requestId) {
+        if (!requestId.equals(activeSttRequestId) || recognition == null || recognitionCommitted) return;
+        if (capturePolicy == null || !capturePolicy.sawSpeech()) {
+            handleSttResult(requestId, false, false, "", "no_usable_speech", 0);
             return;
         }
-        JSONObject message = new JSONObject();
-        putJson(message, "type", "media_stt_cancel");
-        putJson(message, "requestId", requestId);
-        sendAdapterMessage(message);
-    }
-
-    private void sendAdapterSttEnd(String requestId) {
-        if (requestId == null || requestId.trim().isEmpty()) {
-            return;
-        }
-        JSONObject message = new JSONObject();
-        putJson(message, "type", "media_stt_end");
-        putJson(message, "requestId", requestId);
-        sendAdapterMessage(message);
-    }
-
-    private void sendAdapterMessage(JSONObject message) {
-        if (adapterSocketConnected && adapterSocket != null) {
-            adapterSocket.send(message.toString());
-            String type = trim(message.optString("type"));
-            if ("media_stt_start".equals(type)
-                || "media_stt_end".equals(type)
-                || "media_stt_cancel".equals(type)) {
-                Log.d(
-                    TAG,
-                    "sent adapter message type=" + type
-                        + " requestId=" + safe(message.optString("requestId"))
-                );
-            }
-        } else {
-            Log.d(
-                TAG,
-                "dropped adapter message connected=" + adapterSocketConnected
-                    + " socketPresent=" + (adapterSocket != null)
-                    + " type=" + safe(message == null ? null : message.optString("type"))
-            );
-        }
+        recognitionCommitted = true;
+        if (captureTimeout != null) mainHandler.removeCallbacks(captureTimeout);
+        captureTimeout = null;
+        recognition.commit();
     }
 
     private void handleMicCaptureStarted(
@@ -3700,16 +3681,6 @@ public final class AssistantVoiceRuntimeService extends Service {
         recordVoiceEvent("mic_capture_started", details);
         updateState(STATE_LISTENING, null);
 
-        JSONObject message = new JSONObject();
-        putJson(message, "type", "media_stt_start");
-        putJson(message, "requestId", requestId);
-        putJson(message, "sampleRate", sampleRate);
-        putJson(message, "channels", channels);
-        putJson(message, "encoding", encoding);
-        putJson(message, "startTimeoutMs", config.recognitionStartTimeoutMs);
-        putJson(message, "completionTimeoutMs", config.recognitionCompletionTimeoutMs);
-        putJson(message, "endSilenceMs", config.recognitionEndSilenceMs);
-        sendAdapterMessage(message);
     }
 
     private void handleMicCaptureStopped(String requestId) {
@@ -3718,22 +3689,24 @@ public final class AssistantVoiceRuntimeService extends Service {
         AssistantVoiceEventLog.put(details, "requestId", safe(requestId));
         AssistantVoiceEventLog.put(details, "activeSttRequestId", safe(activeSttRequestId));
         recordVoiceEvent("mic_capture_stopped", details);
+        if (!activeSttRequestId.isEmpty() && !requestId.equals(activeSttRequestId)) return;
+        if (requestId.equals(microphoneRequestId)) microphoneRequestId = "";
         stoppedRecognitionRequestId = trim(requestId);
         player.endRecognitionCaptureFocus();
         if (scheduleQueuedRecognitionCompletionCueIfNeeded(requestId)) {
             stoppedRecognitionRequestId = "";
         }
-        if (requestId != null && requestId.equals(adapterStoppedSttRequestId)) {
-            Log.d(TAG, "skip media_stt_end for adapter-stopped requestId=" + requestId);
-            adapterStoppedSttRequestId = "";
+        if (requestId != null && requestId.equals(finishedSttRequestId)) {
+            Log.d(TAG, "skip recognition_commit for completed requestId=" + requestId);
+            finishedSttRequestId = "";
             return;
         }
         if (!AssistantVoiceInteractionRules.shouldSendSttEndAfterMicStops(activeSttRequestId, requestId)) {
-            Log.d(TAG, "skip media_stt_end for inactive requestId=" + requestId + " active=" + activeSttRequestId);
+            Log.d(TAG, "skip recognition_commit for inactive requestId=" + requestId + " active=" + activeSttRequestId);
             return;
         }
-        Log.d(TAG, "send media_stt_end requestId=" + requestId);
-        sendAdapterSttEnd(requestId);
+        Log.d(TAG, "send recognition_commit requestId=" + requestId);
+        commitRecognition(requestId);
     }
 
     private void submitRecognizedSpeech(String sessionId, String text, int durationMs) {
@@ -4191,11 +4164,13 @@ public final class AssistantVoiceRuntimeService extends Service {
         if (!config.isEnabled()) {
             return STATE_DISABLED;
         }
+        if (!isThreadSpeechPreferred()) return assistantSocketConnected ? STATE_IDLE : STATE_CONNECTING;
+        if (!speechReady && !speechSetupError.isEmpty()) return STATE_ERROR;
         return isRuntimeConnected() ? STATE_IDLE : STATE_CONNECTING;
     }
 
     private boolean isRuntimeConnected() {
-        return adapterSocketConnected && assistantSocketConnected;
+        return speechReady && assistantSocketConnected;
     }
 
     private boolean isPromptPlaybackActive() {
@@ -4231,7 +4206,7 @@ public final class AssistantVoiceRuntimeService extends Service {
         AssistantVoiceConfig.saveRuntimeSnapshot(
             this,
             runtimeState,
-            null,
+            STATE_ERROR.equals(runtimeState) && isThreadSpeechPreferred() ? speechSetupError : null,
             activeVoiceSessionId,
             resolveActiveDisplayTitle()
         );
@@ -4264,8 +4239,18 @@ public final class AssistantVoiceRuntimeService extends Service {
         if (normalizedState.isEmpty()) {
             normalizedState = STATE_DISABLED;
         }
+        if (config.isEnabled() && isThreadSpeechPreferred() && !speechReady && !speechSetupError.isEmpty()
+            && !isRealtimeActiveState(previousState)
+            && (STATE_CONNECTING.equals(normalizedState)
+                || (STATE_ERROR.equals(normalizedState) && normalizedError.isEmpty()))) {
+            normalizedState = STATE_ERROR;
+            normalizedError = speechSetupError;
+        }
+        // Repeated discovery retries and socket reconnects keep the same setup error quiet.
+        if (STATE_ERROR.equals(runtimeState) && STATE_ERROR.equals(normalizedState)
+            && !reportedSpeechSetupError.isEmpty() && reportedSpeechSetupError.equals(normalizedError)) return;
         // While a Realtime call is live, ignore Thread-path idle/connecting/speaking/listening
-        // stomps from adapter/assistant socket lifecycle (reconnects during a live call).
+        // stomps from speech/assistant connection lifecycle (reconnects during a live call).
         if (!shouldAcceptStateUpdateWhileRealtimeOwner(
             AssistantVoiceControllerPolicy.OWNER_REALTIME.equals(liveOwner),
             previousState,
@@ -4313,6 +4298,7 @@ public final class AssistantVoiceRuntimeService extends Service {
             errorIntent.setPackage(getPackageName());
             errorIntent.putExtra(EXTRA_MESSAGE, normalizedError);
             sendBroadcast(errorIntent);
+            if (normalizedError.equals(speechSetupError)) reportedSpeechSetupError = normalizedError;
         }
     }
 
@@ -4726,23 +4712,7 @@ public final class AssistantVoiceRuntimeService extends Service {
         if (!isRuntimeConnected()) {
             return "runtime_not_connected";
         }
-        AssistantVoiceQueueItem next = queuedVoiceItems.get(0);
-        if (shouldWaitForAdapterClientIdentity(adapterSocketConnected, adapterClientId, next)) {
-            return "adapter_client_identity_missing";
-        }
         return "";
-    }
-
-    static boolean shouldWaitForAdapterClientIdentity(
-        boolean adapterSocketConnected,
-        String adapterClientId,
-        AssistantVoiceQueueItem item
-    ) {
-        return adapterSocketConnected
-            && item != null
-            && !item.isListenOnly()
-            && item.hasSpeech()
-            && trim(adapterClientId).isEmpty();
     }
 
     private String describeRuntimeState() {
@@ -4752,8 +4722,7 @@ public final class AssistantVoiceRuntimeService extends Service {
             + " mediaGeneration=" + activeMediaGeneration
             + " admissionPaused=" + threadAdmissionPaused
             + " runtimeMode=" + safe(config == null ? "" : config.voiceRuntimeMode)
-            + " adapterSocketConnected=" + adapterSocketConnected
-            + " adapterClientIdPresent=" + !adapterClientId.isEmpty()
+            + " speechReady=" + speechReady
             + " assistantSocketConnected=" + assistantSocketConnected
             + " activeTtsRequestId=" + safe(activeTtsRequestId)
             + " pendingManualPreemptStopRequestId=" + safe(pendingManualPreemptStopRequestId)

@@ -1,6 +1,7 @@
 package com.assistant.mobile.voice;
 
 import android.Manifest;
+import android.app.Activity;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
@@ -21,6 +22,10 @@ import com.getcapacitor.annotation.Permission;
 
 import org.json.JSONObject;
 
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+
 @CapacitorPlugin(
     name = "AssistantNativeVoice",
     permissions = {
@@ -33,6 +38,15 @@ public final class AssistantVoicePlugin extends Plugin {
     private static final String PENDING_ACTION_SET_VOICE_SETTINGS = "set_voice_settings";
     private static final String PENDING_ACTION_START_LISTEN = "start_manual_listen";
     private static final String PENDING_ACTION_NOTIFICATION_MIC = "notification_mic";
+
+    private final Object credentialStateLock = new Object();
+    private final ExecutorService credentialWorker = Executors.newSingleThreadExecutor();
+    private final CopyOnWriteArrayList<AssistantSpeechClient> credentialClients = new CopyOnWriteArrayList<>();
+    private AssistantSpeechCredentialDialog credentialDialog;
+    private PluginCall credentialCall;
+    private volatile AssistantSpeechClient dialogTestClient;
+    private volatile long credentialDialogEpoch;
+    private volatile boolean destroyed;
 
     private BroadcastReceiver receiver;
     private String pendingPermissionAction = "";
@@ -95,6 +109,11 @@ public final class AssistantVoicePlugin extends Plugin {
 
     @Override
     protected void handleOnDestroy() {
+        destroyed = true;
+        for (AssistantSpeechClient client : credentialClients) client.close();
+        credentialClients.clear();
+        credentialWorker.shutdownNow();
+        if (credentialDialog != null) credentialDialog.dismiss();
         if (receiver != null) {
             try {
                 getContext().unregisterReceiver(receiver);
@@ -130,9 +149,20 @@ public final class AssistantVoicePlugin extends Plugin {
     @PluginMethod
     public void setVoiceSettings(PluginCall call) {
         AssistantVoiceConfig current = AssistantVoiceConfig.load(getContext());
-        AssistantVoiceConfig updated = extractVoiceSettingsConfig(call, current);
+        final AssistantVoiceConfig updated;
+        try { updated = extractVoiceSettingsConfig(call, current); }
+        catch (IllegalArgumentException invalid) {
+            call.reject("Speech API root must be an HTTP or HTTPS URL without embedded credentials, query, or fragment.");
+            return;
+        }
         if (updated == null) {
             call.reject("settings is required");
+            return;
+        }
+
+        try { AssistantSpeechCredentialStore.normalizeEndpoint(updated.speechServerBaseUrl); }
+        catch (IllegalArgumentException invalid) {
+            call.reject("Speech API root must be an HTTP or HTTPS URL without embedded credentials, query, or fragment.");
             return;
         }
 
@@ -369,6 +399,180 @@ public final class AssistantVoicePlugin extends Plugin {
     }
 
     @PluginMethod
+    public void manageSpeechCredential(PluginCall call) {
+        Activity activity = getActivity();
+        if (activity == null || activity.isFinishing() || destroyed) {
+            call.reject("Speech token management requires an active Android screen.");
+            return;
+        }
+        AssistantVoiceConfig snapshot = AssistantVoiceConfig.load(getContext());
+        final String endpoint;
+        try { endpoint = AssistantSpeechCredentialStore.normalizeEndpoint(snapshot.speechServerBaseUrl); }
+        catch (IllegalArgumentException error) { call.reject("Save a valid speech server API root first."); return; }
+        credentialWorker.execute(() -> {
+            final boolean configured;
+            try { configured = new AssistantSpeechCredentialStore(getContext()).isConfigured(endpoint); }
+            catch (Exception error) { call.reject("Saved speech token is unavailable. Remove it and save it again."); return; }
+            activity.runOnUiThread(() -> {
+                if (destroyed || activity.isFinishing() || !speechConnectionMatches(snapshot)) {
+                    call.reject("Speech settings changed. Open token management again.");
+                    return;
+                }
+                if (credentialDialog != null) {
+                    call.reject("Speech token management is already open.");
+                    return;
+                }
+                credentialCall = call;
+                final long dialogEpoch = ++credentialDialogEpoch;
+                credentialDialog = new AssistantSpeechCredentialDialog(activity, endpoint, configured,
+                    (action, secret, reply) -> credentialWorker.execute(() -> performCredentialAction(snapshot, endpoint, action, secret, dialogEpoch, reply)),
+                    () -> {
+                        synchronized (credentialStateLock) {
+                            ++credentialDialogEpoch;
+                            if (dialogTestClient != null) {
+                                dialogTestClient.close();
+                                credentialClients.remove(dialogTestClient);
+                                dialogTestClient = null;
+                            }
+                        }
+                        credentialDialog = null;
+                        PluginCall pending = credentialCall;
+                        credentialCall = null;
+                        if (pending != null) resolveCredentialStatus(pending);
+                    });
+                credentialDialog.show();
+            });
+        });
+    }
+
+    @PluginMethod
+    public void discoverSpeechModels(PluginCall call) {
+        AssistantVoiceConfig snapshot = AssistantVoiceConfig.load(getContext());
+        credentialWorker.execute(() -> {
+            try {
+                String token = new AssistantSpeechCredentialStore(getContext()).get(snapshot.speechServerBaseUrl);
+                if (token == null) { resolveSpeechDiscovery(call, null, false, "Save a speech server token on this device first."); return; }
+                discoverForCredential(snapshot, token, new AssistantSpeechClient.DiscoveryListener() {
+                    @Override public void ready(JSONObject catalog) { resolveSpeechDiscovery(call, catalog, true, null); }
+                    @Override public void failed(String message) { resolveSpeechDiscovery(call, null, true, message); }
+                });
+            } catch (Exception error) {
+                resolveSpeechDiscovery(call, null, false, "Speech endpoint or saved token is unavailable. Check the API root and manage the token.");
+            }
+        });
+    }
+
+    private void performCredentialAction(AssistantVoiceConfig snapshot, String endpoint, String action,
+        String entered, long dialogEpoch, AssistantSpeechCredentialDialog.Reply reply) {
+        try {
+            final boolean configured;
+            final String token;
+            synchronized (credentialStateLock) {
+                if (destroyed || credentialDialogEpoch != dialogEpoch || !speechConnectionMatches(snapshot)) {
+                    reply.failed("Speech settings changed. Close and reopen token management.", true);
+                    return;
+                }
+                AssistantSpeechCredentialStore store = new AssistantSpeechCredentialStore(getContext());
+                if (action.equals("save")) {
+                    AssistantSpeechCredentialStore.validateToken(entered);
+                    store.set(endpoint, entered);
+                    applyConfig(AssistantVoiceConfig.load(getContext()), true);
+                    reply.done(true);
+                    return;
+                }
+                if (action.equals("remove")) {
+                    store.remove(endpoint);
+                    applyConfig(AssistantVoiceConfig.load(getContext()), true);
+                    reply.done(false);
+                    return;
+                }
+                configured = store.isConfigured(endpoint);
+                token = entered == null ? store.get(endpoint) : entered;
+                if (token == null) { reply.failed("Enter a token to test access.", false); return; }
+                AssistantSpeechCredentialStore.validateToken(token);
+            }
+            AssistantSpeechClient testClient = discoverForCredential(snapshot, token, new AssistantSpeechClient.DiscoveryListener() {
+                @Override public void ready(JSONObject catalog) { reply.done(configured); }
+                @Override public void failed(String message) { reply.failed(message, !speechConnectionMatches(snapshot)); }
+            });
+            synchronized (credentialStateLock) {
+                if (credentialDialogEpoch == dialogEpoch && !destroyed) dialogTestClient = testClient;
+                else if (testClient != null) {
+                    testClient.close();
+                    credentialClients.remove(testClient);
+                }
+            }
+        } catch (IllegalArgumentException error) {
+            reply.failed("Enter a valid bearer token without whitespace and save a valid API root.", false);
+        } catch (Exception error) {
+            reply.failed("Speech token storage is unavailable. Remove the saved token and try again.", false);
+        }
+    }
+
+    private AssistantSpeechClient discoverForCredential(AssistantVoiceConfig snapshot, String token, AssistantSpeechClient.DiscoveryListener listener) {
+        if (destroyed || !speechConnectionMatches(snapshot)) {
+            listener.failed("Speech settings changed. Retry for the current API root.");
+            return null;
+        }
+        AssistantSpeechClient client = new AssistantSpeechClient(snapshot.speechServerBaseUrl, token,
+            snapshot.speechRecognitionModel, snapshot.speechSynthesisModel, snapshot.speechVoice);
+        credentialClients.add(client);
+        client.discover(new AssistantSpeechClient.DiscoveryListener() {
+            @Override public void ready(JSONObject catalog) {
+                credentialClients.remove(client);
+                client.close();
+                if (!destroyed && speechConnectionMatches(snapshot)) listener.ready(catalog);
+                else listener.failed("Speech settings changed. Retry for the current API root.");
+            }
+            @Override public void failed(String message) {
+                credentialClients.remove(client);
+                client.close();
+                if (!destroyed && speechConnectionMatches(snapshot)) listener.failed(speechDiscoveryError(message));
+                else listener.failed("Speech settings changed. Retry for the current API root.");
+            }
+        });
+        return client;
+    }
+
+    private static String speechDiscoveryError(String code) {
+        if ("speech_authentication_failed".equals(code)) return "The speech server rejected the token. Check and save the bearer token again.";
+        if ("speech_server_configuration_unsupported".equals(code) || "speech_discovery_invalid".equals(code))
+            return "The speech API root does not advertise a supported model catalog. Check the API root and server version.";
+        if ("speech_rate_limited".equals(code)) return "The speech server is busy. Try again shortly.";
+        if ("speech_discovery_timeout".equals(code)) return "The speech server did not respond in time. Check connectivity and try again.";
+        return "The speech server could not be reached. Check the API root and network connection.";
+    }
+
+    private boolean speechConnectionMatches(AssistantVoiceConfig snapshot) {
+        AssistantVoiceConfig current = AssistantVoiceConfig.load(getContext());
+        return snapshot.assistantBaseUrl.equals(current.assistantBaseUrl)
+            && snapshot.speechServerBaseUrl.equals(current.speechServerBaseUrl)
+            && snapshot.speechRecognitionModel.equals(current.speechRecognitionModel)
+            && snapshot.speechSynthesisModel.equals(current.speechSynthesisModel)
+            && snapshot.speechVoice.equals(current.speechVoice);
+    }
+
+    private void resolveCredentialStatus(PluginCall call) {
+        JSObject payload = new JSObject();
+        try {
+            AssistantVoiceConfig current = AssistantVoiceConfig.load(getContext());
+            payload.put("credentialConfigured", new AssistantSpeechCredentialStore(getContext()).isConfigured(current.speechServerBaseUrl));
+        } catch (Exception error) {
+            payload.put("credentialConfigured", false);
+            payload.put("error", "Saved speech token is unavailable. Check the API root and manage the token.");
+        }
+        call.resolve(payload);
+    }
+
+    private void resolveSpeechDiscovery(PluginCall call, JSONObject catalog, boolean configured, String error) {
+        JSObject payload = new JSObject();
+        payload.put("credentialConfigured", configured);
+        if (catalog != null) payload.put("catalog", catalog);
+        if (error != null) payload.put("error", error);
+        call.resolve(payload);
+    }
+
+    @PluginMethod
     public void getState(PluginCall call) {
         call.resolve(buildStatePayload());
     }
@@ -459,7 +663,13 @@ public final class AssistantVoicePlugin extends Plugin {
     }
 
     private void applyConfig(AssistantVoiceConfig config) {
-        AssistantVoiceConfig.save(getContext(), config);
+        applyConfig(config, false);
+    }
+
+    private void applyConfig(AssistantVoiceConfig config, boolean credentialChanged) {
+        synchronized (credentialStateLock) {
+            AssistantVoiceConfig.save(getContext(), config);
+        }
         if (!config.isEnabled()) {
             getContext().stopService(AssistantVoiceRuntimeService.stopServiceIntent(getContext()));
             AssistantVoiceConfig.saveRuntimeSnapshot(
@@ -475,7 +685,7 @@ public final class AssistantVoicePlugin extends Plugin {
 
         ContextCompat.startForegroundService(
             getContext(),
-            AssistantVoiceRuntimeService.applyConfigIntent(getContext(), config)
+            AssistantVoiceRuntimeService.applyConfigIntent(getContext(), config, credentialChanged)
         );
     }
 
@@ -505,7 +715,10 @@ public final class AssistantVoicePlugin extends Plugin {
             "localResponseVoiceOnlyEnabled",
             current.localResponseVoiceOnlyEnabled
         );
-        voiceSettings.put("voiceAdapterBaseUrl", current.voiceAdapterBaseUrl);
+        voiceSettings.put("speechServerBaseUrl", current.speechServerBaseUrl);
+        voiceSettings.put("speechRecognitionModel", current.speechRecognitionModel);
+        voiceSettings.put("speechSynthesisModel", current.speechSynthesisModel);
+        voiceSettings.put("speechVoice", current.speechVoice);
         voiceSettings.put("preferredVoiceSessionId", current.preferredVoiceSessionId);
         voiceSettings.put("selectedMicDeviceId", current.selectedMicDeviceId);
         voiceSettings.put("recognitionStartTimeoutMs", current.recognitionStartTimeoutMs);

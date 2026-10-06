@@ -425,16 +425,36 @@
             <input type="checkbox" id="notification-title-playback-checkbox" />
             Read notification title before speech text
           </label>
-          <label class="list-item-form-label" for="voice-adapter-base-url-input">
-            <span class="list-item-form-label-text">Voice adapter URL</span>
+          <label class="list-item-form-label" for="speech-server-base-url-input">
+            <span class="list-item-form-label-text">Speech API URL</span>
             <input
               type="url"
-              id="voice-adapter-base-url-input"
+              id="speech-server-base-url-input"
               class="list-item-form-input"
               autocomplete="off"
               spellcheck="false"
             />
           </label>
+          <label class="list-item-form-label" for="speech-recognition-model-input">
+            <span class="list-item-form-label-text">Recognition model</span>
+            <input type="text" id="speech-recognition-model-input" class="list-item-form-input" list="speech-recognition-model-options" placeholder="parakeet-local" autocomplete="off" spellcheck="false" />
+            <datalist id="speech-recognition-model-options"></datalist>
+          </label>
+          <label class="list-item-form-label" for="speech-synthesis-model-input">
+            <span class="list-item-form-label-text">Speech model</span>
+            <input type="text" id="speech-synthesis-model-input" class="list-item-form-input" list="speech-synthesis-model-options" placeholder="kokoro-local" autocomplete="off" spellcheck="false" />
+            <datalist id="speech-synthesis-model-options"></datalist>
+          </label>
+          <label class="list-item-form-label" for="speech-voice-input">
+            <span class="list-item-form-label-text">Voice</span>
+            <input type="text" id="speech-voice-input" class="list-item-form-input" list="speech-voice-options" placeholder="af_heart" autocomplete="off" spellcheck="false" />
+            <datalist id="speech-voice-options"></datalist>
+          </label>
+          <div class="settings-dropdown-item">
+            <button type="button" id="speech-manage-token-button">Manage speech token</button>
+            <button type="button" id="speech-refresh-models-button">Refresh models</button>
+          </div>
+          <p id="speech-credential-status" role="status">Speech token is managed on this Android device.</p>
           <label class="list-item-form-label" for="voice-preferred-session-button">
             <span class="list-item-form-label-text">Voice notification session</span>
             <button

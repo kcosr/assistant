@@ -14,7 +14,10 @@ import org.json.JSONArray;
 import org.json.JSONObject;
 
 final class AssistantVoiceConfig {
-    static final String DEFAULT_VOICE_ADAPTER_BASE_URL = "https://assistant/agent-voice-adapter";
+    static final String DEFAULT_SPEECH_SERVER_BASE_URL = "https://assistant/speech/v1";
+    static final String DEFAULT_SPEECH_RECOGNITION_MODEL = "parakeet-local";
+    static final String DEFAULT_SPEECH_SYNTHESIS_MODEL = "kokoro-local";
+    static final String DEFAULT_SPEECH_VOICE = "af_heart";
     static final String DEFAULT_ASSISTANT_BASE_URL = "https://assistant";
     static final String AUDIO_MODE_OFF = "off";
     static final String AUDIO_MODE_MANUAL = "manual";
@@ -65,7 +68,10 @@ final class AssistantVoiceConfig {
     private static final String KEY_WATCHED_SESSION_IDS = "watched_session_ids";
     private static final String KEY_INPUT_CONTEXT_ENABLED = "input_context_enabled";
     private static final String KEY_INPUT_CONTEXT_LINE = "input_context_line";
-    private static final String KEY_VOICE_ADAPTER_BASE_URL = "voice_adapter_base_url";
+    private static final String KEY_SPEECH_RECOGNITION_MODEL = "speech_recognition_model";
+    private static final String KEY_SPEECH_SYNTHESIS_MODEL = "speech_synthesis_model";
+    private static final String KEY_SPEECH_VOICE = "speech_voice";
+    private static final String KEY_SPEECH_SERVER_BASE_URL = "speech_server_base_url";
     private static final String KEY_ASSISTANT_BASE_URL = "assistant_base_url";
     private static final String KEY_TTS_GAIN = "tts_gain";
     private static final String KEY_RECOGNITION_CUE_ENABLED = "recognition_cue_enabled";
@@ -103,7 +109,10 @@ final class AssistantVoiceConfig {
     static final String EXTRA_SESSION_TITLES = "sessionTitles";
     static final String EXTRA_INPUT_CONTEXT_ENABLED = "inputContextEnabled";
     static final String EXTRA_INPUT_CONTEXT_LINE = "inputContextLine";
-    static final String EXTRA_VOICE_ADAPTER_BASE_URL = "voiceAdapterBaseUrl";
+    static final String EXTRA_SPEECH_RECOGNITION_MODEL = "speechRecognitionModel";
+    static final String EXTRA_SPEECH_SYNTHESIS_MODEL = "speechSynthesisModel";
+    static final String EXTRA_SPEECH_VOICE = "speechVoice";
+    static final String EXTRA_SPEECH_SERVER_BASE_URL = "speechServerBaseUrl";
     static final String EXTRA_ASSISTANT_BASE_URL = "assistantBaseUrl";
     static final String EXTRA_TTS_GAIN = "ttsGain";
     static final String EXTRA_RECOGNITION_CUE_ENABLED = "recognitionCueEnabled";
@@ -136,7 +145,10 @@ final class AssistantVoiceConfig {
     final List<String> watchedSessionIds;
     final boolean inputContextEnabled;
     final String inputContextLine;
-    final String voiceAdapterBaseUrl;
+    final String speechServerBaseUrl;
+    final String speechRecognitionModel;
+    final String speechSynthesisModel;
+    final String speechVoice;
     final String assistantBaseUrl;
     final float ttsGain;
     final boolean recognitionCueEnabled;
@@ -168,7 +180,10 @@ final class AssistantVoiceConfig {
         List<String> watchedSessionIds,
         boolean inputContextEnabled,
         String inputContextLine,
-        String voiceAdapterBaseUrl,
+        String speechServerBaseUrl,
+        String speechRecognitionModel,
+        String speechSynthesisModel,
+        String speechVoice,
         String assistantBaseUrl,
         float ttsGain,
         boolean recognitionCueEnabled,
@@ -208,10 +223,16 @@ final class AssistantVoiceConfig {
         this.watchedSessionIds = normalizeSessionIdList(watchedSessionIds);
         this.inputContextEnabled = inputContextEnabled;
         this.inputContextLine = normalizeOptional(inputContextLine);
-        this.voiceAdapterBaseUrl = AssistantVoiceUrlUtils.normalizeBaseUrl(
-            voiceAdapterBaseUrl,
-            DEFAULT_VOICE_ADAPTER_BASE_URL
-        );
+        this.speechServerBaseUrl = normalizeSpeechEndpoint(speechServerBaseUrl);
+        this.speechRecognitionModel = normalizeOptional(speechRecognitionModel).isEmpty()
+            ? DEFAULT_SPEECH_RECOGNITION_MODEL
+            : normalizeOptional(speechRecognitionModel);
+        this.speechSynthesisModel = normalizeOptional(speechSynthesisModel).isEmpty()
+            ? DEFAULT_SPEECH_SYNTHESIS_MODEL
+            : normalizeOptional(speechSynthesisModel);
+        this.speechVoice = normalizeOptional(speechVoice).isEmpty()
+            ? DEFAULT_SPEECH_VOICE
+            : normalizeOptional(speechVoice);
         this.assistantBaseUrl = AssistantVoiceUrlUtils.normalizeBaseUrl(
             assistantBaseUrl,
             DEFAULT_ASSISTANT_BASE_URL
@@ -240,6 +261,13 @@ final class AssistantVoiceConfig {
             : listsInstance;
     }
 
+    private static String normalizeSpeechEndpoint(String value) {
+        String candidate = normalizeOptional(value);
+        return AssistantSpeechCredentialStore.normalizeEndpoint(
+            candidate.isEmpty() ? DEFAULT_SPEECH_SERVER_BASE_URL : candidate
+        );
+    }
+
     static AssistantVoiceConfig load(Context context) {
         SharedPreferences prefs = prefs(context);
         return new AssistantVoiceConfig(
@@ -264,7 +292,10 @@ final class AssistantVoiceConfig {
             parseSessionIdList(prefs.getString(KEY_WATCHED_SESSION_IDS, null)),
             prefs.getBoolean(KEY_INPUT_CONTEXT_ENABLED, false),
             prefs.getString(KEY_INPUT_CONTEXT_LINE, null),
-            prefs.getString(KEY_VOICE_ADAPTER_BASE_URL, DEFAULT_VOICE_ADAPTER_BASE_URL),
+            prefs.getString(KEY_SPEECH_SERVER_BASE_URL, DEFAULT_SPEECH_SERVER_BASE_URL),
+            prefs.getString(KEY_SPEECH_RECOGNITION_MODEL, DEFAULT_SPEECH_RECOGNITION_MODEL),
+            prefs.getString(KEY_SPEECH_SYNTHESIS_MODEL, DEFAULT_SPEECH_SYNTHESIS_MODEL),
+            prefs.getString(KEY_SPEECH_VOICE, DEFAULT_SPEECH_VOICE),
             prefs.getString(KEY_ASSISTANT_BASE_URL, DEFAULT_ASSISTANT_BASE_URL),
             prefs.getFloat(KEY_TTS_GAIN, DEFAULT_TTS_GAIN),
             prefs.getBoolean(KEY_RECOGNITION_CUE_ENABLED, DEFAULT_RECOGNITION_CUE_ENABLED),
@@ -312,7 +343,10 @@ final class AssistantVoiceConfig {
             .putString(KEY_WATCHED_SESSION_IDS, serializeSessionIdList(config.watchedSessionIds))
             .putBoolean(KEY_INPUT_CONTEXT_ENABLED, config.inputContextEnabled)
             .putString(KEY_INPUT_CONTEXT_LINE, emptyToNull(config.inputContextLine))
-            .putString(KEY_VOICE_ADAPTER_BASE_URL, config.voiceAdapterBaseUrl)
+            .putString(KEY_SPEECH_SERVER_BASE_URL, config.speechServerBaseUrl)
+            .putString(KEY_SPEECH_RECOGNITION_MODEL, config.speechRecognitionModel)
+            .putString(KEY_SPEECH_SYNTHESIS_MODEL, config.speechSynthesisModel)
+            .putString(KEY_SPEECH_VOICE, config.speechVoice)
             .putString(KEY_ASSISTANT_BASE_URL, config.assistantBaseUrl)
             .putFloat(KEY_TTS_GAIN, config.ttsGain)
             .putBoolean(KEY_RECOGNITION_CUE_ENABLED, config.recognitionCueEnabled)
@@ -387,9 +421,18 @@ final class AssistantVoiceConfig {
             intent.hasExtra(EXTRA_INPUT_CONTEXT_LINE)
                 ? intent.getStringExtra(EXTRA_INPUT_CONTEXT_LINE)
                 : fallback.inputContextLine,
-            intent.hasExtra(EXTRA_VOICE_ADAPTER_BASE_URL)
-                ? intent.getStringExtra(EXTRA_VOICE_ADAPTER_BASE_URL)
-                : fallback.voiceAdapterBaseUrl,
+            intent.hasExtra(EXTRA_SPEECH_SERVER_BASE_URL)
+                ? intent.getStringExtra(EXTRA_SPEECH_SERVER_BASE_URL)
+                : fallback.speechServerBaseUrl,
+            intent.hasExtra(EXTRA_SPEECH_RECOGNITION_MODEL)
+                ? intent.getStringExtra(EXTRA_SPEECH_RECOGNITION_MODEL)
+                : fallback.speechRecognitionModel,
+            intent.hasExtra(EXTRA_SPEECH_SYNTHESIS_MODEL)
+                ? intent.getStringExtra(EXTRA_SPEECH_SYNTHESIS_MODEL)
+                : fallback.speechSynthesisModel,
+            intent.hasExtra(EXTRA_SPEECH_VOICE)
+                ? intent.getStringExtra(EXTRA_SPEECH_VOICE)
+                : fallback.speechVoice,
             intent.hasExtra(EXTRA_ASSISTANT_BASE_URL)
                 ? intent.getStringExtra(EXTRA_ASSISTANT_BASE_URL)
                 : fallback.assistantBaseUrl,
@@ -449,7 +492,10 @@ final class AssistantVoiceConfig {
         intent.putExtra(EXTRA_SESSION_TITLES, serializeSessionTitleMap(sessionTitles));
         intent.putExtra(EXTRA_INPUT_CONTEXT_ENABLED, inputContextEnabled);
         intent.putExtra(EXTRA_INPUT_CONTEXT_LINE, emptyToNull(inputContextLine));
-        intent.putExtra(EXTRA_VOICE_ADAPTER_BASE_URL, voiceAdapterBaseUrl);
+        intent.putExtra(EXTRA_SPEECH_SERVER_BASE_URL, speechServerBaseUrl);
+        intent.putExtra(EXTRA_SPEECH_RECOGNITION_MODEL, speechRecognitionModel);
+        intent.putExtra(EXTRA_SPEECH_SYNTHESIS_MODEL, speechSynthesisModel);
+        intent.putExtra(EXTRA_SPEECH_VOICE, speechVoice);
         intent.putExtra(EXTRA_ASSISTANT_BASE_URL, assistantBaseUrl);
         intent.putExtra(EXTRA_TTS_GAIN, ttsGain);
         intent.putExtra(EXTRA_RECOGNITION_CUE_ENABLED, recognitionCueEnabled);
@@ -641,7 +687,10 @@ final class AssistantVoiceConfig {
             watchedSessionIds,
             inputContextEnabled,
             inputContextLine,
-            voiceAdapterBaseUrl,
+            speechServerBaseUrl,
+            speechRecognitionModel,
+            speechSynthesisModel,
+            speechVoice,
             assistantBaseUrl,
             ttsGain,
             recognitionCueEnabled,
@@ -680,7 +729,10 @@ final class AssistantVoiceConfig {
             watchedSessionIds,
             inputContextEnabled,
             inputContextLine,
-            voiceAdapterBaseUrl,
+            speechServerBaseUrl,
+            speechRecognitionModel,
+            speechSynthesisModel,
+            speechVoice,
             url,
             ttsGain,
             recognitionCueEnabled,
@@ -726,7 +778,10 @@ final class AssistantVoiceConfig {
             && Objects.equals(watchedSessionIds, config.watchedSessionIds)
             && inputContextEnabled == config.inputContextEnabled
             && Objects.equals(inputContextLine, config.inputContextLine)
-            && Objects.equals(voiceAdapterBaseUrl, config.voiceAdapterBaseUrl)
+            && Objects.equals(speechServerBaseUrl, config.speechServerBaseUrl)
+            && Objects.equals(speechRecognitionModel, config.speechRecognitionModel)
+            && Objects.equals(speechSynthesisModel, config.speechSynthesisModel)
+            && Objects.equals(speechVoice, config.speechVoice)
             && Objects.equals(assistantBaseUrl, config.assistantBaseUrl)
             && ttsGain == config.ttsGain
             && recognitionCueEnabled == config.recognitionCueEnabled
@@ -761,7 +816,10 @@ final class AssistantVoiceConfig {
             watchedSessionIds,
             inputContextEnabled,
             inputContextLine,
-            voiceAdapterBaseUrl,
+            speechServerBaseUrl,
+            speechRecognitionModel,
+            speechSynthesisModel,
+            speechVoice,
             assistantBaseUrl,
             ttsGain,
             recognitionCueEnabled,
@@ -806,7 +864,10 @@ final class AssistantVoiceConfig {
             watchedSessionIds,
             inputContextEnabled,
             inputContextLine,
-            settings.optString("voiceAdapterBaseUrl", voiceAdapterBaseUrl),
+            settings.optString("speechServerBaseUrl", speechServerBaseUrl),
+            settings.optString("speechRecognitionModel", speechRecognitionModel),
+            settings.optString("speechSynthesisModel", speechSynthesisModel),
+            settings.optString("speechVoice", speechVoice),
             assistantBaseUrl,
             (float) settings.optDouble("ttsGain", ttsGain),
             settings.optBoolean("recognitionCueEnabled", recognitionCueEnabled),
@@ -850,7 +911,10 @@ final class AssistantVoiceConfig {
             watchedSessionIds,
             enabled,
             contextLine,
-            voiceAdapterBaseUrl,
+            speechServerBaseUrl,
+            speechRecognitionModel,
+            speechSynthesisModel,
+            speechVoice,
             assistantBaseUrl,
             ttsGain,
             recognitionCueEnabled,
@@ -889,7 +953,10 @@ final class AssistantVoiceConfig {
             sessionIds,
             inputContextEnabled,
             inputContextLine,
-            voiceAdapterBaseUrl,
+            speechServerBaseUrl,
+            speechRecognitionModel,
+            speechSynthesisModel,
+            speechVoice,
             assistantBaseUrl,
             ttsGain,
             recognitionCueEnabled,
@@ -928,7 +995,10 @@ final class AssistantVoiceConfig {
             watchedSessionIds,
             inputContextEnabled,
             inputContextLine,
-            voiceAdapterBaseUrl,
+            speechServerBaseUrl,
+            speechRecognitionModel,
+            speechSynthesisModel,
+            speechVoice,
             assistantBaseUrl,
             ttsGain,
             recognitionCueEnabled,
@@ -967,7 +1037,10 @@ final class AssistantVoiceConfig {
             watchedSessionIds,
             inputContextEnabled,
             inputContextLine,
-            voiceAdapterBaseUrl,
+            speechServerBaseUrl,
+            speechRecognitionModel,
+            speechSynthesisModel,
+            speechVoice,
             assistantBaseUrl,
             ttsGain,
             recognitionCueEnabled,
@@ -1006,7 +1079,10 @@ final class AssistantVoiceConfig {
             watchedSessionIds,
             inputContextEnabled,
             inputContextLine,
-            voiceAdapterBaseUrl,
+            speechServerBaseUrl,
+            speechRecognitionModel,
+            speechSynthesisModel,
+            speechVoice,
             assistantBaseUrl,
             ttsGain,
             recognitionCueEnabled,
@@ -1045,7 +1121,10 @@ final class AssistantVoiceConfig {
             watchedSessionIds,
             inputContextEnabled,
             inputContextLine,
-            voiceAdapterBaseUrl,
+            speechServerBaseUrl,
+            speechRecognitionModel,
+            speechSynthesisModel,
+            speechVoice,
             assistantBaseUrl,
             ttsGain,
             recognitionCueEnabled,
@@ -1084,7 +1163,10 @@ final class AssistantVoiceConfig {
             watchedSessionIds,
             inputContextEnabled,
             inputContextLine,
-            voiceAdapterBaseUrl,
+            speechServerBaseUrl,
+            speechRecognitionModel,
+            speechSynthesisModel,
+            speechVoice,
             assistantBaseUrl,
             ttsGain,
             recognitionCueEnabled,

@@ -37,6 +37,14 @@ import static org.junit.Assert.assertFalse;
 public final class AssistantVoiceRuntimeServiceTest {
     @Test
     @Config(sdk = Build.VERSION_CODES.N)
+    public void speechErrorsExplainRecoveryWithoutExposingProviderDetails() {
+        assertTrue(AssistantVoiceRuntimeService.describeSpeechFailure("speech_authentication_failed").contains("token"));
+        assertTrue(AssistantVoiceRuntimeService.describeSpeechFailure("recognition_disconnected").contains("connection"));
+        assertFalse(AssistantVoiceRuntimeService.describeSpeechFailure("provider-secret-token").contains("provider-secret-token"));
+    }
+
+    @Test
+    @Config(sdk = Build.VERSION_CODES.N)
     public void scheduledWakeDurableQueueHonorsAudioModeAutoListenAndSessionFilter() throws Exception {
         for (String mode : new String[] {"response", "manual"}) {
             for (boolean enabled : new boolean[] {false, true}) {
@@ -48,7 +56,7 @@ public final class AssistantVoiceRuntimeServiceTest {
                             .put("ttsPreferredSessionOnly", preferredSessionOnly)
                             .put("preferredVoiceSessionId", "other-session")
                     ));
-                    setPrivateField(service, "adapterSocketConnected", true);
+                    setPrivateField(service, "speechReady", true);
                     setPrivateField(service, "assistantSocketConnected", true);
                     // Keep admitted items queued so this test doesn't start actual audio/recognition.
                     setPrivateField(service, "pendingRecognitionSubmitSessionId", "busy-session");
@@ -336,6 +344,7 @@ public final class AssistantVoiceRuntimeServiceTest {
             service,
             createConfig(AssistantVoiceConfig.AUDIO_MODE_TOOL, sessionTitles("session-1", "Assistant"))
         );
+        setPrivateField(service, "speechReady", true);
         setPrivateField(service, "activeTtsRequestId", "tts-active");
         List<AssistantVoiceQueueItem> queue = getQueuedVoiceItems(service);
         queue.add(AssistantVoiceQueueItem.fromManualText(
@@ -1560,130 +1569,6 @@ public final class AssistantVoiceRuntimeServiceTest {
 
     @Test
     @Config(sdk = Build.VERSION_CODES.N)
-    public void shouldWaitForAdapterClientIdentityBeforeDirectTtsPlayback() {
-        AssistantVoiceQueueItem ttsItem = new AssistantVoiceQueueItem(
-            "notification-1",
-            "voice_speak",
-            "test",
-            "event-1",
-            "session-1",
-            "Session 1",
-            "Session 1",
-            "hello",
-            "speak",
-            null,
-            false,
-            false
-        );
-        AssistantVoiceQueueItem listenOnlyItem = new AssistantVoiceQueueItem(
-            "notification-2",
-            "voice_ask",
-            "test",
-            "event-2",
-            "session-1",
-            "Session 1",
-            "Session 1",
-            "",
-            "listen_only",
-            null,
-            false,
-            true
-        );
-
-        assertTrue(
-            AssistantVoiceRuntimeService.shouldWaitForAdapterClientIdentity(true, "", ttsItem)
-        );
-        assertTrue(
-            AssistantVoiceRuntimeService.shouldWaitForAdapterClientIdentity(
-                true,
-                "   ",
-                ttsItem
-            )
-        );
-        assertFalse(
-            AssistantVoiceRuntimeService.shouldWaitForAdapterClientIdentity(
-                true,
-                "client-1",
-                ttsItem
-            )
-        );
-        assertFalse(
-            AssistantVoiceRuntimeService.shouldWaitForAdapterClientIdentity(false, "", ttsItem)
-        );
-        assertFalse(
-            AssistantVoiceRuntimeService.shouldWaitForAdapterClientIdentity(
-                true,
-                "",
-                listenOnlyItem
-            )
-        );
-    }
-
-    @Test
-    @Config(sdk = Build.VERSION_CODES.N)
-    public void buildAdapterTtsRequestBodyIncludesDirectMediaClientId() {
-        assertEquals(
-            "request-1",
-            AssistantVoiceRuntimeService.buildAdapterTtsRequestBody(
-                "client-1",
-                "request-1",
-                "hello",
-                ""
-            )
-                .optString("requestId")
-        );
-        assertEquals(
-            "hello",
-            AssistantVoiceRuntimeService.buildAdapterTtsRequestBody(
-                "client-1",
-                "request-1",
-                "hello",
-                ""
-            )
-                .optString("text")
-        );
-        assertEquals(
-            "session-1",
-            AssistantVoiceRuntimeService.buildAdapterTtsRequestBody(
-                "client-1",
-                "request-1",
-                "hello",
-                " session-1 "
-            ).optString("sessionId")
-        );
-        assertEquals(
-            "client-1",
-            AssistantVoiceRuntimeService.buildAdapterTtsRequestBody(
-                " client-1 ",
-                "request-1",
-                "hello",
-                ""
-            )
-                .optString("clientId")
-        );
-    }
-
-    @Test
-    @Config(sdk = Build.VERSION_CODES.N)
-    public void buildAdapterTtsStopRequestBodyTreatsClientIdAsOptional() {
-        assertFalse(
-            AssistantVoiceRuntimeService.buildAdapterTtsStopRequestBody("", "request-1")
-                .has("clientId")
-        );
-        assertEquals(
-            "request-1",
-            AssistantVoiceRuntimeService.buildAdapterTtsStopRequestBody("", "request-1")
-                .optString("requestId")
-        );
-        assertEquals(
-            "client-1",
-            AssistantVoiceRuntimeService.buildAdapterTtsStopRequestBody(" client-1 ", "request-1")
-                .optString("clientId")
-        );
-    }
-
-    @Test
-    @Config(sdk = Build.VERSION_CODES.N)
     public void recognitionArmingCueRequestIdRoundTripsThroughPlaybackMarker() {
         String playbackRequestId =
             AssistantVoiceRuntimeService.buildRecognitionArmingCueRequestId(" request-1 ");
@@ -1792,7 +1677,10 @@ public final class AssistantVoiceRuntimeServiceTest {
             Collections.emptyList(),
             false,
             "",
-            AssistantVoiceConfig.DEFAULT_VOICE_ADAPTER_BASE_URL,
+            AssistantVoiceConfig.DEFAULT_SPEECH_SERVER_BASE_URL,
+            AssistantVoiceConfig.DEFAULT_SPEECH_RECOGNITION_MODEL,
+            AssistantVoiceConfig.DEFAULT_SPEECH_SYNTHESIS_MODEL,
+            AssistantVoiceConfig.DEFAULT_SPEECH_VOICE,
             AssistantVoiceConfig.DEFAULT_ASSISTANT_BASE_URL,
             AssistantVoiceConfig.DEFAULT_TTS_GAIN,
             AssistantVoiceConfig.DEFAULT_RECOGNITION_CUE_ENABLED,

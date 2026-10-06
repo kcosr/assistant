@@ -23,6 +23,34 @@ import org.robolectric.annotation.Config;
 @RunWith(RobolectricTestRunner.class)
 @Config(sdk = Build.VERSION_CODES.N)
 public final class AssistantVoiceConfigTest {
+    @Test(expected = IllegalArgumentException.class)
+    public void speechConfigRejectsUrlEmbeddedSecrets() throws Exception {
+        createConfig(1.0f).withVoiceSettings(new JSONObject()
+            .put("speechServerBaseUrl", "https://user:secret@assistant/speech/v1"));
+    }
+
+    @Test
+    public void speechSettingsPersistAcrossPreferencesIntentsAndCopies() throws Exception {
+        Context context = RuntimeEnvironment.getApplication();
+        AssistantVoiceConfig original = createConfig(1.0f).withVoiceSettings(new JSONObject()
+            .put("speechServerBaseUrl", "https://assistant/speech/v1/")
+            .put("speechRecognitionModel", "custom-stt")
+            .put("speechSynthesisModel", "custom-tts")
+            .put("speechVoice", "custom-voice"));
+        AssistantVoiceConfig.save(context, original);
+        AssistantVoiceConfig loaded = AssistantVoiceConfig.load(context);
+        assertEquals("https://assistant/speech/v1", loaded.speechServerBaseUrl);
+        assertEquals("custom-stt", loaded.speechRecognitionModel);
+        assertEquals("custom-tts", loaded.speechSynthesisModel);
+        assertEquals("custom-voice", loaded.speechVoice);
+        assertEquals(original, loaded);
+        AssistantVoiceConfig fromIntent = AssistantVoiceConfig.fromIntent(original.applyToIntent(new Intent()), createConfig(1.0f));
+        assertEquals(original, fromIntent);
+        assertEquals("custom-voice", original.withAssistantBaseUrl("https://assistant/new").speechVoice);
+        assertEquals("custom-stt", original.withSelection("panel", "session").speechRecognitionModel);
+        assertFalse(original.equals(original.withVoiceSettings(new JSONObject().put("speechVoice", "other"))));
+    }
+
     @Test
     public void saveAndLoadPersistSessionTitles() {
         Context context = RuntimeEnvironment.getApplication();
@@ -283,7 +311,10 @@ public final class AssistantVoiceConfigTest {
             Arrays.asList("session-1"),
             false,
             "",
-            AssistantVoiceConfig.DEFAULT_VOICE_ADAPTER_BASE_URL,
+            AssistantVoiceConfig.DEFAULT_SPEECH_SERVER_BASE_URL,
+            AssistantVoiceConfig.DEFAULT_SPEECH_RECOGNITION_MODEL,
+            AssistantVoiceConfig.DEFAULT_SPEECH_SYNTHESIS_MODEL,
+            AssistantVoiceConfig.DEFAULT_SPEECH_VOICE,
             AssistantVoiceConfig.DEFAULT_ASSISTANT_BASE_URL,
             1.0f,
             true,
@@ -393,7 +424,10 @@ public final class AssistantVoiceConfigTest {
             Arrays.asList("session-1", "session-2"),
             false,
             "",
-            AssistantVoiceConfig.DEFAULT_VOICE_ADAPTER_BASE_URL,
+            AssistantVoiceConfig.DEFAULT_SPEECH_SERVER_BASE_URL,
+            AssistantVoiceConfig.DEFAULT_SPEECH_RECOGNITION_MODEL,
+            AssistantVoiceConfig.DEFAULT_SPEECH_SYNTHESIS_MODEL,
+            AssistantVoiceConfig.DEFAULT_SPEECH_VOICE,
             AssistantVoiceConfig.DEFAULT_ASSISTANT_BASE_URL,
             ttsGain,
             recognitionCueEnabled,

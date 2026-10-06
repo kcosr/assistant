@@ -79,7 +79,10 @@ export interface InputRuntimeOptions {
   localResponseVoiceOnlyCheckboxEl: HTMLInputElement;
   standaloneNotificationPlaybackCheckboxEl: HTMLInputElement;
   notificationTitlePlaybackCheckboxEl: HTMLInputElement;
-  voiceAdapterBaseUrlInputEl: HTMLInputElement;
+  speechServerBaseUrlInputEl: HTMLInputElement;
+  speechVoiceInputEl: HTMLInputElement;
+  speechSynthesisModelInputEl: HTMLInputElement;
+  speechRecognitionModelInputEl: HTMLInputElement;
   voiceMicInputSelectEl: HTMLSelectElement;
   voiceRecognitionStartTimeoutInputEl: HTMLInputElement;
   voiceRecognitionCompletionTimeoutInputEl: HTMLInputElement;
@@ -348,7 +351,10 @@ export function createInputRuntime(options: InputRuntimeOptions): InputRuntime {
     localResponseVoiceOnlyCheckboxEl: options.localResponseVoiceOnlyCheckboxEl,
     standaloneNotificationPlaybackCheckboxEl: options.standaloneNotificationPlaybackCheckboxEl,
     notificationTitlePlaybackCheckboxEl: options.notificationTitlePlaybackCheckboxEl,
-    voiceAdapterBaseUrlInputEl: options.voiceAdapterBaseUrlInputEl,
+    speechServerBaseUrlInputEl: options.speechServerBaseUrlInputEl,
+    speechVoiceInputEl: options.speechVoiceInputEl,
+    speechSynthesisModelInputEl: options.speechSynthesisModelInputEl,
+    speechRecognitionModelInputEl: options.speechRecognitionModelInputEl,
     voiceMicInputSelectEl: options.voiceMicInputSelectEl,
     voiceRecognitionStartTimeoutInputEl: options.voiceRecognitionStartTimeoutInputEl,
     voiceRecognitionCompletionTimeoutInputEl: options.voiceRecognitionCompletionTimeoutInputEl,

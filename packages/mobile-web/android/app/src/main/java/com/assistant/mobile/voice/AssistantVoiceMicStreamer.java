@@ -17,10 +17,13 @@ import java.util.Map;
 
 final class AssistantVoiceMicStreamer {
     private static final String TAG = "AssistantVoiceMicStreamer";
+    private static final int SAMPLE_RATE = 24000;
+    private static final int CHUNK_BYTES = SAMPLE_RATE / 10 * 2;
 
     interface Listener {
         void onStarted(int sampleRate, int channels, String encoding);
         void onChunk(byte[] chunk);
+        default void onError(String safeCode) {}
         void onStopped();
     }
 
@@ -115,7 +118,7 @@ final class AssistantVoiceMicStreamer {
             return false;
         }
 
-        final int sampleRate = 16000;
+        final int sampleRate = SAMPLE_RATE;
         final int channelConfig = AudioFormat.CHANNEL_IN_MONO;
         final int encoding = AudioFormat.ENCODING_PCM_16BIT;
         final AudioDeviceInfo preferredDevice = preferredDeviceId == null
@@ -127,6 +130,7 @@ final class AssistantVoiceMicStreamer {
             : MediaRecorder.AudioSource.VOICE_RECOGNITION;
         final int minBuffer = AudioRecord.getMinBufferSize(sampleRate, channelConfig, encoding);
         if (minBuffer <= 0) {
+            Log.w(TAG, "24 kHz mono PCM16 microphone capture is unavailable");
             finishSession(token);
             if (shouldUseCommunicationSource) {
                 stopScoRouting();
@@ -138,15 +142,25 @@ final class AssistantVoiceMicStreamer {
             startScoRouting();
         }
 
-        final int bufferSize = Math.max(minBuffer, sampleRate / 5);
-        final AudioRecord record = new AudioRecord(
-            audioSource,
-            sampleRate,
-            channelConfig,
-            encoding,
-            bufferSize
-        );
-        if (record.getState() != AudioRecord.STATE_INITIALIZED) {
+        final int bufferSize = Math.max(minBuffer, CHUNK_BYTES * 2);
+        final AudioRecord record;
+        try {
+            record = new AudioRecord(audioSource, sampleRate, channelConfig, encoding, bufferSize);
+        } catch (Exception error) {
+            Log.w(TAG, "failed to create 24 kHz mono PCM16 microphone capture", error);
+            finishSession(token);
+            if (shouldUseCommunicationSource) {
+                stopScoRouting();
+            }
+            return false;
+        }
+        if (
+            record.getState() != AudioRecord.STATE_INITIALIZED
+                || record.getSampleRate() != SAMPLE_RATE
+                || record.getChannelCount() != 1
+                || record.getAudioFormat() != AudioFormat.ENCODING_PCM_16BIT
+        ) {
+            Log.w(TAG, "microphone did not initialize the required 24 kHz mono PCM16 format");
             record.release();
             finishSession(token);
             if (shouldUseCommunicationSource) {
@@ -177,7 +191,7 @@ final class AssistantVoiceMicStreamer {
         }
 
         Thread thread = new Thread(
-            () -> runCaptureLoop(token, resources, bufferSize),
+            () -> runCaptureLoop(token, resources),
             "assistant-voice-mic-" + token.requestId
         );
         thread.setDaemon(true);
@@ -204,7 +218,10 @@ final class AssistantVoiceMicStreamer {
         }
 
         Thread threadToJoin = resources.thread;
-        if (threadToJoin != null && threadToJoin != Thread.currentThread()) {
+        if (threadToJoin == Thread.currentThread()) {
+            return;
+        }
+        if (threadToJoin != null) {
             try {
                 threadToJoin.join(600);
             } catch (InterruptedException interrupted) {
@@ -243,25 +260,55 @@ final class AssistantVoiceMicStreamer {
         stop(null);
     }
 
-    private void runCaptureLoop(Token token, CaptureResources resources, int bufferSize) {
-        byte[] buffer = new byte[Math.max(bufferSize, 4096)];
+    private void runCaptureLoop(Token token, CaptureResources resources) {
+        byte[] buffer = new byte[CHUNK_BYTES];
+        int bufferedBytes = 0;
         try {
+            if (!shouldContinue(token)) {
+                return;
+            }
             resources.audioRecord.startRecording();
-            resources.listener.onStarted(16000, 1, "pcm_s16le");
+            if (resources.audioRecord.getRecordingState() != AudioRecord.RECORDSTATE_RECORDING) {
+                throw new IllegalStateException("microphone did not start recording");
+            }
+            if (!shouldContinue(token)) {
+                return;
+            }
+            resources.listener.onStarted(SAMPLE_RATE, 1, "pcm_s16le");
             while (shouldContinue(token)) {
-                int read = resources.audioRecord.read(buffer, 0, buffer.length);
+                int read = resources.audioRecord.read(buffer, bufferedBytes, buffer.length - bufferedBytes);
                 if (read <= 0) {
                     Log.w(TAG, "mic capture read ended requestId=" + token.requestId + " count=" + read);
+                    notifyCaptureFailure(token, resources, "microphone_read_failed");
                     break;
                 }
-                byte[] chunk = new byte[read];
-                System.arraycopy(buffer, 0, chunk, 0, read);
-                resources.listener.onChunk(chunk);
+                if (!shouldContinue(token)) {
+                    break;
+                }
+                // Partial reads may split a PCM16 sample. Accumulate the original bytes
+                // until a complete 100 ms frame is available, preserving sample alignment.
+                bufferedBytes += read;
+                if (bufferedBytes == buffer.length) {
+                    resources.listener.onChunk(buffer);
+                    buffer = new byte[CHUNK_BYTES];
+                    bufferedBytes = 0;
+                }
             }
         } catch (Exception error) {
             Log.w(TAG, "mic capture failed requestId=" + token.requestId, error);
+            notifyCaptureFailure(token, resources, "microphone_capture_failed");
         } finally {
             finishCapture(resources);
+        }
+    }
+
+    private void notifyCaptureFailure(Token token, CaptureResources resources, String safeCode) {
+        if (!shouldContinue(token)) {
+            return;
+        }
+        try {
+            resources.listener.onError(safeCode);
+        } catch (Exception ignored) {
         }
     }
 

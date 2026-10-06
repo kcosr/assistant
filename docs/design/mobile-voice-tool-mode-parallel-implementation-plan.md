@@ -1,5 +1,9 @@
 # Mobile Voice Tool Mode Parallel Implementation Plan
 
+> The adapter transport described here is retired. Current Android Thread speech uses the
+> OpenAI-compatible speech server; see [Native Voice Runtime](../../packages/mobile-web/README.md#native-voice-runtime)
+> for the implemented transport and configuration.
+
 ## Scope
 
 This plan turns the tool-driven mobile voice design into parallelizable work slices.

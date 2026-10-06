@@ -1,3 +1,4 @@
+import { bindSpeechServerControls } from './utils/speechServerControls';
 import {
   safeValidateServerMessage,
   type CombinedPluginManifest,
@@ -106,7 +107,9 @@ import {
 } from './utils/themeManager';
 import {
   areVoiceSettingsEqual,
-  DEFAULT_VOICE_ADAPTER_BASE_URL,
+  DEFAULT_SPEECH_SERVER_BASE_URL,
+  normalizeVoiceSettingsDraft,
+  SPEECH_SERVER_URL_ERROR,
   formatStartupPreRollMsLabel,
   formatRecognitionCueGainPercentLabel,
   formatTtsGainPercentLabel,
@@ -539,7 +542,10 @@ async function main(): Promise<void> {
     localResponseVoiceOnlyCheckbox: localResponseVoiceOnlyCheckboxEl,
     standaloneNotificationPlaybackCheckbox: standaloneNotificationPlaybackCheckboxEl,
     notificationTitlePlaybackCheckbox: notificationTitlePlaybackCheckboxEl,
-    voiceAdapterBaseUrlInput: voiceAdapterBaseUrlInputEl,
+    speechServerBaseUrlInput: speechServerBaseUrlInputEl,
+    speechVoiceInput: speechVoiceInputEl,
+    speechSynthesisModelInput: speechSynthesisModelInputEl,
+    speechRecognitionModelInput: speechRecognitionModelInputEl,
     voicePreferredSessionButton: voicePreferredSessionButtonEl,
     voicePreferredSessionLabel: voicePreferredSessionLabelEl,
     voiceTtsPreferredSessionOnlyCheckbox: voiceTtsPreferredSessionOnlyCheckboxEl,
@@ -728,7 +734,7 @@ async function main(): Promise<void> {
     }
   };
   applySelectedPanelOutlinesEnabled(selectedPanelOutlinesEnabled);
-  voiceAdapterBaseUrlInputEl.placeholder = DEFAULT_VOICE_ADAPTER_BASE_URL;
+  speechServerBaseUrlInputEl.placeholder = DEFAULT_SPEECH_SERVER_BASE_URL;
 
   const updateInteractionElementsEnabled = (enabled: boolean): void => {
     const blocks = document.querySelectorAll<HTMLElement>('.interaction-block');
@@ -1956,7 +1962,10 @@ async function main(): Promise<void> {
       localResponseVoiceOnlyCheckboxEl,
       standaloneNotificationPlaybackCheckboxEl,
       notificationTitlePlaybackCheckboxEl,
-      voiceAdapterBaseUrlInputEl,
+      speechServerBaseUrlInputEl,
+      speechVoiceInputEl,
+      speechSynthesisModelInputEl,
+      speechRecognitionModelInputEl,
       voiceMicInputSelectEl,
       voiceRecognitionStartTimeoutInputEl,
       voiceRecognitionCompletionTimeoutInputEl,
@@ -4202,39 +4211,52 @@ async function main(): Promise<void> {
     const realtimeSpeakerphoneCheckbox = document.getElementById(
       'realtime-speakerphone-checkbox',
     ) as HTMLInputElement | null;
-    const nextSettings = normalizeVoiceSettings({
-      ...currentSettings,
-      voiceRuntimeMode: voiceRuntimeModeSelectEl.value,
-      realtimeMuteOnStart:
-        realtimeMuteOnStartCheckbox?.checked ?? currentSettings.realtimeMuteOnStart,
-      realtimeSpeakerphone:
-        realtimeSpeakerphoneCheckbox?.checked ?? currentSettings.realtimeSpeakerphone,
-      audioMode: audioModeSelectEl.value,
-      autoListenEnabled: autoListenCheckboxEl.checked,
-      mediaButtonsEnabled: voiceMediaButtonsCheckboxEl.checked,
-      localResponseVoiceOnlyEnabled: localResponseVoiceOnlyCheckboxEl.checked,
-      standaloneNotificationPlaybackEnabled: standaloneNotificationPlaybackCheckboxEl.checked,
-      notificationTitlePlaybackEnabled: notificationTitlePlaybackCheckboxEl.checked,
-      voiceAdapterBaseUrl: voiceAdapterBaseUrlInputEl.value,
-      selectedMicDeviceId: voiceMicInputSelectEl.value,
-      recognitionStartTimeoutMs: voiceRecognitionStartTimeoutInputEl.value,
-      recognitionCompletionTimeoutMs: voiceRecognitionCompletionTimeoutInputEl.value,
-      recognitionEndSilenceMs: voiceRecognitionEndSilenceInputEl.value,
-      recognizeStopCommandEnabled: voiceRecognizeStopCommandCheckboxEl.checked,
-      preferredVoiceSessionId: currentSettings.preferredVoiceSessionId,
-      ttsPreferredSessionOnly: voiceTtsPreferredSessionOnlyCheckboxEl.checked,
-      recognitionCueEnabled: voiceRecognitionCueCheckboxEl.checked,
-      recognitionCueGain: recognitionCueGainPercentToValue(
-        voiceRecognitionCueGainSliderEl.value,
-        currentSettings.recognitionCueGain,
-      ),
-      startupPreRollMs: normalizeStartupPreRollMs(
-        voiceStartupPreRollSliderEl.value,
-        currentSettings.startupPreRollMs,
-      ),
-      ttsGain: ttsGainPercentToValue(voiceTtsGainSliderEl.value, currentSettings.ttsGain),
-      ...overrides,
-    });
+    const { settings: nextSettings, speechServerUrlInvalid } = normalizeVoiceSettingsDraft(
+      currentSettings,
+      {
+        ...currentSettings,
+        voiceRuntimeMode: voiceRuntimeModeSelectEl.value,
+        realtimeMuteOnStart:
+          realtimeMuteOnStartCheckbox?.checked ?? currentSettings.realtimeMuteOnStart,
+        realtimeSpeakerphone:
+          realtimeSpeakerphoneCheckbox?.checked ?? currentSettings.realtimeSpeakerphone,
+        audioMode: audioModeSelectEl.value,
+        autoListenEnabled: autoListenCheckboxEl.checked,
+        mediaButtonsEnabled: voiceMediaButtonsCheckboxEl.checked,
+        localResponseVoiceOnlyEnabled: localResponseVoiceOnlyCheckboxEl.checked,
+        standaloneNotificationPlaybackEnabled: standaloneNotificationPlaybackCheckboxEl.checked,
+        notificationTitlePlaybackEnabled: notificationTitlePlaybackCheckboxEl.checked,
+        speechServerBaseUrl: speechServerBaseUrlInputEl.value,
+        speechRecognitionModel: speechRecognitionModelInputEl.value,
+        speechSynthesisModel: speechSynthesisModelInputEl.value,
+        speechVoice: speechVoiceInputEl.value,
+        selectedMicDeviceId: voiceMicInputSelectEl.value,
+        recognitionStartTimeoutMs: voiceRecognitionStartTimeoutInputEl.value,
+        recognitionCompletionTimeoutMs: voiceRecognitionCompletionTimeoutInputEl.value,
+        recognitionEndSilenceMs: voiceRecognitionEndSilenceInputEl.value,
+        recognizeStopCommandEnabled: voiceRecognizeStopCommandCheckboxEl.checked,
+        preferredVoiceSessionId: currentSettings.preferredVoiceSessionId,
+        ttsPreferredSessionOnly: voiceTtsPreferredSessionOnlyCheckboxEl.checked,
+        recognitionCueEnabled: voiceRecognitionCueCheckboxEl.checked,
+        recognitionCueGain: recognitionCueGainPercentToValue(
+          voiceRecognitionCueGainSliderEl.value,
+          currentSettings.recognitionCueGain,
+        ),
+        startupPreRollMs: normalizeStartupPreRollMs(
+          voiceStartupPreRollSliderEl.value,
+          currentSettings.startupPreRollMs,
+        ),
+        ttsGain: ttsGainPercentToValue(voiceTtsGainSliderEl.value, currentSettings.ttsGain),
+        ...overrides,
+      },
+    );
+    speechServerBaseUrlInputEl.setCustomValidity(
+      speechServerUrlInvalid ? SPEECH_SERVER_URL_ERROR : '',
+    );
+    if (speechServerUrlInvalid) {
+      const speechStatus = document.getElementById('speech-credential-status');
+      if (speechStatus) speechStatus.textContent = SPEECH_SERVER_URL_ERROR;
+    }
     if (areVoiceSettingsEqual(currentSettings, nextSettings)) {
       syncPreferredVoiceSessionControl();
       return;
@@ -4242,6 +4264,12 @@ async function main(): Promise<void> {
     applyVoiceSettingsToChatInputs(nextSettings, { userInitiated: true });
     syncPreferredVoiceSessionControl();
   };
+  bindSpeechServerControls({
+    bridge: nativeVoiceBridge,
+    enabled: useNativeVoiceRuntime,
+    getSettings: getCurrentVoiceSettings,
+    syncSettings: syncVoiceSettingsFromInputs,
+  });
   closeVoiceSettingsModal();
   voiceSettingsButtonEl.addEventListener('click', () => {
     openVoiceSettingsModal();
@@ -4286,7 +4314,10 @@ async function main(): Promise<void> {
     localResponseVoiceOnlyCheckboxEl,
     standaloneNotificationPlaybackCheckboxEl,
     notificationTitlePlaybackCheckboxEl,
-    voiceAdapterBaseUrlInputEl,
+    speechServerBaseUrlInputEl,
+    speechVoiceInputEl,
+    speechSynthesisModelInputEl,
+    speechRecognitionModelInputEl,
     voiceTtsPreferredSessionOnlyCheckboxEl,
     voiceMicInputSelectEl,
     voiceRecognitionStartTimeoutInputEl,
@@ -4344,7 +4375,12 @@ async function main(): Promise<void> {
     standaloneNotificationPlaybackCheckboxEl.checked =
       settings.standaloneNotificationPlaybackEnabled;
     notificationTitlePlaybackCheckboxEl.checked = settings.notificationTitlePlaybackEnabled;
-    voiceAdapterBaseUrlInputEl.value = settings.voiceAdapterBaseUrl;
+    if (!speechServerBaseUrlInputEl.validity.customError) {
+      speechServerBaseUrlInputEl.value = settings.speechServerBaseUrl;
+    }
+    speechVoiceInputEl.value = settings.speechVoice;
+    speechSynthesisModelInputEl.value = settings.speechSynthesisModel;
+    speechRecognitionModelInputEl.value = settings.speechRecognitionModel;
     syncPreferredVoiceSessionControl();
     voiceTtsPreferredSessionOnlyCheckboxEl.checked = settings.ttsPreferredSessionOnly;
     voiceMicInputSelectEl.value = settings.selectedMicDeviceId;

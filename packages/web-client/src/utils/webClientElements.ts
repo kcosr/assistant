@@ -12,7 +12,10 @@ export interface WebClientElements {
   localResponseVoiceOnlyCheckbox: HTMLInputElement;
   standaloneNotificationPlaybackCheckbox: HTMLInputElement;
   notificationTitlePlaybackCheckbox: HTMLInputElement;
-  voiceAdapterBaseUrlInput: HTMLInputElement;
+  speechServerBaseUrlInput: HTMLInputElement;
+  speechVoiceInput: HTMLInputElement;
+  speechSynthesisModelInput: HTMLInputElement;
+  speechRecognitionModelInput: HTMLInputElement;
   voicePreferredSessionButton: HTMLButtonElement;
   voicePreferredSessionLabel: HTMLElement;
   voiceTtsPreferredSessionOnlyCheckbox: HTMLInputElement;
@@ -105,7 +108,12 @@ export function getWebClientElements(): WebClientElements | null {
   const notificationTitlePlaybackCheckbox = getElement<HTMLInputElement>(
     'notification-title-playback-checkbox',
   );
-  const voiceAdapterBaseUrlInput = getElement<HTMLInputElement>('voice-adapter-base-url-input');
+  const speechServerBaseUrlInput = getElement<HTMLInputElement>('speech-server-base-url-input');
+  const speechRecognitionModelInput = getElement<HTMLInputElement>(
+    'speech-recognition-model-input',
+  );
+  const speechSynthesisModelInput = getElement<HTMLInputElement>('speech-synthesis-model-input');
+  const speechVoiceInput = getElement<HTMLInputElement>('speech-voice-input');
   const voicePreferredSessionButton = getElement<HTMLButtonElement>(
     'voice-preferred-session-button',
   );
@@ -186,7 +194,10 @@ export function getWebClientElements(): WebClientElements | null {
     !localResponseVoiceOnlyCheckbox ||
     !standaloneNotificationPlaybackCheckbox ||
     !notificationTitlePlaybackCheckbox ||
-    !voiceAdapterBaseUrlInput ||
+    !speechServerBaseUrlInput ||
+    !speechVoiceInput ||
+    !speechSynthesisModelInput ||
+    !speechRecognitionModelInput ||
     !voicePreferredSessionButton ||
     !voicePreferredSessionLabel ||
     !voiceTtsPreferredSessionOnlyCheckbox ||
@@ -233,7 +244,10 @@ export function getWebClientElements(): WebClientElements | null {
     localResponseVoiceOnlyCheckbox,
     standaloneNotificationPlaybackCheckbox,
     notificationTitlePlaybackCheckbox,
-    voiceAdapterBaseUrlInput,
+    speechServerBaseUrlInput,
+    speechVoiceInput,
+    speechSynthesisModelInput,
+    speechRecognitionModelInput,
     voicePreferredSessionButton,
     voicePreferredSessionLabel,
     voiceTtsPreferredSessionOnlyCheckbox,

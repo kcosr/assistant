@@ -1,7 +1,10 @@
 import { normalizeAudioMode, type AudioMode } from './audioMode';
 import { normalizeVoiceRuntimeMode, type VoiceRuntimeMode } from './voiceRuntimeMode';
 
-export const DEFAULT_VOICE_ADAPTER_BASE_URL = 'https://assistant/agent-voice-adapter';
+export const DEFAULT_SPEECH_SERVER_BASE_URL = 'https://assistant/speech/v1';
+export const DEFAULT_SPEECH_RECOGNITION_MODEL = 'parakeet-local';
+export const DEFAULT_SPEECH_SYNTHESIS_MODEL = 'kokoro-local';
+export const DEFAULT_SPEECH_VOICE = 'af_heart';
 export const DEFAULT_RECOGNITION_START_TIMEOUT_MS = 30_000;
 export const DEFAULT_RECOGNITION_COMPLETION_TIMEOUT_MS = 60_000;
 export const DEFAULT_RECOGNITION_END_SILENCE_MS = 1_200;
@@ -31,7 +34,10 @@ export interface VoiceSettings {
   localResponseVoiceOnlyEnabled: boolean;
   standaloneNotificationPlaybackEnabled: boolean;
   notificationTitlePlaybackEnabled: boolean;
-  voiceAdapterBaseUrl: string;
+  speechServerBaseUrl: string;
+  speechRecognitionModel: string;
+  speechSynthesisModel: string;
+  speechVoice: string;
   preferredVoiceSessionId: string;
   ttsPreferredSessionOnly: boolean;
   selectedMicDeviceId: string;
@@ -52,12 +58,46 @@ function normalizeOptionalString(value: unknown): string {
   return value.trim();
 }
 
-function normalizeUrl(value: unknown): string {
-  if (typeof value !== 'string') {
-    return DEFAULT_VOICE_ADAPTER_BASE_URL;
+export const SPEECH_SERVER_URL_ERROR =
+  'Enter an HTTP or HTTPS API root without credentials, query, fragment, or encoded path segments.';
+
+/** Validate the API root before it enters settings storage or the native bridge. */
+export function normalizeSpeechServerBaseUrl(value: unknown): string | null {
+  if (typeof value !== 'string' || value.length > 2048) return null;
+  const candidate = value.trim();
+  const parts = /^(https?):\/\/([^/?#]+)(\/[^?#]*)?$/i.exec(candidate);
+  if (!parts) return null;
+  const authority = /^(\[[0-9a-f:.]+\]|[a-z0-9.-]+)(?::([0-9]+))?$/i.exec(parts[2]!);
+  if (!authority) return null;
+  const host = authority[1]!;
+  if (!host.startsWith('[')) {
+    const labels = host.endsWith('.') ? host.slice(0, -1).split('.') : host.split('.');
+    if (labels.some((label) => !/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/i.test(label))) return null;
   }
-  const trimmed = value.trim();
-  return trimmed.length > 0 ? trimmed : DEFAULT_VOICE_ADAPTER_BASE_URL;
+  const path = parts[3] || '';
+  if (
+    !/^[/A-Za-z0-9._~-]*$/.test(path) ||
+    path.split('/').some((segment) => segment === '.' || segment === '..')
+  )
+    return null;
+  const port = authority[2] === undefined ? null : Number(authority[2]);
+  if (port !== null && (!Number.isInteger(port) || port < 1 || port > 65535)) return null;
+  try {
+    new URL(candidate);
+  } catch {
+    return null;
+  }
+  const scheme = parts[1]!.toLowerCase();
+  const portSuffix =
+    port === null || (scheme === 'https' && port === 443) || (scheme === 'http' && port === 80)
+      ? ''
+      : `:${port}`;
+  return `${scheme}://${host.toLowerCase()}${portSuffix}${path.replace(/\/+$/, '')}`;
+}
+
+function normalizeUrl(value: unknown): string {
+  // Stored input is untrusted. Never copy URL-embedded secrets into normalized settings.
+  return normalizeSpeechServerBaseUrl(value) ?? DEFAULT_SPEECH_SERVER_BASE_URL;
 }
 
 function normalizePositiveInt(value: unknown, fallback: number): number {
@@ -163,7 +203,10 @@ export function createDefaultVoiceSettings(options?: {
     localResponseVoiceOnlyEnabled: isAndroid,
     standaloneNotificationPlaybackEnabled: isAndroid,
     notificationTitlePlaybackEnabled: false,
-    voiceAdapterBaseUrl: DEFAULT_VOICE_ADAPTER_BASE_URL,
+    speechServerBaseUrl: DEFAULT_SPEECH_SERVER_BASE_URL,
+    speechRecognitionModel: DEFAULT_SPEECH_RECOGNITION_MODEL,
+    speechSynthesisModel: DEFAULT_SPEECH_SYNTHESIS_MODEL,
+    speechVoice: DEFAULT_SPEECH_VOICE,
     preferredVoiceSessionId: '',
     ttsPreferredSessionOnly: false,
     selectedMicDeviceId: '',
@@ -229,7 +272,12 @@ export function normalizeVoiceSettings(
       typeof record['notificationTitlePlaybackEnabled'] === 'boolean'
         ? record['notificationTitlePlaybackEnabled']
         : defaults.notificationTitlePlaybackEnabled,
-    voiceAdapterBaseUrl: normalizeUrl(record['voiceAdapterBaseUrl']),
+    speechServerBaseUrl: normalizeUrl(record['speechServerBaseUrl']),
+    speechRecognitionModel:
+      normalizeOptionalString(record['speechRecognitionModel']) || defaults.speechRecognitionModel,
+    speechSynthesisModel:
+      normalizeOptionalString(record['speechSynthesisModel']) || defaults.speechSynthesisModel,
+    speechVoice: normalizeOptionalString(record['speechVoice']) || defaults.speechVoice,
     preferredVoiceSessionId: normalizeOptionalString(record['preferredVoiceSessionId']),
     ttsPreferredSessionOnly:
       typeof record['ttsPreferredSessionOnly'] === 'boolean'
@@ -265,6 +313,24 @@ export function normalizeVoiceSettings(
   };
 }
 
+/** Apply independent edits while retaining the last valid endpoint for an invalid URL draft. */
+export function normalizeVoiceSettingsDraft(
+  current: VoiceSettings,
+  changes: Record<string, unknown>,
+): { settings: VoiceSettings; speechServerUrlInvalid: boolean } {
+  const endpoint = normalizeSpeechServerBaseUrl(
+    changes['speechServerBaseUrl'] ?? current.speechServerBaseUrl,
+  );
+  return {
+    settings: normalizeVoiceSettings({
+      ...current,
+      ...changes,
+      speechServerBaseUrl: endpoint ?? current.speechServerBaseUrl,
+    }),
+    speechServerUrlInvalid: endpoint === null,
+  };
+}
+
 export function areVoiceSettingsEqual(left: VoiceSettings, right: VoiceSettings): boolean {
   return (
     left.voiceRuntimeMode === right.voiceRuntimeMode &&
@@ -278,7 +344,10 @@ export function areVoiceSettingsEqual(left: VoiceSettings, right: VoiceSettings)
     left.localResponseVoiceOnlyEnabled === right.localResponseVoiceOnlyEnabled &&
     left.standaloneNotificationPlaybackEnabled === right.standaloneNotificationPlaybackEnabled &&
     left.notificationTitlePlaybackEnabled === right.notificationTitlePlaybackEnabled &&
-    left.voiceAdapterBaseUrl === right.voiceAdapterBaseUrl &&
+    left.speechServerBaseUrl === right.speechServerBaseUrl &&
+    left.speechRecognitionModel === right.speechRecognitionModel &&
+    left.speechSynthesisModel === right.speechSynthesisModel &&
+    left.speechVoice === right.speechVoice &&
     left.preferredVoiceSessionId === right.preferredVoiceSessionId &&
     left.ttsPreferredSessionOnly === right.ttsPreferredSessionOnly &&
     left.selectedMicDeviceId === right.selectedMicDeviceId &&

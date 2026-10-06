@@ -32,25 +32,6 @@ final class AssistantVoiceUrlUtils {
         return builder.build().toString();
     }
 
-    static String adapterWebSocketUrl(String baseUrl) {
-        Uri base = Uri.parse(normalizeBaseUrl(baseUrl, AssistantVoiceConfig.DEFAULT_VOICE_ADAPTER_BASE_URL));
-        String scheme = base.getScheme();
-        String wsScheme = "https".equalsIgnoreCase(scheme) ? "wss" : "ws";
-        return base.buildUpon()
-            .scheme(wsScheme)
-            .encodedPath(joinPath(base.getEncodedPath(), "ws"))
-            .build()
-            .toString();
-    }
-
-    static String adapterTtsUrl(String baseUrl) {
-        return joinApiPath(baseUrl, "api/media/tts");
-    }
-
-    static String adapterTtsStopUrl(String baseUrl) {
-        return joinApiPath(baseUrl, "api/media/tts/stop");
-    }
-
     static String assistantWebSocketUrl(String baseUrl) {
         Uri base = Uri.parse(normalizeBaseUrl(baseUrl, AssistantVoiceConfig.DEFAULT_ASSISTANT_BASE_URL));
         String scheme = base.getScheme();

@@ -9,10 +9,11 @@ import android.media.AudioTrack;
 import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
-import android.util.Base64;
 
+import java.util.ArrayDeque;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.RejectedExecutionException;
 
 final class AssistantVoicePcmPlayer {
     enum RecognitionCueType {
@@ -21,6 +22,7 @@ final class AssistantVoicePcmPlayer {
         FAILURE_COMPLETION,
     }
 
+    static final int MAX_QUEUED_STREAM_PCM_BYTES = 512 * 1024;
     private static final int DEFAULT_PLAYBACK_SAMPLE_RATE = 24000;
     private static final int DEFAULT_CUE_OUTPUT_SAMPLE_RATE = 48000;
     private static final int MIN_CUE_OUTPUT_SAMPLE_RATE = 16000;
@@ -59,7 +61,8 @@ final class AssistantVoicePcmPlayer {
     }
 
     private final Object lock = new Object();
-    private final ExecutorService executor = Executors.newSingleThreadExecutor();
+    private final ExecutorService executor;
+    private final ArrayDeque<StreamPcmChunk> streamPcmChunks = new ArrayDeque<>();
     private final AudioManager audioManager;
     private final Handler mainHandler;
     private AudioTrack audioTrack;
@@ -95,6 +98,8 @@ final class AssistantVoicePcmPlayer {
     private int startupPreRollMs = DEFAULT_STARTUP_PRE_ROLL_MS;
     private boolean streamEnded = false;
     private int pendingWrites = 0;
+    private int queuedStreamPcmBytes = 0;
+    private boolean released = false;
     private int framesWritten = 0;
     private long generation = 0L;
     private FocusMode focusMode = FocusMode.NONE;
@@ -104,6 +109,11 @@ final class AssistantVoicePcmPlayer {
     private boolean preferVoiceCommunicationCueFocus = false;
 
     AssistantVoicePcmPlayer(Context context) {
+        this(context, Executors.newSingleThreadExecutor());
+    }
+
+    AssistantVoicePcmPlayer(Context context, ExecutorService executor) {
+        this.executor = executor;
         Context appContext = context == null ? null : context.getApplicationContext();
         audioManager = appContext == null ? null : appContext.getSystemService(AudioManager.class);
         mainHandler =
@@ -217,32 +227,56 @@ final class AssistantVoicePcmPlayer {
             activeSampleRate = 0;
             streamEnded = false;
             pendingWrites = 0;
+            queuedStreamPcmBytes = 0;
+            streamPcmChunks.clear();
+            lock.notifyAll();
             framesWritten = 0;
             releaseTrackLocked();
         }
     }
 
-    void enqueueChunk(String requestId, String chunkBase64, int sampleRate) {
-        final byte[] chunk;
-        try {
-            chunk = Base64.decode(chunkBase64, Base64.DEFAULT);
-        } catch (IllegalArgumentException error) {
-            return;
+    /** Called by a background HTTP reader; waits for playback to make queue space available. */
+    boolean writeStreamPcm(String requestId, byte[] chunk, int sampleRate) {
+        if (
+            chunk == null || chunk.length == 0 || (chunk.length & 1) != 0 ||
+            chunk.length > MAX_QUEUED_STREAM_PCM_BYTES || sampleRate <= 0
+        ) {
+            throw new IllegalArgumentException("Expected bounded, aligned PCM16 at a positive sample rate");
         }
-        if (chunk.length == 0) {
-            return;
-        }
-
-        final long taskGeneration;
         synchronized (lock) {
-            if (!matchesActiveRequestLocked(requestId)) {
-                return;
+            long taskGeneration = generation;
+            while (
+                taskGeneration == generation && matchesActiveRequestLocked(requestId) &&
+                !streamEnded && !released &&
+                queuedStreamPcmBytes + chunk.length > MAX_QUEUED_STREAM_PCM_BYTES
+            ) {
+                try {
+                    lock.wait();
+                } catch (InterruptedException error) {
+                    Thread.currentThread().interrupt();
+                    return false;
+                }
             }
+            if (
+                taskGeneration != generation || !matchesActiveRequestLocked(requestId) ||
+                streamEnded || released
+            ) {
+                return false;
+            }
+            // The HTTP reader may reuse its buffer as soon as this method returns.
+            byte[] ownedChunk = chunk.clone();
+            queuedStreamPcmBytes += ownedChunk.length;
             pendingWrites += 1;
-            taskGeneration = generation;
+            streamPcmChunks.addLast(new StreamPcmChunk(ownedChunk, sampleRate));
+            try {
+                executor.execute(() -> writeChunk(taskGeneration, requestId));
+            } catch (RejectedExecutionException error) {
+                streamPcmChunks.removeLast();
+                completeStreamWriteLocked(ownedChunk.length);
+                return false;
+            }
+            return true;
         }
-
-        executor.execute(() -> writeChunk(taskGeneration, requestId, chunk, sampleRate));
     }
 
     void finishStream(String requestId) {
@@ -251,6 +285,7 @@ final class AssistantVoicePcmPlayer {
                 return;
             }
             streamEnded = true;
+            lock.notifyAll();
             maybeCompletePlaybackLocked();
         }
     }
@@ -262,6 +297,9 @@ final class AssistantVoicePcmPlayer {
             activeSampleRate = 0;
             streamEnded = false;
             pendingWrites = 0;
+            queuedStreamPcmBytes = 0;
+            streamPcmChunks.clear();
+            lock.notifyAll();
             framesWritten = 0;
             releaseTrackLocked();
         }
@@ -269,6 +307,8 @@ final class AssistantVoicePcmPlayer {
 
     void release() {
         synchronized (lock) {
+            released = true;
+            lock.notifyAll();
             cancelPendingPlaybackFocusReleaseLocked();
         }
         stop();
@@ -284,7 +324,7 @@ final class AssistantVoicePcmPlayer {
         int outputRate;
         long taskGeneration;
         synchronized (lock) {
-            if (!requestPlaybackFocusIfNeededLocked()) {
+            if (released || !requestPlaybackFocusIfNeededLocked()) {
                 return false;
             }
             generation += 1L;
@@ -292,6 +332,9 @@ final class AssistantVoicePcmPlayer {
             activeSampleRate = 0;
             streamEnded = true;
             pendingWrites = 1;
+            queuedStreamPcmBytes = 0;
+            streamPcmChunks.clear();
+            lock.notifyAll();
             framesWritten = 0;
             releaseTrackLocked();
             outputRate = resolveCueOutputSampleRateLocked();
@@ -317,7 +360,9 @@ final class AssistantVoicePcmPlayer {
         return true;
     }
 
-    private void writeChunk(long taskGeneration, String requestId, byte[] chunk, int sampleRate) {
+    private void writeChunk(long taskGeneration, String requestId) {
+        byte[] chunk;
+        int sampleRate;
         AudioTrack track;
         float chunkGain;
         boolean writeStartupPreRoll;
@@ -325,13 +370,19 @@ final class AssistantVoicePcmPlayer {
         int prerollMs;
         synchronized (lock) {
             if (taskGeneration != generation || !matchesActiveRequestLocked(requestId)) {
-                pendingWrites = Math.max(0, pendingWrites - 1);
                 return;
             }
-            track = ensureTrackLocked(sampleRate);
+            StreamPcmChunk queuedChunk = streamPcmChunks.removeFirst();
+            chunk = queuedChunk.pcm;
+            sampleRate = queuedChunk.sampleRate;
+            try {
+                track = ensureTrackLocked(sampleRate);
+            } catch (RuntimeException error) {
+                track = null;
+            }
             chunkGain = ttsGain;
             if (track == null) {
-                pendingWrites = Math.max(0, pendingWrites - 1);
+                completeStreamWriteLocked(chunk.length);
                 maybeCompletePlaybackLocked();
                 return;
             }
@@ -358,10 +409,16 @@ final class AssistantVoicePcmPlayer {
         synchronized (lock) {
             if (taskGeneration == generation && matchesActiveRequestLocked(requestId)) {
                 framesWritten += (prerollBytesWritten + bytesWritten) / 2;
+                completeStreamWriteLocked(chunk.length);
+                maybeCompletePlaybackLocked();
             }
-            pendingWrites = Math.max(0, pendingWrites - 1);
-            maybeCompletePlaybackLocked();
         }
+    }
+
+    private void completeStreamWriteLocked(int byteCount) {
+        pendingWrites -= 1;
+        queuedStreamPcmBytes -= byteCount;
+        lock.notifyAll();
     }
 
     static float normalizeTtsGain(float gain) {
@@ -710,6 +767,9 @@ final class AssistantVoicePcmPlayer {
                     activeSampleRate = 0;
                     streamEnded = false;
                     pendingWrites = 0;
+                    queuedStreamPcmBytes = 0;
+                    streamPcmChunks.clear();
+                    lock.notifyAll();
                     framesWritten = 0;
                     releaseTrackLocked();
                 }
@@ -743,6 +803,9 @@ final class AssistantVoicePcmPlayer {
             activeSampleRate = 0;
             streamEnded = false;
             pendingWrites = 0;
+            queuedStreamPcmBytes = 0;
+            streamPcmChunks.clear();
+            lock.notifyAll();
             framesWritten = 0;
             releaseTrackLocked();
             if (currentListener != null) {
@@ -761,6 +824,9 @@ final class AssistantVoicePcmPlayer {
             activeSampleRate = 0;
             streamEnded = false;
             pendingWrites = 0;
+            queuedStreamPcmBytes = 0;
+            streamPcmChunks.clear();
+            lock.notifyAll();
             framesWritten = 0;
             releaseTrackLocked();
             if (currentListener != null) {
@@ -920,7 +986,7 @@ final class AssistantVoicePcmPlayer {
     }
 
     private boolean matchesActiveRequestLocked(String requestId) {
-        return requestId != null && requestId.trim().equals(activeRequestId);
+        return !activeRequestId.isEmpty() && requestId != null && requestId.trim().equals(activeRequestId);
     }
 
     private static float clamp01(float value) {
@@ -950,6 +1016,16 @@ final class AssistantVoicePcmPlayer {
         } catch (Exception ignored) {
         }
         audioTrack = null;
+    }
+
+    private static final class StreamPcmChunk {
+        final byte[] pcm;
+        final int sampleRate;
+
+        StreamPcmChunk(byte[] pcm, int sampleRate) {
+            this.pcm = pcm;
+            this.sampleRate = sampleRate;
+        }
     }
 
     private static final class CueSegment {

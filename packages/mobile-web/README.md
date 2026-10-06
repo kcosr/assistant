@@ -161,13 +161,47 @@ The following patches are applied automatically on `android:sync`:
 
 ### Native Voice Runtime
 
+- **Breaking change:** Android Thread voice uses
+  [kcosr/openai-speech-server](https://github.com/kcosr/openai-speech-server) instead of the retired
+  `agent-voice-adapter`. Old adapter URL preferences are discarded; configure the speech API URL,
+  a speech-server bearer token, models, and voice after upgrading. See the server repository for
+  installation, model configuration, and token generation.
 - The Android app includes a committed local Capacitor plugin, `AssistantNativeVoice`, and a foreground
   service, `AssistantVoiceRuntimeService`.
 - The native runtime receives voice-mode config from the web layer, subscribes to the selected
   Assistant session over the main Assistant websocket for live `transcript_event` updates,
   consumes durable notifications from the notifications plugin over HTTP + `panel_event`
-  updates, plays queued `voice_speak` / `voice_ask` / response work through `agent-voice-adapter`,
+  updates, plays queued `voice_speak` / `voice_ask` / response work through the OpenAI-compatible speech server,
   and submits successful spoken replies back through the existing sessions message route.
+- In **Settings → Voice settings**, set the speech API root (default `https://assistant/speech/v1`, lowercase
+  `v1`), Recognition model (`parakeet-local`), Speech model (`kokoro-local`), and Speech voice
+  (`af_heart`). Use **Manage speech token** to save, test, or remove the speech server's bearer
+  token in a native masked dialog, then **Refresh models** to discover authorized models
+  and voices. The token is encrypted with Android Keystore, stored outside backups, bound to
+  the Assistant backend and speech endpoint, and never returned to the web layer. Changing
+  endpoints requires a token for the new endpoint.
+- Thread speech uses streamed HTTP `/audio/speech` and a transcription WebSocket at
+  `/realtime?intent=transcription`, both relative to that API root. Android captures 24 kHz mono
+  PCM16 and controls no-speech, completion, and trailing-silence deadlines locally. Each listen
+  fetches fresh capabilities, waits for the configured session acknowledgment before its ready
+  cue/capture, and commits one bounded utterance (at most 60 seconds total PCM). It reserves
+  enough session lifetime for arming, capture, and the queue/inference result deadline, capped
+  at 240 seconds after commit. No-speech closes without inference; a broken transport fails
+  without replaying recorded audio.
+  Recognition requires per-model `realtime` capability limits; speech-server main at `1b62a3c`
+  lacks them, while deployed `efaeee2` on `feat/recording-capabilities` supplies them. The proxy
+  must preserve bearer headers and WebSocket upgrades and disable HTTP speech buffering.
+  Assistant trusts Android's system/user certificate stores; install the endpoint's CA on the
+  device when needed. Stop/Skip close the local speech request and fence late results; playback
+  remains active until AudioTrack drains. Bounded temporary PCM spooling separates HTTP reads
+  from playback rate; speech text is limited to 65,536 characters, and each HTTP speech chunk
+  is limited to ten minutes of PCM.
+- Automatic completed-turn speech uses **Thread audio mode → Response**. The native Assistant
+  event socket acknowledges server closes and reconnects, with heartbeat detection for stalled
+  connections. Live automatic notifications wait in the local queue while speech discovery or
+  the event socket reconnects; reconnecting does not replay historical notifications.
+- This replaces only the retired adapter integration in Android Thread voice. Browser speech
+  recognition/output and the separate conversational OpenAI Realtime mode keep their own paths.
 - Android-native voice settings now include a client-side `TTS gain` slider for native playback,
   clamped to `25%`-`500%`, and applied as PCM software gain inside the Android player.
 - Android-native recognition also plays positive/negative PCM cue tones on the same native media
@@ -271,8 +305,9 @@ is still the fastest first pass.
 - Automatic voice admission remains local-only. If the Android runtime was not alive when a
   notification arrived, the notification stays durable for manual recovery later, but missed
   automatic playback is not replayed by default when the app comes back.
-- Session changes, adapter URL changes, or explicit `Stop` still terminate the current playback or
-  listening pass immediately, and `Stop` clears the current Android-local backlog.
+- Session changes, speech endpoint/model/voice or token changes, Assistant URL changes, and
+  explicit `Stop` terminate the current playback or listening pass immediately. `Stop` also
+  clears the current Android-local backlog.
 
 **Configuration:**
 
