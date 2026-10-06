@@ -4,7 +4,7 @@
 
 ### Breaking Changes
 
-- Replaced the retired Android `agent-voice-adapter` integration with [kcosr/openai-speech-server](https://github.com/kcosr/openai-speech-server); old adapter URL preferences are no longer used. After upgrading, configure the speech API URL, a speech-server bearer token, models, and voice in **Settings → Voice settings** ([setup](packages/mobile-web/README.md#native-voice-runtime)).
+- Replaced the retired Android `agent-voice-adapter` integration with [kcosr/openai-speech-server](https://github.com/kcosr/openai-speech-server); old adapter URL preferences are no longer used. After upgrading, configure the speech API URL, a speech-server bearer token, models, and voice in **Settings → Voice settings** ([setup](packages/mobile-web/README.md#native-voice-runtime)). ([#142](https://github.com/kcosr/assistant/pull/142))
 
 - Require `expectedRevision` from `notes_read` or a successful mutation when replacing existing notes with `notes_write`; creation still omits it. ([#139](https://github.com/kcosr/assistant/pull/139))
 
@@ -56,7 +56,7 @@
 
 ### Changed
 
-- Android Thread voice now uses 24 kHz Realtime transcription with local silence detection and bounded, spooled HTTP PCM speech playback; preserves notification queues, Auto Listen, cues, and headset controls.
+- Android Thread voice now uses 24 kHz Realtime transcription with local silence detection and bounded, spooled HTTP PCM speech playback; preserves notification queues, Auto Listen, cues, and headset controls. ([#142](https://github.com/kcosr/assistant/pull/142))
 
 - Darkened the Dark and Auto theme backgrounds and surfaces to a near-black palette. ([#140](https://github.com/kcosr/assistant/pull/140))
 - Changed Focus and Pinned task creation to open the editor using the last successfully used list, and replaced Add/Edit list dropdowns with the shared searchable list picker in both Edit and Review modes. ([#140](https://github.com/kcosr/assistant/pull/140))
@@ -84,7 +84,7 @@
 
 ### Fixed
 
-- Fixed Android automatic response speech getting stranded after the Assistant event socket closes, and dropping live automatic notifications while reconnecting or discovering speech models.
+- Fixed Android automatic response speech getting stranded after the Assistant event socket closes, and dropping live automatic notifications while reconnecting or discovering speech models. ([#142](https://github.com/kcosr/assistant/pull/142))
 
 - Fixed cancelling the task editor leaving its dialog registration active. ([#140](https://github.com/kcosr/assistant/pull/140))
 
