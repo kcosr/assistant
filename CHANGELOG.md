@@ -4,7 +4,7 @@
 
 ### Breaking Changes
 
-- Replaced the retired Android voice-adapter contract with authenticated OpenAI-compatible speech-server settings; configure a native speech token, models, and voice after upgrading.
+- Replaced the retired Android `agent-voice-adapter` integration with [kcosr/openai-speech-server](https://github.com/kcosr/openai-speech-server); old adapter URL preferences are no longer used. After upgrading, configure the speech API URL, a speech-server bearer token, models, and voice in **Settings → Voice settings** ([setup](packages/mobile-web/README.md#native-voice-runtime)).
 
 - Require `expectedRevision` from `notes_read` or a successful mutation when replacing existing notes with `notes_write`; creation still omits it. ([#139](https://github.com/kcosr/assistant/pull/139))
 

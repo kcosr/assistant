@@ -161,6 +161,11 @@ The following patches are applied automatically on `android:sync`:
 
 ### Native Voice Runtime
 
+- **Breaking change:** Android Thread voice uses
+  [kcosr/openai-speech-server](https://github.com/kcosr/openai-speech-server) instead of the retired
+  `agent-voice-adapter`. Old adapter URL preferences are discarded; configure the speech API URL,
+  a speech-server bearer token, models, and voice after upgrading. See the server repository for
+  installation, model configuration, and token generation.
 - The Android app includes a committed local Capacitor plugin, `AssistantNativeVoice`, and a foreground
   service, `AssistantVoiceRuntimeService`.
 - The native runtime receives voice-mode config from the web layer, subscribes to the selected
@@ -168,14 +173,13 @@ The following patches are applied automatically on `android:sync`:
   consumes durable notifications from the notifications plugin over HTTP + `panel_event`
   updates, plays queued `voice_speak` / `voice_ask` / response work through the OpenAI-compatible speech server,
   and submits successful spoken replies back through the existing sessions message route.
-- In Voice settings, set the speech API root (default `https://assistant/speech/v1`, lowercase
+- In **Settings → Voice settings**, set the speech API root (default `https://assistant/speech/v1`, lowercase
   `v1`), Recognition model (`parakeet-local`), Speech model (`kokoro-local`), and Speech voice
   (`af_heart`). Use **Manage speech token** to save, test, or remove the speech server's bearer
   token in a native masked dialog, then **Refresh models** to discover authorized models
   and voices. The token is encrypted with Android Keystore, stored outside backups, bound to
   the Assistant backend and speech endpoint, and never returned to the web layer. Changing
-  endpoints requires a token for the new endpoint. Old adapter URL preferences are discarded;
-  configure these speech settings after upgrading.
+  endpoints requires a token for the new endpoint.
 - Thread speech uses streamed HTTP `/audio/speech` and a transcription WebSocket at
   `/realtime?intent=transcription`, both relative to that API root. Android captures 24 kHz mono
   PCM16 and controls no-speech, completion, and trailing-silence deadlines locally. Each listen

@@ -34,7 +34,7 @@ In-process chat uses the Earendil Pi SDK for model access, tool execution, and s
 - **Text chat** with streaming responses
 - **Voice input** using browser-based speech recognition (Web Speech API)
 - **Voice output** via OpenAI TTS or ElevenLabs streaming TTS (optional)
-- **Android Thread voice** via authenticated local Parakeet/Kokoro speech, with native token storage and model selection ([setup](packages/mobile-web/README.md#native-voice-runtime))
+- **Android Thread voice** via [openai-speech-server](https://github.com/kcosr/openai-speech-server) for authenticated local Parakeet/Kokoro speech, with native token storage and model selection ([setup](packages/mobile-web/README.md#native-voice-runtime))
 - **CLI agent integrations** (Claude, Codex, Pi) alongside built-in providers
 - **Scheduled sessions** for cron-driven CLI runs
 - **Panel plugins** for lists, notes, and custom workflows
@@ -353,6 +353,7 @@ For the full documentation map, see [docs/index.md](docs/index.md).
 | **OpenAI**     | Chat Completions (streaming) | Text generation               |
 | **OpenAI**     | Audio Speech                 | TTS output (default backend)  |
 | **ElevenLabs** | WebSocket Streaming TTS      | TTS output (optional backend) |
+| [**openai-speech-server**](https://github.com/kcosr/openai-speech-server) | Authenticated HTTP + WebSocket audio API | Android Thread recognition and speech |
 | **MCP Server** | JSON-RPC 2.0 over stdio      | Tool hosting                  |
 
 ## Configuration
