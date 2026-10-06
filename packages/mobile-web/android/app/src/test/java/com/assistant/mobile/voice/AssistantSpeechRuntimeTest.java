@@ -11,12 +11,17 @@ import java.lang.reflect.Method;
 import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.TimeUnit;
 import java.util.function.BooleanSupplier;
 import javax.crypto.spec.SecretKeySpec;
 import okhttp3.mockwebserver.MockResponse;
 import okhttp3.mockwebserver.MockWebServer;
 import okhttp3.mockwebserver.SocketPolicy;
+import okhttp3.mockwebserver.Dispatcher;
+import okhttp3.mockwebserver.RecordedRequest;
+import okhttp3.WebSocket;
+import okhttp3.WebSocketListener;
 import org.json.JSONObject;
 import org.junit.After;
 import org.junit.Before;
@@ -54,6 +59,83 @@ public final class AssistantSpeechRuntimeTest {
 
     @After public void destroyService() {
         if (controller != null) controller.destroy();
+    }
+
+    @Test public void peerSocketCloseReconnectsAndReceivesAutomaticFinalResponse() throws Exception {
+        AtomicInteger connections = new AtomicInteger();
+        AtomicInteger acknowledgedCloses = new AtomicInteger();
+        try (MockWebServer server = new MockWebServer()) {
+            server.setDispatcher(new Dispatcher() {
+                @Override public MockResponse dispatch(RecordedRequest request) {
+                    if (!"/ws".equals(request.getPath())) {
+                        return new MockResponse().setBody("{\"result\":{\"sessions\":[{\"sessionId\":\"session-current\"}],\"notifications\":[]}}");
+                    }
+                    int connection = connections.incrementAndGet();
+                    return new MockResponse().withWebSocketUpgrade(new WebSocketListener() {
+                        @Override public void onMessage(WebSocket socket, String text) {
+                            if (!text.contains("\"type\":\"hello\"")) return;
+                            if (connection == 1) {
+                                socket.close(1000, "session closed");
+                                return;
+                            }
+                            socket.send("{\"type\":\"transcript_event\",\"sessionId\":\"session-current\",\"event\":{"
+                                + "\"eventId\":\"final-event\",\"sessionId\":\"session-current\",\"responseId\":\"final-response\","
+                                + "\"chatEventType\":\"assistant_done\",\"payload\":{\"phase\":\"final_answer\",\"text\":\"Automatic reply\"}}}");
+                        }
+                        @Override public void onClosed(WebSocket socket, int code, String reason) {
+                            acknowledgedCloses.incrementAndGet();
+                        }
+                        @Override public void onClosing(WebSocket socket, int code, String reason) {
+                            socket.close(1000, null);
+                        }
+                    });
+                }
+            });
+            server.start();
+            set("config", ((AssistantVoiceConfig) get("config"))
+                .withAssistantBaseUrl(server.url("/").toString())
+                .withWatchedSessionIds(java.util.Collections.singletonList("session-current"))
+                .withVoiceSettings(new JSONObject().put("audioMode", "response")));
+            // Keep playback queued to inspect automatic admission without audio hardware.
+            set("speechReady", false);
+            set("assistantSocketConnected", false);
+            invoke("connectAssistantSocketIfNeeded", new Class<?>[0]);
+            waitUntil(() -> connections.get() == 1 && fieldEquals("assistantSocket", null));
+            assertFalse((Boolean) get("assistantSocketConnected"));
+            waitUntil(() -> acknowledgedCloses.get() == 1);
+            Shadows.shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(2));
+            waitUntil(() -> {
+                try { return connections.get() == 2 && queue().size() == 1; }
+                catch (Exception error) { throw new AssertionError(error); }
+            });
+            assertTrue((Boolean) get("assistantSocketConnected"));
+            assertEquals("Automatic reply", queue().get(0).spokenText);
+            assertFalse(queue().get(0).manual);
+            invoke("disconnectAssistantSocket", new Class<?>[0]);
+            waitUntil(() -> acknowledgedCloses.get() == 2);
+        }
+    }
+
+    @Test public void automaticNotificationWaitsForSpeechAndSocketReadiness() throws Exception {
+        set("config", ((AssistantVoiceConfig) get("config")).withVoiceSettings(
+            new JSONObject().put("audioMode", "response")));
+        for (boolean speechReady : new boolean[] {false, true}) {
+            for (boolean socketReady : new boolean[] {false, true}) {
+                set("speechReady", speechReady);
+                set("assistantSocketConnected", socketReady);
+                // Keep ready-case admission queued as well, without starting playback.
+                set("pendingRecognitionSubmitSessionId", "busy-session");
+                queue().clear();
+                AssistantVoiceNotificationRecord notification = new AssistantVoiceNotificationRecord(
+                    "reply", "session_attention", "system", "Answer", "Automatic reply", "",
+                    "session-current", "Session", "speak_then_listen", "Automatic reply", "final-response",
+                    null, "", "");
+                invoke("enqueueAutomaticNotification", new Class<?>[] {AssistantVoiceNotificationRecord.class}, notification);
+                assertEquals("speechReady=" + speechReady + ", socketReady=" + socketReady, 1, queue().size());
+                assertEquals("Automatic reply", queue().get(0).spokenText);
+                assertFalse(queue().get(0).manual);
+            }
+        }
     }
 
     @Test public void assistantReconnectPreservesSpeechSetupError() throws Exception {

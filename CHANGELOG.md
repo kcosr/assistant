@@ -84,6 +84,8 @@
 
 ### Fixed
 
+- Fixed Android automatic response speech getting stranded after the Assistant event socket closes, and dropping live automatic notifications while reconnecting or discovering speech models.
+
 - Fixed cancelling the task editor leaving its dialog registration active. ([#140](https://github.com/kcosr/assistant/pull/140))
 
 - Use the selected profile model’s reasoning default when creating sessions through the sessions tool or API. ([#138](https://github.com/kcosr/assistant/pull/138))

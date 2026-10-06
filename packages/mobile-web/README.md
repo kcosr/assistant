@@ -192,6 +192,10 @@ The following patches are applied automatically on `android:sync`:
   remains active until AudioTrack drains. Bounded temporary PCM spooling separates HTTP reads
   from playback rate; speech text is limited to 65,536 characters, and each HTTP speech chunk
   is limited to ten minutes of PCM.
+- Automatic completed-turn speech uses **Thread audio mode → Response**. The native Assistant
+  event socket acknowledges server closes and reconnects, with heartbeat detection for stalled
+  connections. Live automatic notifications wait in the local queue while speech discovery or
+  the event socket reconnects; reconnecting does not replay historical notifications.
 - This replaces only the retired adapter integration in Android Thread voice. Browser speech
   recognition/output and the separate conversational OpenAI Realtime mode keep their own paths.
 - Android-native voice settings now include a client-side `TTS gain` slider for native playback,

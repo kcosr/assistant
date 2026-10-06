@@ -156,6 +156,7 @@ public final class AssistantVoiceRuntimeService extends Service {
         .build();
     private final OkHttpClient assistantSocketClient = new OkHttpClient.Builder()
         .readTimeout(0, TimeUnit.MILLISECONDS)
+        .pingInterval(20, TimeUnit.SECONDS)
         .retryOnConnectionFailure(true)
         .build();
     private AssistantVoicePcmPlayer player;
@@ -1753,6 +1754,14 @@ public final class AssistantVoiceRuntimeService extends Service {
             }
 
             @Override
+            public void onClosing(WebSocket webSocket, int code, String reason) {
+                // OkHttp waits for our close acknowledgment before invoking onClosed.
+                // Release the socket now so a peer close cannot strand automatic speech.
+                webSocket.close(1000, null);
+                mainHandler.post(() -> handleAssistantSocketClosed(webSocket, "closed"));
+            }
+
+            @Override
             public void onClosed(WebSocket webSocket, int code, String reason) {
                 Log.d(TAG, "assistant socket closed code=" + code + " reason=" + safe(reason));
                 mainHandler.post(() -> handleAssistantSocketClosed(webSocket, "closed"));
@@ -2353,7 +2362,6 @@ public final class AssistantVoiceRuntimeService extends Service {
                 notification
             );
         if (!config.isEnabled()
-            || !isRuntimeConnected()
             || notification == null
             || (!shouldAutoplayNotification && !shouldAutoListenAfterManualAssistantNotification)) {
             return;
