@@ -1,281 +1,205 @@
-import fs from 'node:fs/promises';
-import os from 'node:os';
 import path from 'node:path';
 
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { ToolContext } from './types';
+import type { CodexWebSearchOptions } from './codexWebSearch';
 import { ToolError } from './errors';
 import {
-  buildGrokWebSearchArgs,
   clearWebSearchSessionsForTests,
+  createWebSearchToolDefinition,
   executeWebSearch,
   getWebSearchSessionForTests,
-  GROK_WEB_SEARCH_DISALLOWED_TOOLS,
-  parseGrokJsonStdout,
   parseWebSearchArgs,
   resolveWebSearchWorkdir,
-  setGrokRunnerForTests,
+  setCodexWebSearchRunnerForTests,
   WEB_SEARCH_TOOL_NAME,
 } from './webSearch';
-import { isRealtimeToolSessionId, VOICE_TOOL_SESSION_PREFIX } from '../voice/constants';
 
-function makeCtx(sessionId: string, dataDir?: string): ToolContext {
+const SESSION_ID = '0199a213-81c0-7800-8aa1-bbab2a035a53';
+
+function makeCtx(sessionId = 'chat-1', signal = new AbortController().signal): ToolContext {
   return {
     sessionId,
-    signal: new AbortController().signal,
-    ...(dataDir
-      ? {
-          envConfig: {
-            dataDir,
-          } as ToolContext['envConfig'],
-        }
-      : {}),
+    signal,
+    envConfig: { dataDir: '/var/assistant-test' } as ToolContext['envConfig'],
   } as ToolContext;
 }
 
-describe('webSearch helpers', () => {
-  afterEach(() => {
-    clearWebSearchSessionsForTests();
-    setGrokRunnerForTests(null);
+function stubRunner() {
+  const run = vi.fn(async (_options: CodexWebSearchOptions) => ({
+    text: 'Answer with [source](https://example.com).',
+    sessionId: SESSION_ID,
+  }));
+  setCodexWebSearchRunnerForTests(run);
+  return run;
+}
+
+afterEach(() => {
+  clearWebSearchSessionsForTests();
+  setCodexWebSearchRunnerForTests(null);
+  vi.unstubAllEnvs();
+});
+
+describe('web_search contract', () => {
+  it('preserves the tool name and API while advertising public-web research', () => {
+    const tool = createWebSearchToolDefinition();
+    expect(tool.name).toBe(WEB_SEARCH_TOOL_NAME);
+    expect(tool.name).toBe('web_search');
+    expect(tool.parameters).toMatchObject({
+      properties: { query: { type: 'string' }, continue: { type: 'boolean' } },
+      required: ['query'],
+      additionalProperties: false,
+    });
+    expect(tool.description).toContain('live public web');
+    expect(tool.description).not.toMatch(/Grok|Twitter|X tools/);
   });
 
-  it('exports the stable tool name', () => {
-    expect(WEB_SEARCH_TOOL_NAME).toBe('web_search');
-  });
-
-  it('detects Realtime session keys via shared prefix', () => {
-    expect(VOICE_TOOL_SESSION_PREFIX).toBe('voice:');
-    expect(isRealtimeToolSessionId('voice:abc')).toBe(true);
-    expect(isRealtimeToolSessionId('session-1')).toBe(false);
-  });
-
-  it('parses query and continue', () => {
-    expect(parseWebSearchArgs({ query: '  What is up?  ' })).toEqual({
-      query: 'What is up?',
+  it('parses natural-language queries and explicit follow-ups', () => {
+    expect(parseWebSearchArgs({ query: '  What changed today?  ' })).toEqual({
+      query: 'What changed today?',
       continueSession: false,
     });
-    expect(parseWebSearchArgs({ query: 'again', continue: true }).continueSession).toBe(true);
-    expect(() => parseWebSearchArgs({ query: '   ' })).toThrow(ToolError);
+    expect(parseWebSearchArgs({ query: 'More detail', continue: true }).continueSession).toBe(true);
   });
 
-  it('builds argv without shell interpolation and without restrictive --tools', () => {
-    const args = buildGrokWebSearchArgs({
-      query: 'weather in Austin; rm -rf /',
-      maxTurns: 6,
-      rules: 'be brief',
-      cwd: '/tmp/work',
-    });
-    expect(args[0]).toBe('-p');
-    expect(args[1]).toBe('weather in Austin; rm -rf /');
-    expect(args).toContain('--permission-mode');
-    expect(args).toContain('bypassPermissions');
-    expect(args).toContain('--disallowed-tools');
-    expect(args).toContain(GROK_WEB_SEARCH_DISALLOWED_TOOLS);
-    expect(GROK_WEB_SEARCH_DISALLOWED_TOOLS).toContain('run_terminal_cmd');
-    expect(GROK_WEB_SEARCH_DISALLOWED_TOOLS).toContain('read_file');
-    expect(GROK_WEB_SEARCH_DISALLOWED_TOOLS).toContain('memory_search');
-    expect(args).not.toContain('--tools');
-    expect(args).toContain('--deny');
-    expect(args).toContain('MCPTool(*)');
-    expect(args).toContain('--cwd');
-    expect(args).toContain('/tmp/work');
-  });
+  it.each([
+    null,
+    [],
+    'question',
+    {},
+    { query: '' },
+    { query: 1 },
+    { query: 'x', continue: 'yes' },
+    { query: 'x', model: 'other' },
+  ])('rejects invalid arguments %j', (args) =>
+    expect(() => parseWebSearchArgs(args)).toThrow(ToolError),
+  );
 
-  it('includes --resume when continuing', () => {
-    const args = buildGrokWebSearchArgs({
-      query: 'and tomorrow?',
-      resumeSessionId: 'sess-1',
-      maxTurns: 6,
-      rules: 'x',
-      cwd: '/tmp/w',
-    });
-    const idx = args.indexOf('--resume');
-    expect(idx).toBeGreaterThan(-1);
-    expect(args[idx + 1]).toBe('sess-1');
-  });
-
-  it('parses Grok JSON stdout including trailing noise and nested objects', () => {
-    const raw = 'noise\n{"text":"Hello","sessionId":"s1","usage":{"input_tokens":10}}\n';
-    expect(parseGrokJsonStdout(raw)).toEqual({ text: 'Hello', sessionId: 's1' });
-  });
-
-  it('resolves workdir under dataDir', () => {
-    expect(resolveWebSearchWorkdir('/var/data')).toBe('/var/data/grok-web-search');
+  it('isolates conversation workspaces without using caller-controlled paths', () => {
+    const cwd = resolveWebSearchWorkdir('/var/data', '../../secret');
+    expect(path.dirname(cwd)).toBe('/var/data/codex-web-search');
+    expect(path.basename(cwd)).toMatch(/^[a-f0-9]{64}$/);
+    expect(cwd).toBe(resolveWebSearchWorkdir('/var/data', '../../secret'));
+    expect(cwd).not.toBe(resolveWebSearchWorkdir('/var/data', 'different'));
+    expect(resolveWebSearchWorkdir(undefined, 'x')).toContain('assistant-codex-web-search');
   });
 });
 
 describe('executeWebSearch', () => {
-  afterEach(() => {
-    clearWebSearchSessionsForTests();
-    setGrokRunnerForTests(null);
-  });
-
-  it('runs a new search and stores session id', async () => {
-    const captured: { args: string[]; timeoutMs: number } = { args: [], timeoutMs: 0 };
-    setGrokRunnerForTests(async (opts) => {
-      captured.args = opts.args;
-      captured.timeoutMs = opts.timeoutMs;
-      return {
-        exitCode: 0,
-        stdout: JSON.stringify({ text: 'Sunny and 75F', sessionId: 'grok-1' }),
-        stderr: '',
-        timedOut: false,
-      };
+  it('passes the question to Codex and retains only the stable model-facing result', async () => {
+    const run = stubRunner();
+    const ctx = makeCtx();
+    await expect(executeWebSearch({ query: 'What changed today?' }, ctx)).resolves.toEqual({
+      text: 'Answer with [source](https://example.com).',
+      continued: false,
     });
-
-    const result = await executeWebSearch(
-      { query: 'What is the weather in Austin today?' },
-      makeCtx('chat-session-1', '/tmp/assistant-test-data'),
+    expect(run).toHaveBeenCalledWith(
+      expect.objectContaining({
+        query: 'What changed today?',
+        realtime: false,
+        timeoutMs: 100_000,
+        signal: ctx.signal,
+        cwd: resolveWebSearchWorkdir('/var/assistant-test', 'chat-1'),
+      }),
     );
-    expect(result).toEqual({ text: 'Sunny and 75F', continued: false });
-    expect(getWebSearchSessionForTests('chat-session-1')).toBe('grok-1');
-    expect(captured.args[1]).toBe('What is the weather in Austin today?');
-    expect(captured.timeoutMs).toBe(100_000);
-    expect(captured.args).not.toContain('--tools');
+    expect(run.mock.calls[0]![0].resumeSessionId).toBeUndefined();
+    expect(getWebSearchSessionForTests('chat-1')).toBe(SESSION_ID);
   });
 
-  it('uses Realtime timeout and max-turns for voice session keys', async () => {
-    let timeoutMs = 0;
-    let args: string[] = [];
-    setGrokRunnerForTests(async (opts) => {
-      timeoutMs = opts.timeoutMs;
-      args = opts.args;
-      return {
-        exitCode: 0,
-        stdout: JSON.stringify({ text: 'ok', sessionId: 'g2' }),
-        stderr: '',
-        timedOut: false,
-      };
-    });
-    await executeWebSearch({ query: 'ping' }, makeCtx('voice:conv-1'));
-    expect(timeoutMs).toBe(100_000);
-    const mt = args.indexOf('--max-turns');
-    expect(args[mt + 1]).toBe('6');
+  it('uses voice brevity with the same deadline and a separate conversation', async () => {
+    const run = stubRunner();
+    await executeWebSearch({ query: 'What changed?' }, makeCtx('voice:chat-1'));
+    expect(run).toHaveBeenCalledWith(
+      expect.objectContaining({ realtime: true, timeoutMs: 100_000 }),
+    );
+    expect(getWebSearchSessionForTests('chat-1')).toBeUndefined();
+    expect(getWebSearchSessionForTests('voice:chat-1')).toBe(SESSION_ID);
   });
 
-  it('uses text max-turns for non-voice sessions', async () => {
-    let args: string[] = [];
-    setGrokRunnerForTests(async (opts) => {
-      args = opts.args;
-      return {
-        exitCode: 0,
-        stdout: JSON.stringify({ text: 'ok', sessionId: 'g3' }),
-        stderr: '',
-        timedOut: false,
-      };
-    });
-    await executeWebSearch({ query: 'ping' }, makeCtx('chat-1'));
-    const mt = args.indexOf('--max-turns');
-    expect(args[mt + 1]).toBe('14');
-  });
-
-  it('rejects empty query through executeWebSearch', async () => {
-    await expect(executeWebSearch({ query: '  ' }, makeCtx('s'))).rejects.toMatchObject({
-      code: 'invalid_arguments',
-    });
-  });
-
-  it('maps abort to cancelled', async () => {
-    setGrokRunnerForTests(async () => ({
-      exitCode: 143,
-      stdout: '',
-      stderr: '',
-      timedOut: false,
-      aborted: true,
-    }));
-    await expect(executeWebSearch({ query: 'x' }, makeCtx('s'))).rejects.toMatchObject({
-      code: 'cancelled',
-    });
-  });
-
-  it('continues with --resume when continue is true', async () => {
-    setGrokRunnerForTests(async () => ({
-      exitCode: 0,
-      stdout: JSON.stringify({ text: 'first', sessionId: 'grok-cont' }),
-      stderr: '',
-      timedOut: false,
-    }));
-    await executeWebSearch({ query: 'first' }, makeCtx('s1'));
-
-    let args: string[] = [];
-    setGrokRunnerForTests(async (opts) => {
-      args = opts.args;
-      return {
-        exitCode: 0,
-        stdout: JSON.stringify({ text: 'second', sessionId: 'grok-cont' }),
-        stderr: '',
-        timedOut: false,
-      };
-    });
-    const result = await executeWebSearch({ query: 'and tomorrow?', continue: true }, makeCtx('s1'));
-    expect(result.continued).toBe(true);
-    expect(result.text).toBe('second');
-    expect(args).toContain('--resume');
-    expect(args).toContain('grok-cont');
-  });
-
-  it('errors when continue has no prior session', async () => {
+  it('resumes the exact prior native thread only when continue is true', async () => {
+    const run = stubRunner();
+    await executeWebSearch({ query: 'First question' }, makeCtx());
     await expect(
-      executeWebSearch({ query: 'again', continue: true }, makeCtx('empty')),
-    ).rejects.toMatchObject({ code: 'no_prior_search' });
+      executeWebSearch({ query: 'More detail', continue: true }, makeCtx()),
+    ).resolves.toMatchObject({ continued: true });
+    expect(run.mock.calls[1]![0].resumeSessionId).toBe(SESSION_ID);
+    await executeWebSearch({ query: 'New question' }, makeCtx());
+    expect(run.mock.calls[2]![0].resumeSessionId).toBeUndefined();
   });
 
-  it('maps timeout to speakable error', async () => {
-    setGrokRunnerForTests(async () => ({
-      exitCode: null,
-      stdout: '',
-      stderr: '',
-      timedOut: true,
-    }));
-    await expect(executeWebSearch({ query: 'slow' }, makeCtx('voice:x'))).rejects.toMatchObject({
-      code: 'timeout',
-      message: expect.stringMatching(/timed out/i),
-    });
-  });
-
-  it('maps non-zero exit to execution_failed', async () => {
-    setGrokRunnerForTests(async () => ({
-      exitCode: 1,
-      stdout: '',
-      stderr: 'auth missing',
-      timedOut: false,
-    }));
-    await expect(executeWebSearch({ query: 'x' }, makeCtx('s'))).rejects.toMatchObject({
-      code: 'execution_failed',
-    });
-  });
-
-  it('defaultGrokRunner spawns shell:false via a fake binary', async () => {
-    setGrokRunnerForTests(null);
-    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'fake-grok-'));
-    const bin = path.join(dir, 'fake-grok');
-    // argv-array only: print first -p value and exit 0 with JSON
-    await fs.writeFile(
-      bin,
-      `#!/usr/bin/env node
-const args = process.argv.slice(2);
-const p = args.indexOf('-p');
-const q = p >= 0 ? args[p + 1] : '';
-process.stdout.write(JSON.stringify({ text: 'echo:' + q, sessionId: 'fake-sess' }));
-`,
-      { mode: 0o755 },
-    );
-    const prev = process.env['ASSISTANT_GROK_BIN'];
-    process.env['ASSISTANT_GROK_BIN'] = bin;
-    try {
-      const result = await executeWebSearch(
-        { query: 'hello;world' },
-        makeCtx('fake-sess-key', dir),
-      );
-      expect(result.text).toBe('echo:hello;world');
-      expect(getWebSearchSessionForTests('fake-sess-key')).toBe('fake-sess');
-    } finally {
-      if (prev === undefined) {
-        delete process.env['ASSISTANT_GROK_BIN'];
-      } else {
-        process.env['ASSISTANT_GROK_BIN'] = prev;
-      }
+  it('does not reuse another text or voice conversation session', async () => {
+    const run = stubRunner();
+    await executeWebSearch({ query: 'First' }, makeCtx());
+    for (const key of ['other', 'voice:chat-1']) {
+      await expect(
+        executeWebSearch({ query: 'Follow-up', continue: true }, makeCtx(key)),
+      ).rejects.toMatchObject({ code: 'no_prior_search' });
     }
+    expect(run).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(['CODEX_HOME', 'ASSISTANT_CODEX_BIN', 'ASSISTANT_CODEX_RUNTIME_PATH'])(
+    'invalidates continuation when %s changes',
+    async (name) => {
+      const run = stubRunner();
+      await executeWebSearch({ query: 'First' }, makeCtx());
+      vi.stubEnv(name, '/different/native-setting');
+      await expect(
+        executeWebSearch({ query: 'Follow-up', continue: true }, makeCtx()),
+      ).rejects.toMatchObject({ code: 'no_prior_search' });
+      expect(run).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it('does not start a fresh search after a missing native session', async () => {
+    const run = stubRunner();
+    await executeWebSearch({ query: 'First' }, makeCtx());
+    run.mockRejectedValueOnce(new ToolError('no_prior_search', 'Session unavailable'));
+    await expect(
+      executeWebSearch({ query: 'Follow-up', continue: true }, makeCtx()),
+    ).rejects.toMatchObject({ code: 'no_prior_search' });
+    expect(run).toHaveBeenCalledTimes(2);
+  });
+
+  it('preserves the last successful session after a failed new request', async () => {
+    const run = stubRunner();
+    await executeWebSearch({ query: 'First' }, makeCtx());
+    run.mockRejectedValueOnce(new ToolError('execution_failed', 'Failed'));
+    await expect(
+      executeWebSearch({ query: 'Failed new request' }, makeCtx()),
+    ).rejects.toMatchObject({ code: 'execution_failed' });
+    expect(getWebSearchSessionForTests('chat-1')).toBe(SESSION_ID);
+  });
+
+  it('rejects missing sessions and invalid native homes before invoking the runner', async () => {
+    const run = stubRunner();
+    await expect(executeWebSearch({ query: 'x' }, makeCtx(' '))).rejects.toMatchObject({
+      code: 'session_unavailable',
+    });
+    vi.stubEnv('CODEX_HOME', 'relative');
+    await expect(executeWebSearch({ query: 'x' }, makeCtx())).rejects.toMatchObject({
+      code: 'configuration_error',
+    });
+    expect(run).not.toHaveBeenCalled();
+  });
+
+  it('honors cancellation before execution and before retaining a result', async () => {
+    const run = stubRunner();
+    const controller = new AbortController();
+    controller.abort();
+    await expect(
+      executeWebSearch({ query: 'x' }, makeCtx('chat-1', controller.signal)),
+    ).rejects.toMatchObject({ code: 'cancelled' });
+    expect(run).not.toHaveBeenCalled();
+    const active = new AbortController();
+    run.mockImplementationOnce(async () => {
+      active.abort();
+      return { text: 'Too late', sessionId: SESSION_ID };
+    });
+    await expect(
+      executeWebSearch({ query: 'x' }, makeCtx('chat-1', active.signal)),
+    ).rejects.toMatchObject({ code: 'cancelled' });
+    expect(getWebSearchSessionForTests('chat-1')).toBeUndefined();
   });
 });

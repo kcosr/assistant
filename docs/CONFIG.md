@@ -134,15 +134,28 @@ Text agents use per-agent `toolAllowlist` / `toolDenylist` independently of this
 
 #### Built-in `web_search` tool
 
-`web_search` is a **built-in** tool (not a plugin). It runs the local Grok CLI headless for live public web and X research.
+`web_search` is a **built-in** tool (not a plugin). It runs the local Codex CLI headless with live public web search and returns a concise answer with Markdown source links.
 
-| Item                   | Detail                                                                                                                                                                                                            |
-| ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Parameters             | `query` (required natural-language question), `continue` (optional bool to resume prior Grok session for this conversation)                                                                                       |
-| Enable for text agents | Add `web_search` to the agent’s `toolAllowlist`                                                                                                                                                                   |
-| Enable for Realtime    | Add `web_search` to `voice.realtime.toolAllowlist`                                                                                                                                                                |
-| Host prerequisites     | `grok` on `PATH` (or `ASSISTANT_GROK_BIN`); Grok auth (`~/.grok/auth.json` and/or `XAI_API_KEY`); do not lock off `bypassPermissions` in Grok requirements; avoid untrusted Grok MCP servers for the service user |
-| Not the same as        | Plugin `search_*` tools (in-app notes/lists search)                                                                                                                                                               |
+| Item                   | Detail                                                                                                                                                                  |
+| ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Parameters             | `query` (required natural-language question), `continue` (optional boolean to resume the last successful research session for this Assistant conversation)              |
+| Result                 | `text` (answer with source links), `continued` (whether this call requested continuation)                                                                               |
+| Enable for text agents | Add `web_search` to the agent’s `toolAllowlist`                                                                                                                         |
+| Enable for Realtime    | Add `web_search` to `voice.realtime.toolAllowlist`; answers are kept short for speech                                                                                   |
+| Host prerequisites     | A Codex CLI supporting named native permission profiles on `PATH` (or `ASSISTANT_CODEX_BIN`), authenticated for the agent-server service user                           |
+| Codex home             | `CODEX_HOME`, otherwise `~/.codex`; this holds Codex authentication and persisted sessions and must remain outside the research working directory                       |
+| Native executable      | Optional `ASSISTANT_CODEX_RUNTIME_PATH`: exact native Codex executable path when a wrapper runs a binary outside the permission profile’s minimal runtime paths         |
+| Research model         | Fixed `gpt-6.1-sol` with low reasoning effort; the host’s default Codex model is ignored and there is no model fallback                                                 |
+| Execution              | At most 100 seconds for the research process group in text and Realtime; live web access with a dedicated filesystem permission profile and disabled command networking |
+| Not the same as        | Plugin `search_*` tools (in-app notes/lists search), the general `codex-cli` chat provider, or `codex_threads_*` tools                                                  |
+
+Each invocation ignores user Codex configuration and rules and uses strict, explicit research settings. The named permission profile denies the filesystem root and permits only minimal runtime reads, the exact executable files needed to run Codex, and a separate research directory for each Assistant conversation. `HOME` points to that research directory; `CODEX_HOME` keeps Codex authentication and persisted sessions outside model-accessible paths. Native patch capability may remain exposed, but is confined to the research directory; instructions forbid file edits.
+
+Research instructions also prohibit helper agents. Model metadata can expose helper controls despite disabled multiagent feature flags, so those flags do not guarantee a web-only tool inventory. Filesystem permissions and the shared process-group deadline enforce containment. Isolated `HOME`, ignored user configuration, and disabled project-document loading reduce inherited instructions; bundled discovery under `CODEX_HOME` may still expose skills.
+
+The selected `CODEX_HOME` must be an existing absolute directory with file-based Codex authentication, separate from the research directory; a web-search call does not run an interactive login. API-key environment variables and unrelated server secrets are not forwarded to the worker. When an npm wrapper starts a native binary under a directory such as `~/.local`, set `ASSISTANT_CODEX_RUNTIME_PATH` to that exact executable. The profile grants read access to individual executable files, not their installation directories. Missing binaries, unsupported profile settings, and authentication failures return errors.
+
+Continuation uses the exact Codex session ID recorded for this Assistant conversation. The mapping is held in server memory, so a server restart or a change of binary, Codex home, native runtime, or research directory requires a new search. A missing or unavailable session returns an error; it never silently starts a fresh search. Codex searches the public web and does not provide Grok’s native X/Twitter account or post-search tools.
 
 Design: `docs/design/web-search-tool.md`.
 
@@ -275,7 +288,7 @@ Examples:
 | -------------- | ------ | --------------------------------------------------------------- |
 | `sessions`     | object | Session cache settings.                                         |
 | `agents`       | array  | Agent persona definitions and chat provider config.             |
-| `chatProfiles` | object | Named Pi model choices and per-model thinking levels. |
+| `chatProfiles` | object | Named Pi model choices and per-model thinking levels.           |
 | `profiles`     | array  | Shared profile (instance) definitions for cross-plugin scoping. |
 | `plugins`      | object | Plugin enablement and per-plugin config.                        |
 | `mcpServers`   | array  | External MCP servers launched over stdio.                       |
