@@ -55,11 +55,11 @@ resolves credentials using its auth storage, registry configuration, and provide
 
 ### Server
 
-| Variable          | Default  | Description                                                           |
-| ----------------- | -------- | --------------------------------------------------------------------- |
-| `PORT`            | `3000`   | HTTP/WebSocket server port                                            |
-| `DATA_DIR`        | `./data` | Directory for session data (event logs, preferences, plugin settings) |
-| `APP_CONFIG_PATH` | -        | Override config file location                                         |
+| Variable          | Default  | Description                                                              |
+| ----------------- | -------- | ------------------------------------------------------------------------ |
+| `PORT`            | `3000`   | HTTP/WebSocket server port                                               |
+| `DATA_DIR`        | `./data` | Session data directory; set outside any Git checkout to use `web_search` |
+| `APP_CONFIG_PATH` | -        | Override config file location                                            |
 
 ### TTS
 
@@ -142,7 +142,7 @@ Text agents use per-agent `toolAllowlist` / `toolDenylist` independently of this
 | Result                 | `text` (answer with source links), `continued` (whether this call requested continuation)                                                                               |
 | Enable for text agents | Add `web_search` to the agent’s `toolAllowlist`                                                                                                                         |
 | Enable for Realtime    | Add `web_search` to `voice.realtime.toolAllowlist`; answers are kept short for speech                                                                                   |
-| Host prerequisites     | A Codex CLI supporting named native permission profiles on `PATH` (or `ASSISTANT_CODEX_BIN`), authenticated for the agent-server service user                           |
+| Host prerequisites     | A Codex CLI with its bundled `codex-code-mode-host`, supporting named permission profiles, authenticated for the service user (`PATH` or `ASSISTANT_CODEX_BIN`)         |
 | Codex home             | `CODEX_HOME`, otherwise `~/.codex`; this holds Codex authentication and persisted sessions and must remain outside the research working directory                       |
 | Native executable      | Optional `ASSISTANT_CODEX_RUNTIME_PATH`: exact native Codex executable path when a wrapper runs a binary outside the permission profile’s minimal runtime paths         |
 | Research model         | Fixed `gpt-6.1-sol` with low reasoning effort; the host’s default Codex model is ignored and there is no model fallback                                                 |

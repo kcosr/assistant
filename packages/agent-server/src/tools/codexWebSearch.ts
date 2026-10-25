@@ -188,7 +188,21 @@ function containsPath(parent: string, child: string): boolean {
 }
 
 async function assertOutsideGitWorktree(cwd: string): Promise<void> {
-  for (let directory = cwd; ; directory = path.dirname(directory)) {
+  // Resolve an existing ancestor before creating anything. This also follows a
+  // symlinked data root so its real Git ancestry is checked.
+  let existing = path.resolve(cwd);
+  for (;;) {
+    try {
+      existing = await fs.realpath(existing);
+      break;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+      const parent = path.dirname(existing);
+      if (parent === existing) throw error;
+      existing = parent;
+    }
+  }
+  for (let directory = existing; ; directory = path.dirname(directory)) {
     try {
       await fs.lstat(path.join(directory, '.git'));
       throw new ToolError(
@@ -206,6 +220,7 @@ export const runCodexWebSearch: CodexWebSearchRunner = async (options) => {
   if (options.signal?.aborted) {
     throw new ToolError('cancelled', 'Web search was cancelled');
   }
+  await assertOutsideGitWorktree(options.cwd);
   await fs.mkdir(options.cwd, { recursive: true, mode: 0o700 });
   const cwd = await fs.realpath(options.cwd);
   await assertOutsideGitWorktree(cwd);

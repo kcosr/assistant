@@ -241,6 +241,31 @@ describe('runCodexWebSearch', () => {
     },
   );
 
+  it('rejects a Git checkout before creating any missing research directories', async () => {
+    const { root, options } = await createFixture('emitAnswer();');
+    await fs.mkdir(path.join(root, '.git'));
+    const missing = path.join(root, 'not-created');
+    await expect(
+      runCodexWebSearch({ ...options, cwd: path.join(missing, 'nested') }),
+    ).rejects.toMatchObject({ code: 'configuration_error' });
+    expect(await exists(missing)).toBe(false);
+  });
+
+  it.skipIf(process.platform === 'win32')(
+    'checks the Git ancestry of a symlinked data root before creating files',
+    async () => {
+      const { root, options } = await createFixture('emitAnswer();');
+      const repo = path.join(root, 'repo');
+      await fs.mkdir(path.join(repo, '.git'), { recursive: true });
+      const alias = path.join(root, 'alias');
+      await fs.symlink(repo, alias);
+      await expect(
+        runCodexWebSearch({ ...options, cwd: path.join(alias, 'not-created') }),
+      ).rejects.toMatchObject({ code: 'configuration_error' });
+      expect(await exists(path.join(repo, 'not-created'))).toBe(false);
+    },
+  );
+
   it.each(['relative', 'missing', 'non-executable'])(
     'identifies invalid native runtime paths: %s',
     async (kind) => {
