@@ -106,8 +106,30 @@ describe('parseCodexWebSearchOutput', () => {
     );
   });
 
-  it.each(['error', 'turn.failed'])('rejects terminal %s even with later completion', (type) => {
-    expectFailure(jsonl([THREAD_STARTED, WEB_SEARCH, answer('partial'), { type }, TURN_COMPLETED]));
+  it('accepts reconnect notices when the turn ultimately completes', () => {
+    const stdout = jsonl([
+      THREAD_STARTED,
+      WEB_SEARCH,
+      { type: 'error', message: 'Reconnecting... 1/5' },
+      answer('Recovered answer.'),
+      TURN_COMPLETED,
+    ]);
+    expect(parseCodexWebSearchOutput(stdout, { requireSearch: true }).text).toBe(
+      'Recovered answer.',
+    );
+    expectFailure(jsonl([THREAD_STARTED, WEB_SEARCH, { type: 'error' }]));
+  });
+
+  it('rejects a failed turn even with later completion', () => {
+    expectFailure(
+      jsonl([
+        THREAD_STARTED,
+        WEB_SEARCH,
+        answer('partial'),
+        { type: 'turn.failed' },
+        TURN_COMPLETED,
+      ]),
+    );
   });
 
   it('rejects missing, invalid, and changed session IDs', () => {

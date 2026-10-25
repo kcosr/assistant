@@ -52,6 +52,9 @@ export function parseCodexWebSearchOutput(
         break;
       }
       case 'error':
+        // Exec also uses this event for transient reconnect notices. Only the
+        // final turn outcome (and the runner's exit check) determines success.
+        break;
       case 'turn.failed':
         return fail('failed before completing the answer');
       case 'turn.started':
@@ -83,8 +86,7 @@ export function parseCodexWebSearchOutput(
           }
           text = item['text'].trim();
         }
-        // An error item can be a recoverable tool warning. Only top-level errors
-        // and failed turns are terminal failures in the exec JSONL protocol.
+        // An error item can be a recoverable tool warning.
         break;
       }
     }

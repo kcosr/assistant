@@ -12,10 +12,12 @@ const SEARCH_TIMEOUT_MS = 100_000;
 
 // A change of native home, workspace, or executable invalidates continuation.
 const sessions = new Map<string, { id: string; identity: string }>();
+const conversationTurns = new Map<string, Promise<void>>();
 let runner: CodexWebSearchRunner = runCodexWebSearch;
 
 export function clearWebSearchSessionsForTests(): void {
   sessions.clear();
+  conversationTurns.clear();
 }
 
 export function getWebSearchSessionForTests(conversationKey: string): string | undefined {
@@ -30,9 +32,10 @@ export function resolveWebSearchWorkdir(
   dataDir: string | undefined,
   conversationKey: string,
 ): string {
-  const root = dataDir?.trim()
-    ? path.join(path.resolve(dataDir.trim()), 'codex-web-search')
-    : path.join(os.tmpdir(), 'assistant-codex-web-search');
+  if (!dataDir?.trim()) {
+    throw new ToolError('configuration_error', 'Web search requires a configured data directory.');
+  }
+  const root = path.join(path.resolve(dataDir.trim()), 'codex-web-search');
   // Caller-controlled session IDs must never become filesystem paths.
   return path.join(root, createHash('sha256').update(conversationKey).digest('hex'));
 }
@@ -58,7 +61,7 @@ export async function executeWebSearch(
   args: unknown,
   ctx: ToolContext,
 ): Promise<{ text: string; continued: boolean }> {
-  const { query, continueSession } = parseWebSearchArgs(args);
+  const parsed = parseWebSearchArgs(args);
   const conversationKey = ctx.sessionId?.trim();
   if (!conversationKey) {
     throw new ToolError('session_unavailable', 'Current session is not available');
@@ -67,6 +70,47 @@ export async function executeWebSearch(
     throw new ToolError('cancelled', 'Web search was cancelled');
   }
 
+  // Native thread rollouts have one writer. Read the session mapping only once
+  // this conversation's preceding call has settled, including failed calls.
+  const previousTurn = conversationTurns.get(conversationKey) ?? Promise.resolve();
+  let release!: () => void;
+  const released = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const turn = previousTurn.then(() => released);
+  conversationTurns.set(conversationKey, turn);
+  try {
+    await new Promise<void>((resolve, reject) => {
+      const onAbort = (): void => {
+        reject(new ToolError('cancelled', 'Web search was cancelled'));
+      };
+      ctx.signal?.addEventListener('abort', onAbort, { once: true });
+      if (ctx.signal?.aborted) onAbort();
+      void previousTurn.then(() => {
+        ctx.signal?.removeEventListener('abort', onAbort);
+        resolve();
+      });
+    });
+    if (ctx.signal?.aborted) {
+      throw new ToolError('cancelled', 'Web search was cancelled');
+    }
+    return await executeWebSearchTurn(parsed, conversationKey, ctx);
+  } finally {
+    release();
+    // An aborted queued call must not release its successors ahead of the
+    // active predecessor. The chained turn resolves only after both settle.
+    void turn.then(() => {
+      if (conversationTurns.get(conversationKey) === turn)
+        conversationTurns.delete(conversationKey);
+    });
+  }
+}
+
+async function executeWebSearchTurn(
+  { query, continueSession }: { query: string; continueSession: boolean },
+  conversationKey: string,
+  ctx: ToolContext,
+): Promise<{ text: string; continued: boolean }> {
   const bin = process.env['ASSISTANT_CODEX_BIN']?.trim() || 'codex';
   const codexHome = process.env['CODEX_HOME']?.trim() || path.join(os.homedir(), '.codex');
   const runtimePath = process.env['ASSISTANT_CODEX_RUNTIME_PATH']?.trim();

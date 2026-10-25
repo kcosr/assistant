@@ -2,7 +2,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   buildCodexWebSearchArgs,
@@ -100,6 +100,10 @@ async function isRunning(pid: number): Promise<boolean> {
   }
 }
 
+beforeEach(() => {
+  vi.spyOn(console, 'error').mockImplementation(() => {});
+});
+
 afterEach(async () => {
   const activeCount = getActiveCliProcessCount();
   for (const root of fixtures.splice(0)) {
@@ -116,6 +120,7 @@ afterEach(async () => {
     await fs.rm(root, { recursive: true, force: true });
   }
   expect(activeCount).toBe(0);
+  vi.restoreAllMocks();
 });
 
 describe('Codex research isolation', () => {
@@ -144,29 +149,37 @@ describe('Codex research isolation', () => {
       expect(args[args.indexOf('--model') + 1]).toBe(CODEX_WEB_SEARCH_MODEL);
       expect(args.at(-1)).toBe('-');
       const overrides = args.filter((_, index) => args[index - 1] === '-c');
-      expect(overrides).toEqual(
-        expect.arrayContaining([
-          'approval_policy="never"',
-          'default_permissions="research"',
-          'permissions.research.network.enabled=false',
-          'web_search="live"',
-          'project_doc_max_bytes=0',
-          'shell_environment_policy.inherit="none"',
-          'features.shell_tool=false',
-          'features.multi_agent=false',
-          'features.multi_agent_v2=false',
-          'features.plugins=false',
-          'features.apps=false',
-        ]),
-      );
-      const filesystem = overrides.find((value) =>
-        value.startsWith('permissions.research.filesystem='),
-      );
-      expect(filesystem).toContain('":root"="deny"');
-      expect(filesystem).toContain('":tmpdir"="deny"');
-      expect(filesystem).toContain('"/runtime/codex"="read"');
-      expect(filesystem).toContain('"/runtime/node"="read"');
-      expect(filesystem).toContain(`${JSON.stringify('/research/quoted "workspace"')}="write"`);
+      const instructions = overrides.filter((value) => value.startsWith('developer_instructions='));
+      expect(instructions).toHaveLength(1);
+      expect(overrides.filter((value) => !value.startsWith('developer_instructions='))).toEqual([
+        'approval_policy="never"',
+        'default_permissions="research"',
+        'permissions.research.filesystem={":root"="deny",":minimal"="read",":tmpdir"="deny",":slash_tmp"="deny",' +
+          JSON.stringify('/research/quoted "workspace"') +
+          '="read","/runtime/codex"="read","/runtime/node"="read"}',
+        'permissions.research.network.enabled=false',
+        'web_search="live"',
+        'features.code_mode_host=true',
+        'model_reasoning_effort="low"',
+        'project_doc_max_bytes=0',
+        'cli_auth_credentials_store="file"',
+        'shell_environment_policy.inherit="none"',
+        'features.shell_tool=false',
+        'features.shell_snapshot=false',
+        'features.apps=false',
+        'features.hooks=false',
+        'features.plugins=false',
+        'features.remote_plugin=false',
+        'features.multi_agent=false',
+        'features.multi_agent_v2=false',
+        'features.browser_use=false',
+        'features.computer_use=false',
+        'features.image_generation=false',
+        'features.view_image=false',
+        'features.goals=false',
+        'features.memories=false',
+        'features.default_mode_request_user_input=false',
+      ]);
     },
   );
 
@@ -186,6 +199,10 @@ describe('Codex research isolation', () => {
           PATH: '/usr/bin',
           LANG: 'en_US.UTF-8',
           HTTPS_PROXY: 'http://proxy.example:8080',
+          https_proxy: 'http://lowercase-proxy.example:8080',
+          http_proxy: 'http://http-proxy.example:8080',
+          all_proxy: 'socks5://proxy.example:1080',
+          no_proxy: 'localhost',
           HOME: '/private/home',
           CODEX_HOME: '/other/codex',
           OPENAI_API_KEY: 'private-openai',
@@ -199,6 +216,10 @@ describe('Codex research isolation', () => {
       PATH: '/usr/bin',
       LANG: 'en_US.UTF-8',
       HTTPS_PROXY: 'http://proxy.example:8080',
+      https_proxy: 'http://lowercase-proxy.example:8080',
+      http_proxy: 'http://http-proxy.example:8080',
+      all_proxy: 'socks5://proxy.example:1080',
+      no_proxy: 'localhost',
       HOME: '/research',
       CODEX_HOME: '/private/auth',
     });
@@ -206,6 +227,54 @@ describe('Codex research isolation', () => {
 });
 
 describe('runCodexWebSearch', () => {
+  it.each(['directory', 'file'])(
+    'rejects research under a Git checkout marker: %s',
+    async (kind) => {
+      const { root, options } = await createFixture('emitAnswer();');
+      if (kind === 'directory') await fs.mkdir(path.join(root, '.git'));
+      else await fs.writeFile(path.join(root, '.git'), 'gitdir: /other/worktree');
+      await expect(runCodexWebSearch(options)).rejects.toMatchObject({
+        code: 'configuration_error',
+        message: expect.stringContaining('outside a Git checkout'),
+      });
+      expect(await exists(path.join(root, 'pid'))).toBe(false);
+    },
+  );
+
+  it.each(['relative', 'missing', 'non-executable'])(
+    'identifies invalid native runtime paths: %s',
+    async (kind) => {
+      const { root, options } = await createFixture('emitAnswer();');
+      const runtimePath = kind === 'relative' ? 'codex' : path.join(root, 'native');
+      if (kind === 'non-executable')
+        await fs.writeFile(runtimePath, 'not executable', { mode: 0o600 });
+      await expect(runCodexWebSearch({ ...options, runtimePath })).rejects.toMatchObject({
+        code: 'configuration_error',
+        message: expect.stringContaining('ASSISTANT_CODEX_RUNTIME_PATH'),
+      });
+      expect(await exists(path.join(root, 'pid'))).toBe(false);
+    },
+  );
+
+  it('logs bounded stderr server-side while keeping the tool error generic', async () => {
+    const { options } = await createFixture(
+      "process.stderr.write('x'.repeat(20_000) + ' expired file authentication'); process.exitCode = 1;",
+    );
+    await expect(runCodexWebSearch(options)).rejects.toMatchObject({
+      code: 'execution_failed',
+      message: expect.not.stringContaining('expired file authentication'),
+    });
+    expect(console.error).toHaveBeenCalledWith(
+      '[web_search] Codex research failed',
+      expect.objectContaining({
+        exitCode: 1,
+        stderr: expect.stringContaining('expired file authentication'),
+      }),
+    );
+    const details = vi.mocked(console.error).mock.calls[0]![1] as { stderr: string };
+    expect(details.stderr.length).toBeLessThanOrEqual(16_000);
+  });
+
   it('passes a large question verbatim through stdin with separate auth and workspace homes', async () => {
     const { options } = await createFixture(`
 emitAnswer(JSON.stringify({ query, args: process.argv.slice(2), cwd: process.cwd(), home: process.env.HOME, codexHome: process.env.CODEX_HOME }));

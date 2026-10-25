@@ -27,7 +27,6 @@ const DISABLED_FEATURES = [
   'view_image',
   'goals',
   'memories',
-  'code_mode',
   'default_mode_request_user_input',
 ] as const;
 
@@ -66,7 +65,7 @@ export function buildCodexWebSearchArgs(options: {
     ':minimal': 'read',
     ':tmpdir': 'deny',
     ':slash_tmp': 'deny',
-    [options.cwd]: 'write',
+    [options.cwd]: 'read',
   };
   for (const runtimePath of options.runtimePaths) {
     filesystem[runtimePath] = 'read';
@@ -79,10 +78,10 @@ export function buildCodexWebSearchArgs(options: {
   const overrides = [
     'approval_policy="never"',
     'default_permissions="research"',
-    'permissions.research.extends=":workspace"',
     `permissions.research.filesystem=${filesystemToml}`,
     'permissions.research.network.enabled=false',
     'web_search="live"',
+    'features.code_mode_host=true',
     'model_reasoning_effort="low"',
     'project_doc_max_bytes=0',
     'cli_auth_credentials_store="file"',
@@ -131,6 +130,10 @@ export function buildCodexWebSearchEnv(
     'HTTPS_PROXY',
     'ALL_PROXY',
     'NO_PROXY',
+    'http_proxy',
+    'https_proxy',
+    'all_proxy',
+    'no_proxy',
   ]) {
     if (source[key] !== undefined) {
       env[key] = source[key];
@@ -143,7 +146,13 @@ export function buildCodexWebSearchEnv(
   return env;
 }
 
-async function resolveExecutable(bin: string): Promise<string> {
+async function resolveExecutable(bin: string, runtime = false): Promise<string> {
+  if (runtime && !path.isAbsolute(bin)) {
+    throw new ToolError(
+      'configuration_error',
+      'ASSISTANT_CODEX_RUNTIME_PATH must be an absolute executable path.',
+    );
+  }
   const candidates =
     bin.includes('/') || bin.includes('\\')
       ? [path.resolve(bin)]
@@ -163,8 +172,10 @@ async function resolveExecutable(bin: string): Promise<string> {
     }
   }
   throw new ToolError(
-    'execution_failed',
-    'Codex executable is unavailable. Check ASSISTANT_CODEX_BIN.',
+    runtime ? 'configuration_error' : 'execution_failed',
+    runtime
+      ? 'Native Codex executable is unavailable. Check ASSISTANT_CODEX_RUNTIME_PATH.'
+      : 'Codex executable is unavailable. Check ASSISTANT_CODEX_BIN.',
   );
 }
 
@@ -176,12 +187,28 @@ function containsPath(parent: string, child: string): boolean {
   );
 }
 
+async function assertOutsideGitWorktree(cwd: string): Promise<void> {
+  for (let directory = cwd; ; directory = path.dirname(directory)) {
+    try {
+      await fs.lstat(path.join(directory, '.git'));
+      throw new ToolError(
+        'configuration_error',
+        'Web search data directory must be outside a Git checkout.',
+      );
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+    }
+    if (path.dirname(directory) === directory) return;
+  }
+}
+
 export const runCodexWebSearch: CodexWebSearchRunner = async (options) => {
   if (options.signal?.aborted) {
     throw new ToolError('cancelled', 'Web search was cancelled');
   }
   await fs.mkdir(options.cwd, { recursive: true, mode: 0o700 });
   const cwd = await fs.realpath(options.cwd);
+  await assertOutsideGitWorktree(cwd);
   let codexHome: string;
   try {
     codexHome = await fs.realpath(options.codexHome);
@@ -200,7 +227,7 @@ export const runCodexWebSearch: CodexWebSearchRunner = async (options) => {
   const bin = await resolveExecutable(options.bin);
   const runtimePaths = [bin];
   if (options.runtimePath) {
-    runtimePaths.push(await resolveExecutable(options.runtimePath));
+    runtimePaths.push(await resolveExecutable(options.runtimePath, true));
   }
   const args = buildCodexWebSearchArgs({ ...options, cwd, runtimePaths });
   const env = buildCodexWebSearchEnv({ cwd, codexHome });
@@ -287,11 +314,20 @@ export const runCodexWebSearch: CodexWebSearchRunner = async (options) => {
       }
       options.signal?.removeEventListener('abort', onAbort);
       unregisterCliProcess(child);
+      const logFailure = (reason: string): void => {
+        console.error('[web_search] Codex research failed', {
+          reason,
+          exitCode: code,
+          stderr: stderr.trim(),
+        });
+      };
       if (failure) {
+        if (failure.code === 'execution_failed') logFailure(failure.message);
         reject(failure);
         return;
       }
       if (code !== 0) {
+        logFailure('Nonzero process exit');
         const missingSession =
           options.resumeSessionId && /no rollout found for thread id/i.test(stderr);
         reject(
@@ -312,6 +348,7 @@ export const runCodexWebSearch: CodexWebSearchRunner = async (options) => {
           }),
         );
       } catch (error) {
+        logFailure(error instanceof Error ? error.message : 'Invalid research output');
         reject(error);
       }
     });

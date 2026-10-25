@@ -82,11 +82,129 @@ describe('web_search contract', () => {
     expect(path.basename(cwd)).toMatch(/^[a-f0-9]{64}$/);
     expect(cwd).toBe(resolveWebSearchWorkdir('/var/data', '../../secret'));
     expect(cwd).not.toBe(resolveWebSearchWorkdir('/var/data', 'different'));
-    expect(resolveWebSearchWorkdir(undefined, 'x')).toContain('assistant-codex-web-search');
+    expect(() => resolveWebSearchWorkdir(undefined, 'x')).toThrow(
+      expect.objectContaining({ code: 'configuration_error' }),
+    );
   });
 });
 
 describe('executeWebSearch', () => {
+  it('serializes overlapping calls and reads the continuation ID after the preceding call', async () => {
+    const run = stubRunner();
+    let release!: () => void;
+    const blocked = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    run.mockImplementationOnce(async () => {
+      await blocked;
+      return { text: 'First answer', sessionId: SESSION_ID };
+    });
+    const first = executeWebSearch({ query: 'First' }, makeCtx());
+    const second = executeWebSearch({ query: 'Follow-up', continue: true }, makeCtx());
+    await vi.waitFor(() => expect(run).toHaveBeenCalledTimes(1));
+    release();
+    await first;
+    await second;
+    expect(run).toHaveBeenCalledTimes(2);
+    expect(run.mock.calls[1]![0].resumeSessionId).toBe(SESSION_ID);
+  });
+
+  it('records parallel fresh searches in issue order', async () => {
+    const run = stubRunner();
+    let release!: () => void;
+    const blocked = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const lastId = '0199a213-81c0-7800-8aa1-bbab2a035a54';
+    run
+      .mockImplementationOnce(async () => {
+        await blocked;
+        return { text: 'First answer', sessionId: SESSION_ID };
+      })
+      .mockResolvedValueOnce({ text: 'Second answer', sessionId: lastId });
+    const first = executeWebSearch({ query: 'First' }, makeCtx());
+    const second = executeWebSearch({ query: 'Second' }, makeCtx());
+    await vi.waitFor(() => expect(run).toHaveBeenCalledTimes(1));
+    release();
+    await Promise.all([first, second]);
+    expect(getWebSearchSessionForTests('chat-1')).toBe(lastId);
+    expect(run.mock.calls[1]![0].resumeSessionId).toBeUndefined();
+  });
+
+  it('releases queued requests after failure without losing prior successful research', async () => {
+    const run = stubRunner();
+    await executeWebSearch({ query: 'Seed' }, makeCtx());
+    let release!: () => void;
+    const blocked = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    run.mockImplementationOnce(async () => {
+      await blocked;
+      throw new ToolError('execution_failed', 'Research failed');
+    });
+    const first = expect(
+      executeWebSearch({ query: 'Failed new search' }, makeCtx()),
+    ).rejects.toMatchObject({ code: 'execution_failed' });
+    const second = executeWebSearch({ query: 'Follow-up', continue: true }, makeCtx());
+    await vi.waitFor(() => expect(run).toHaveBeenCalledTimes(2));
+    release();
+    await first;
+    await second;
+    expect(run.mock.calls[2]![0].resumeSessionId).toBe(SESSION_ID);
+  });
+
+  it('cancels a queued call promptly without letting later calls overtake the active turn', async () => {
+    const run = stubRunner();
+    let release!: () => void;
+    const blocked = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    run.mockImplementationOnce(async () => {
+      await blocked;
+      return { text: 'First answer', sessionId: SESSION_ID };
+    });
+    const first = executeWebSearch({ query: 'First' }, makeCtx());
+    const controller = new AbortController();
+    const cancelled = expect(
+      executeWebSearch({ query: 'Cancelled' }, makeCtx('chat-1', controller.signal)),
+    ).rejects.toMatchObject({ code: 'cancelled' });
+    const third = executeWebSearch({ query: 'Follow-up', continue: true }, makeCtx());
+    await vi.waitFor(() => expect(run).toHaveBeenCalledTimes(1));
+    controller.abort();
+    await cancelled;
+    expect(run).toHaveBeenCalledTimes(1);
+    release();
+    await Promise.all([first, third]);
+    expect(run).toHaveBeenCalledTimes(2);
+    expect(run.mock.calls[1]![0].resumeSessionId).toBe(SESSION_ID);
+  });
+
+  it('allows different conversations to research concurrently', async () => {
+    const run = stubRunner();
+    let release!: () => void;
+    const blocked = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    run.mockImplementationOnce(async () => {
+      await blocked;
+      return { text: 'First answer', sessionId: SESSION_ID };
+    });
+    const first = executeWebSearch({ query: 'First' }, makeCtx('first'));
+    await executeWebSearch({ query: 'Other' }, makeCtx('other'));
+    expect(run).toHaveBeenCalledTimes(2);
+    release();
+    await first;
+  });
+
+  it('requires configured private workspace storage', async () => {
+    const run = stubRunner();
+    const ctx = makeCtx();
+    delete ctx.envConfig;
+    await expect(executeWebSearch({ query: 'Question' }, ctx)).rejects.toMatchObject({
+      code: 'configuration_error',
+    });
+    expect(run).not.toHaveBeenCalled();
+  });
   it('passes the question to Codex and retains only the stable model-facing result', async () => {
     const run = stubRunner();
     const ctx = makeCtx();
