@@ -88,7 +88,9 @@ async function isRunning(pid: number): Promise<boolean> {
       // Orphaned descendants may briefly remain zombies until the host reaps them.
       return stat.slice(stat.lastIndexOf(')') + 2, stat.lastIndexOf(')') + 3) !== 'Z';
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return false;
+      const code = (error as NodeJS.ErrnoException).code;
+      // The process can disappear between opening its stat file and reading it.
+      if (code === 'ENOENT' || code === 'ESRCH') return false;
       throw error;
     }
   }
