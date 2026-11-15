@@ -47,7 +47,7 @@ In-process chat uses the Earendil Pi SDK for model access, tool execution, and s
 
 ## Quick Start
 
-Requires Node.js **22.19.0 or newer**. The in-process Pi provider uses Pi SDK 1.0;
+Requires Node.js **22.19.0 or newer**. The in-process Pi provider uses Pi SDK 1.5.2;
 CLI providers require their own separately installed executables.
 
 ```bash

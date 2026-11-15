@@ -46,9 +46,9 @@
     "vitest": "^2.1.9"
   },
   "dependencies": {
-    "@earendil-works/pi-agent-core": "^1.0.1",
-    "@earendil-works/pi-ai": "^1.0.1",
-    "@earendil-works/pi-coding-agent": "^1.0.1",
+    "@earendil-works/pi-agent-core": "^1.5.2",
+    "@earendil-works/pi-ai": "^1.5.2",
+    "@earendil-works/pi-coding-agent": "^1.5.2",
     "better-sqlite3": "^11.10.0",
     "exceljs": "^4.4.0",
     "file-uri-to-path": "^1.0.0"

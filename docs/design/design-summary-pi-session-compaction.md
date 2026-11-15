@@ -1,6 +1,6 @@
 # Pi Session Compaction
 
-The Pi SDK 1.0 integration retains this compaction algorithm and the JSONL v3 format.
+The Pi SDK 1.5.2 integration retains this compaction algorithm and the JSONL v3 format.
 Effective replay also applies `context_edit` entries and restores the compacted system/tool
 checkpoint. New compactions fold prompt sections and tool declarations into `systemMessage`
 using Pi's public system-state reducer; system instructions are preserved separately from the

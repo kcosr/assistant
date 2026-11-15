@@ -56,7 +56,7 @@ describe('wrapped tool results in Pi history', () => {
   it.each(cases)(
     'persists $label through the real Agent without duplicate plain details',
     async ({ value, text, details, isError = false }) => {
-      const [{ Agent }, { createAssistantMessageEventStream, Type }] = await Promise.all([
+      const [{ Agent }, { createAssistantMessageEventStream }] = await Promise.all([
         import('@earendil-works/pi-agent-core'),
         import('@earendil-works/pi-ai'),
       ]);
@@ -65,7 +65,7 @@ describe('wrapped tool results in Pi history', () => {
         const tool = createAgentTool({
           name: 'example',
           description: 'Return an example result',
-          parameters: Type.Object({}),
+          parameters: { type: 'object', properties: {} },
           context: { sessionId: 'wrapper-session', signal: new AbortController().signal },
           handler: async () => value,
         });

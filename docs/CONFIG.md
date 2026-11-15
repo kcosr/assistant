@@ -1042,8 +1042,22 @@ its values into the new registry/profile contract manually. A rollback of this m
 restore matching application code and the newly backed-up configuration files together, including
 `request-overrides.json` if the migration changed it.
 
-Assistant uses Pi SDK 1.0 and requires Node.js 22.19.0 or newer. Existing Pi registry,
-authentication, chat profile, and request override configuration remains valid.
+Assistant uses Pi SDK 1.5.2 and requires Node.js 22.19.0 or newer. Existing Pi registry,
+authentication, and request override configuration remains valid; review profile model IDs
+against the updated catalogue as described below.
+
+The bundled catalogue includes `openai-codex/gpt-6.1-terra`, including its model limits and
+reasoning levels. Adding a model ID to `chatProfiles` makes it selectable; the ID must also exist
+in Pi's registry. Assistant loads that registry once per process with network catalogue refresh
+disabled. For a newly released model, update the Pi packages and rebuild/restart Assistant, or
+add a complete custom definition to Pi's `models.json` and restart. Restarting alone cannot add
+a model absent from both the installed catalogue and local registry.
+
+Pi 1.5.2 no longer bundles `openai-codex/gpt-5.5` or `openai-codex/gpt-5.3-codex-spark`.
+Remove those choices from chat profiles or select a current registry model such as
+`openai-codex/gpt-6.1-terra`; Assistant does not substitute models automatically. The Azure
+provider ID is now `azure` (its API ID remains `azure-openai-responses`); update any Azure
+profile references and custom provider definitions accordingly.
 
 Pi SDK sessions are mirrored to the Pi JSONL v3 format so they can be resumed by the
 Pi CLI. Sessions are written to:
