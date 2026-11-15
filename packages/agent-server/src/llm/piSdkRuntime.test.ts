@@ -239,6 +239,9 @@ async function run(
 
 describe('Pi registry and real SDK request serialization', () => {
   it('resolves GPT-6.1 Terra offline even with an older cached catalogue', async () => {
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockRejectedValue(new Error('Unexpected network request'));
     await fs.writeFile(
       path.join(directory, 'models-store.json'),
       JSON.stringify({
@@ -284,6 +287,7 @@ describe('Pi registry and real SDK request serialization', () => {
       },
     });
     expect((await (await getPiSdkRuntime()).getAuth(model))?.auth.apiKey).toBe('oauth-test-access');
+    expect(fetchSpy).not.toHaveBeenCalled();
     expect(requests).toEqual([]);
   }, 30_000);
 

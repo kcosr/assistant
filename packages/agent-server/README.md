@@ -919,7 +919,7 @@ Example:
           "id": "anthropic/claude-sonnet-4-5",
           "thinking": ["none", "low", "medium", "high"]
         },
-        { "id": "openai-codex/gpt-5.2-codex", "thinking": ["none", "medium", "xhigh"] }
+        { "id": "openai-codex/gpt-6.1-terra", "thinking": ["none", "medium", "xhigh", "max"] }
       ]
     }
   },
