@@ -1042,8 +1042,26 @@ its values into the new registry/profile contract manually. A rollback of this m
 restore matching application code and the newly backed-up configuration files together, including
 `request-overrides.json` if the migration changed it.
 
-Assistant uses Pi SDK 1.0 and requires Node.js 22.19.0 or newer. Existing Pi registry,
-authentication, chat profile, and request override configuration remains valid.
+Assistant uses Pi SDK 1.5.2 and requires Node.js 22.19.0 or newer. Existing Pi registry,
+authentication, and request override files are reused. Review profile model IDs and Azure
+provider IDs against the changes below.
+
+The bundled catalogue includes `openai-codex/gpt-6.1-terra`, including its model limits and
+reasoning levels. Adding a model ID to `chatProfiles` makes it selectable; the ID must also exist
+in Pi's registry. Assistant loads that registry once per process with network catalogue refresh
+disabled. For a newly released model, update the Pi packages and rebuild/restart Assistant, or
+add a complete custom definition to Pi's `models.json` and restart. On startup, Pi also applies
+any newer catalogue cached in the shared `models-store.json` in the same Pi agent directory.
+If another Pi process refreshes that cache, restarting Assistant can pick up new models or
+updated metadata without a package upgrade. Assistant never fetches the catalogue itself.
+
+Pi 1.5.2 no longer bundles `openai-codex/gpt-5.5` or `openai-codex/gpt-5.3-codex-spark`.
+Remove those choices from chat profiles or select a current registry model such as
+`openai-codex/gpt-6.1-terra`; Assistant does not substitute models automatically. The Azure
+provider ID is now `azure` (its API ID remains `azure-openai-responses`); update any Azure
+profile references and custom provider definitions accordingly. Move any credential stored
+under `azure-openai-responses` in Pi's `auth.json` to `azure`, sign in again using Pi's login
+flow, or supply the key through `AZURE_OPENAI_API_KEY`.
 
 Pi SDK sessions are mirrored to the Pi JSONL v3 format so they can be resumed by the
 Pi CLI. Sessions are written to:

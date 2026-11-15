@@ -238,6 +238,59 @@ async function run(
 }
 
 describe('Pi registry and real SDK request serialization', () => {
+  it('resolves GPT-6.1 Terra offline even with an older cached catalogue', async () => {
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockRejectedValue(new Error('Unexpected network request'));
+    await fs.writeFile(
+      path.join(directory, 'models-store.json'),
+      JSON.stringify({
+        'openai-codex': {
+          models: [
+            {
+              id: 'gpt-5.4',
+              name: 'GPT-5.4',
+              provider: 'openai-codex',
+              api: 'openai-codex-responses',
+              type: 'chat',
+              baseUrl: 'https://chatgpt.com/backend-api',
+              reasoning: true,
+              input: ['text', 'image'],
+              contextWindow: 272000,
+              maxTokens: 128000,
+              cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+            },
+          ],
+          checkedAt: Date.UTC(2026, 6, 30),
+          lastModified: Date.UTC(2026, 6, 24),
+        },
+      }),
+    );
+    const { runtimeModel: model } = await resolvePiSdkRuntimeModel({
+      modelSpec: 'openai-codex/gpt-6.1-terra',
+    });
+    expect(model).toMatchObject({
+      id: 'gpt-6.1-terra',
+      provider: 'openai-codex',
+      api: 'openai-codex-responses',
+      reasoning: true,
+      input: ['text', 'image'],
+      contextWindow: 500000,
+      maxTokens: 128000,
+      thinkingLevelMap: {
+        off: 'none',
+        low: 'low',
+        medium: 'medium',
+        high: 'high',
+        xhigh: 'xhigh',
+        max: 'max',
+      },
+    });
+    expect((await (await getPiSdkRuntime()).getAuth(model))?.auth.apiKey).toBe('oauth-test-access');
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(requests).toEqual([]);
+  }, 30_000);
+
   it('loads builtin models and credentials as well as complete custom definitions', async () => {
     const runtime = await getPiSdkRuntime();
     const builtin = runtime.getModels('anthropic')[0]!;

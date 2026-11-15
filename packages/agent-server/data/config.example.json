@@ -235,8 +235,8 @@
           "thinking": ["none", "low", "medium", "high"]
         },
         {
-          "id": "openai-codex/gpt-5.2-codex",
-          "thinking": ["none", "low", "medium", "high", "xhigh"]
+          "id": "openai-codex/gpt-6.1-terra",
+          "thinking": ["none", "low", "medium", "high", "xhigh", "max"]
         }
       ]
     }

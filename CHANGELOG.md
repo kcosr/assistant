@@ -14,6 +14,8 @@
 - Replaced inline Pi provider definitions and per-agent model menus with registry-backed models and named chat profiles; shared request overrides now own sampling defaults. ([#138](https://github.com/kcosr/assistant/pull/138))
 - Raised the minimum Node.js version to 22.19.0 for Pi SDK 1.0. ([#141](https://github.com/kcosr/assistant/pull/141))
 
+- Upgraded Pi to 1.5.2: the bundled Codex catalogue no longer includes `gpt-5.5` or `gpt-5.3-codex-spark`, and Azure uses provider ID `azure`; update affected profiles, provider definitions, and stored Azure credentials. ([#145](https://github.com/kcosr/assistant/pull/145))
+
 ### Added
 
 - Added `notes_append` for exact additions to existing notes, with optional revision checking and updated revision metadata returned. ([#139](https://github.com/kcosr/assistant/pull/139))
@@ -124,6 +126,8 @@
 - Fixed Pi replay around questionnaire submissions so the hidden follow-up turn indicator no longer renders an empty turn before the questionnaire submission marker. ([#93](https://github.com/kcosr/assistant/pull/93))
 - Preserved provider-specific authentication, model limits, and reasoning settings across model switches, tool/history round trips, and compaction. ([#138](https://github.com/kcosr/assistant/pull/138))
 - Restored Android headset button capture control through a device-persisted Headset button control toggle in Voice settings. ([#141](https://github.com/kcosr/assistant/pull/141))
+
+- Fixed `openai-codex/gpt-6.1-terra` model resolution by upgrading the Pi SDK, Agent core, and coding-agent packages together to 1.5.2; updated the example profiles and removed a test's obsolete TypeBox helper import. ([#145](https://github.com/kcosr/assistant/pull/145))
 
 ### Removed
 
